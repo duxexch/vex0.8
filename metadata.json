@@ -1,0 +1,6 @@
+{
+  "name": "VEX Deals - Loyalty & Compensation",
+  "description": "VEX Deals (vex.deals) platform for betting compensation, wallet tracking, referral rewards, and AI sports forecasting with real-time volatility & odds shift smart alerts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

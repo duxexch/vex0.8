@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <!-- Background with rounded square for iOS/Android icon -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="#334155" stroke-width="4" opacity="0.4"/>
+  
+  <!-- Shield Emblem -->
+  <path d="M256 96 L376 144 V264 C376 344 256 416 256 416 C256 416 136 344 136 264 V144 Z" fill="url(#shieldGrad)" stroke="url(#emeraldGrad)" stroke-width="12" stroke-linejoin="round"/>
+  
+  <!-- Stylized VEX 'V' inside shield -->
+  <path d="M196 200 L256 312 L316 200" fill="none" stroke="url(#emeraldGrad)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Dot / Star of Protection -->
+  <circle cx="256" cy="180" r="14" fill="#34d399"/>
+</svg>

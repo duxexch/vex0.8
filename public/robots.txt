@@ -1,0 +1,18 @@
+# VEX Deals - Robots.txt for Search Engines and AI Crawlers (Googlebot, Gemini, ChatGPT Search)
+User-agent: *
+Allow: /
+Allow: /admin
+Allow: /api/
+Sitemap: https://vex.deals/sitemap.xml
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /

@@ -1,0 +1,33 @@
+{
+  "id": "https://vex.deals/",
+  "name": "VEX Deals - Cashback & Compensation",
+  "short_name": "VEX Deals",
+  "description": "منصة VEX Deals (vex.deals) لإدارة حسابات المراهنات، تعويض الخسائر، فك تجميد الأرصدة والتحويلات الآمنة",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#f8fafc",
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["finance", "utilities"]
+}
