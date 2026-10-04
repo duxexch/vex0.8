@@ -13,6 +13,20 @@ If you are an AI coding agent or developer taking over, modifying, or deploying 
 
 ---
 
+## 🌐 Production Topology (الإعداد الإنتاجي المعتمد)
+**All 5 domains → nginx (SSL) → `127.0.0.1:3000` → `vex-app` Docker container** — ONE backend serves every domain with host-based branding (verified: vex.deals / betjam.sbs / betongame.cloud / 1xbetservices.com = 200 with per-domain titles, vixo.uno = 301 → vex.deals).
+
+| Rule | Detail |
+| :--- | :--- |
+| Port 3000 owner | **`vex-app` container ONLY.** Never run another service on 3000 (`betjam.service` was disabled for this reason — keep it disabled, or move it to 3001 + its own nginx site if ever needed). |
+| Deploy | `cd /opt/vex && git pull && docker compose up -d --build` |
+| Boot persistence | `docker` + `nginx` enabled; container `restart: unless-stopped`; certbot.timer auto-renews SSL |
+| Runtime data | `/opt/vex/data` is a bind volume, **untracked by git** — never `git checkout`/`reset` it back |
+| Healthcheck | `wget http://127.0.0.1:3000/health` (must be IPv4 — `localhost` resolves to `::1` inside container and reports false-unhealthy) |
+| Rollback image | `vex-app:backup-96dc801` + `.env` backup at `/root/vex_env_backup_*` |
+
+---
+
 ## 🚀 Quick Start Prompt for AI Agents
 > "You are managing the VEX Deals Loyalty, Compensation, Lottery, and AI Sports Forecasting Platform. This project is a full-stack Node.js + Express + TypeScript + Vite React application featuring real-time Socket.io communication, Gemini AI tactical match analysis, Firebase Firestore/Auth, Firebase Cloud Messaging (FCM), Capacitor Android support, and a built-in Docker background notification worker (`server.ts`).
 > Your goal is to ensure the app builds cleanly via `npm run build`, passes type checks via `npm run lint`, starts successfully via `npm start`, and can be synchronized to Android APK via `npm run apk:build`."
