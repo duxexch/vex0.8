@@ -4,6 +4,15 @@ If you are an AI coding agent or developer taking over, modifying, or deploying 
 
 ---
 
+## 🏛️ Primary Repository (المستودع الأساسي)
+- **Repository:** `https://github.com/duxexch/vex0.8` (branch `master`) — **this is THE primary repository of the project.**
+- **Local working copy:** `C:\Users\gnz\Downloads\vex0.9`
+- **Production server:** `69.169.108.197` → https://vex.deals (deploy via git pull + `npm run prod`)
+- **Legacy line (not primary):** `https://github.com/duxexch/vex1` holds older `vex0.29–vex0.37` experiments (telegram broadcast, news watcher, payments) — untouched, do not push here unless explicitly asked.
+- **Old local copies:** archived in `C:\Users\gnz\Downloads\_vex_old_versions\` — never edit those.
+
+---
+
 ## 🚀 Quick Start Prompt for AI Agents
 > "You are managing the VEX Deals Loyalty, Compensation, Lottery, and AI Sports Forecasting Platform. This project is a full-stack Node.js + Express + TypeScript + Vite React application featuring real-time Socket.io communication, Gemini AI tactical match analysis, Firebase Firestore/Auth, Firebase Cloud Messaging (FCM), Capacitor Android support, and a built-in Docker background notification worker (`server.ts`).
 > Your goal is to ensure the app builds cleanly via `npm run build`, passes type checks via `npm run lint`, starts successfully via `npm start`, and can be synchronized to Android APK via `npm run apk:build`."
