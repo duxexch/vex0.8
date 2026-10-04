@@ -322,8 +322,10 @@ export const LotteryTierAlertsModal: React.FC<LotteryTierAlertsModalProps> = ({
                           }`}
                         >
                           <div
-                            className={`w-4 h-4 rounded-full bg-white transition-transform absolute top-1 ${
-                              isEnabled ? 'left-6 rtl:left-1' : 'left-1 rtl:left-6'
+                            className={`w-4 h-4 rounded-full bg-white transition-all duration-200 absolute top-1 ${
+                              isAr
+                                ? isEnabled ? 'left-1' : 'left-6'
+                                : isEnabled ? 'left-6' : 'left-1'
                             }`}
                           />
                         </button>

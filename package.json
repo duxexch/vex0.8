@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "seo:audit": "tsx scripts/seo-audit.ts",
     "git:sync": "bash ./scripts/git-sync.sh",
     "apk:sync": "npm run build && npx cap sync android",
     "apk:build": "bash ./scripts/build-apk.sh debug",

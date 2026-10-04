@@ -45,6 +45,7 @@ import {
   Activity,
   AlertCircle,
 } from 'lucide-react';
+import { triggerHaptic } from '../utils/haptics';
 
 const DEFAULT_SPORTS_CATEGORIES: SportsCategory[] = [
   {
@@ -509,15 +510,31 @@ END:VCALENDAR`;
                       </div>
                     </div>
 
-                    {/* Dedicated 'Manage Alerts' Button for Category */}
-                    <button
-                      onClick={() => openManageAlerts(cat.id)}
-                      className="w-full h-7 px-2 bg-white hover:bg-emerald-600 hover:text-white border border-slate-200 hover:border-emerald-600 rounded-lg text-[10px] font-bold text-slate-700 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95"
-                      title={isAr ? `إدارة تنبيهات ${cat.nameAr} وقائمة الدوريات` : `Manage Alerts for ${cat.name}`}
+                    {/* Dedicated 'Manage Alerts' Toggle Switch & Bell for Category */}
+                    <div 
+                      onClick={() => {
+                        triggerHaptic('light');
+                        openManageAlerts(cat.id);
+                      }}
+                      className="w-full h-8 px-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center justify-between gap-1.5 transition-all cursor-pointer shadow-3xs active:scale-98"
+                      title={isAr ? `تعديل تنبيهات وإشعارات ${cat.nameAr}` : `Toggle alerts for ${cat.name}`}
                     >
-                      <Bell className="w-3 h-3 text-emerald-600 group-hover:text-white shrink-0" />
-                      <span className="truncate">{isAr ? 'إدارة التنبيهات' : 'Manage Alerts'}</span>
-                    </button>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <Bell className={`w-3.5 h-3.5 shrink-0 transition-colors ${activeCount > 0 ? 'text-emerald-600 animate-bounce' : 'text-slate-400'}`} />
+                        <span className="text-[10px] font-black text-slate-500 truncate">
+                          {isAr ? 'التنبيهات' : 'Alerts'}
+                        </span>
+                      </div>
+                      
+                      {/* Premium Slide Toggle Switch Widget with RTL/LTR Mirrored Physics */}
+                      <div className={`w-7 h-4 rounded-full p-0.5 shrink-0 transition-colors duration-200 flex items-center ${activeCount > 0 ? 'bg-emerald-600' : 'bg-slate-200'}`}>
+                        <div className={`w-3 h-3 rounded-full bg-white shadow-3xs transition-transform duration-200 transform ${
+                          activeCount > 0 
+                            ? (isAr ? '-translate-x-3' : 'translate-x-3') 
+                            : 'translate-x-0'
+                        }`} />
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -745,7 +762,7 @@ END:VCALENDAR`;
               {filteredFixtures.map((fixture) => (
                 <div
                   key={fixture.id}
-                  className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs space-y-3 flex flex-col justify-between hover:border-slate-300 transition-colors"
+                  className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs space-y-3 flex flex-col justify-between hover:border-slate-300 transition-all spotlight-surface tilt-card-3d"
                 >
                   <div className="space-y-3">
                     {/* League & Kickoff */}
@@ -791,11 +808,14 @@ END:VCALENDAR`;
 
                         {/* 1-Click League Alert Toggle Persisted to Firestore UserSubscriptions */}
                         <button
-                          onClick={() => handleToggleLeagueAlert(fixture.league)}
-                          className={`p-1 rounded-md border transition-all cursor-pointer ${
+                          onClick={() => {
+                            triggerHaptic('medium');
+                            handleToggleLeagueAlert(fixture.league);
+                          }}
+                          className={`p-1.5 rounded-xl border transition-all cursor-pointer active:scale-90 ${
                             subscribedLeagues.includes(fixture.league)
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100 shadow-2xs'
-                              : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                              ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/20'
+                              : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-emerald-50'
                           }`}
                           title={
                             subscribedLeagues.includes(fixture.league)
@@ -804,9 +824,9 @@ END:VCALENDAR`;
                           }
                         >
                           {subscribedLeagues.includes(fixture.league) ? (
-                            <BellRing className="w-3.5 h-3.5 text-emerald-600" />
+                            <Bell className="w-3.5 h-3.5 text-white animate-bounce" />
                           ) : (
-                            <BellOff className="w-3.5 h-3.5" />
+                            <Bell className="w-3.5 h-3.5" />
                           )}
                         </button>
                         <span className="flex items-center gap-1 font-mono text-[11px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md text-slate-600">

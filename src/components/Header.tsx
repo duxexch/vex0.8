@@ -72,6 +72,18 @@ export const Header: React.FC<HeaderProps> = ({
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
   const tabButtonsRef = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [notificationPermission, setNotificationPermission] = useState<string>('default');
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+      const handleFocus = () => {
+        setNotificationPermission(Notification.permission);
+      };
+      window.addEventListener('focus', handleFocus);
+      return () => window.removeEventListener('focus', handleFocus);
+    }
+  }, []);
 
   const t = TRANSLATIONS[lang] || TRANSLATIONS['ar'];
   const isAr = lang === 'ar';
@@ -304,23 +316,72 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Notification Bell */}
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              onOpenNotifications();
-            }}
-            aria-label={isAr ? 'الإشعارات والتنبيهات' : 'Notifications & Alerts'}
-            className="relative w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 transition-all active:scale-95 border border-slate-200 flex items-center justify-center cursor-pointer shadow-2xs"
-            title={isAr ? 'الإشعارات' : 'Notifications'}
-          >
-            <Bell className="w-3.5 h-3.5" />
-            {unreadNotificationsCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-rose-600 text-white font-mono text-[9px] font-black flex items-center justify-center shadow-xs tabular-nums animate-pulse">
-                {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
-              </span>
-            )}
-          </button>
+          {/* Push Toggle & Notification Bell Group */}
+          <div className="flex items-center gap-1.5 bg-slate-100/60 p-1 rounded-2xl border border-slate-200/80">
+            {/* Toggle Button next to Bell */}
+            <button
+              type="button"
+              onClick={async () => {
+                triggerHaptic('medium');
+                if ('Notification' in window) {
+                  try {
+                    const perm = await Notification.requestPermission();
+                    setNotificationPermission(perm);
+                    if (perm === 'granted') {
+                      new Notification('VEX Deals ⚡', {
+                        body: isAr
+                          ? 'تم تفعيل الإشعارات الفورية لتوقعات الذكاء الاصطناعي بنجاح!'
+                          : 'Push notifications for AI predictions activated successfully!',
+                        icon: '/icon-192.svg',
+                      });
+                    }
+                  } catch (err) {
+                    console.error('Notification permission error', err);
+                  }
+                }
+              }}
+              className={`w-9 h-5 rounded-full transition-all relative flex items-center shrink-0 cursor-pointer ${
+                notificationPermission === 'granted'
+                  ? 'bg-emerald-600 border border-emerald-500/30'
+                  : 'bg-slate-300 border border-slate-400/20'
+              }`}
+              title={isAr ? 'تفعيل الإشعارات الفورية على الجهاز' : 'Toggle Push Notifications'}
+            >
+              <div
+                className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-all duration-200 absolute top-0.5 ${
+                  isAr
+                    ? notificationPermission === 'granted'
+                      ? 'left-0.5'
+                      : 'left-[18px]'
+                    : notificationPermission === 'granted'
+                    ? 'left-[18px]'
+                    : 'left-0.5'
+                }`}
+              />
+            </button>
+
+            {/* Notification Bell */}
+            <button
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenNotifications();
+              }}
+              aria-label={isAr ? 'الإشعارات والتنبيهات' : 'Notifications & Alerts'}
+              className={`relative w-8 h-8 rounded-xl transition-all active:scale-95 flex items-center justify-center cursor-pointer ${
+                notificationPermission === 'granted'
+                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
+              }`}
+              title={isAr ? 'الإشعارات' : 'Notifications'}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-rose-600 text-white font-mono text-[9px] font-black flex items-center justify-center shadow-xs tabular-nums animate-pulse">
+                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+          </div>
 
           {/* PWA Install Button (Shown on mobile browser, hidden in standalone) */}
           {!isStandalone && onInstallPwa && (

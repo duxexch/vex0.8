@@ -66,7 +66,34 @@ export default function App() {
   const [userId, setUserId] = useState<string>('');
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [themeMode] = useState<ThemeMode>('light');
-  const [activeTab, setActiveTab] = useState<TabType>('companies');
+  const getTabFromPath = (path: string): TabType => {
+    const clean = path.replace(/\/$/, '').toLowerCase();
+    if (clean === '/wallets') return 'wallets';
+    if (clean === '/ai-sports') return 'ai-sports';
+    if (clean === '/referrals') return 'referrals';
+    if (clean === '/transfers') return 'transfers';
+    if (clean === '/activity') return 'activity';
+    if (clean === '/unlucky-wall') return 'unlucky-wall';
+    if (clean === '/lottery') return 'lottery';
+    return 'companies';
+  };
+
+  const [activeTab, setActiveTabState] = useState<TabType>(() => {
+    if (typeof window !== 'undefined') {
+      return getTabFromPath(window.location.pathname);
+    }
+    return 'companies';
+  });
+
+  const setActiveTab = useCallback((newTab: TabType) => {
+    setActiveTabState(newTab);
+    if (typeof window !== 'undefined') {
+      const targetPath = newTab === 'companies' ? '/' : `/${newTab}`;
+      if (window.location.pathname !== targetPath && !window.location.pathname.startsWith('/admin')) {
+        window.history.pushState({ tab: newTab }, '', targetPath);
+      }
+    }
+  }, []);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => {
     return localStorage.getItem('vex_display_currency') || detectUserRegionalCurrency();
@@ -189,8 +216,8 @@ export default function App() {
         window.matchMedia('(display-mode: minimal-ui)').matches;
       setIsStandalone(standalone);
 
-      // Check if URL requests admin (e.g. /admin, #admin, ?admin=true)
-      const checkAdminRoute = () => {
+      // Check if URL requests admin or specific tab route
+      const checkAdminAndTabRoute = () => {
         const isHashAdmin = window.location.hash === '#admin';
         const isPathAdmin = window.location.pathname === '/admin' || window.location.pathname.endsWith('/admin');
         const isQueryAdmin = window.location.search.includes('admin=true');
@@ -198,14 +225,16 @@ export default function App() {
           setAdminDashboardOpen(true);
         } else {
           setAdminDashboardOpen(false);
+          const currentTab = getTabFromPath(window.location.pathname);
+          setActiveTabState(currentTab);
         }
       };
-      checkAdminRoute();
-      window.addEventListener('hashchange', checkAdminRoute);
-      window.addEventListener('popstate', checkAdminRoute);
+      checkAdminAndTabRoute();
+      window.addEventListener('hashchange', checkAdminAndTabRoute);
+      window.addEventListener('popstate', checkAdminAndTabRoute);
       return () => {
-        window.removeEventListener('hashchange', checkAdminRoute);
-        window.removeEventListener('popstate', checkAdminRoute);
+        window.removeEventListener('hashchange', checkAdminAndTabRoute);
+        window.removeEventListener('popstate', checkAdminAndTabRoute);
       };
     }
   }, []);

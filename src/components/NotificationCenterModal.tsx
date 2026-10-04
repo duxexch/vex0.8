@@ -10,6 +10,7 @@ import {
   Trash2,
   ExternalLink,
   Sparkles,
+  Search,
 } from 'lucide-react';
 
 interface NotificationCenterModalProps {
@@ -36,10 +37,30 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const isAr = lang === 'ar';
   const [selectedFilter, setSelectedFilter] = useState<NotificationCategory | 'all'>('all');
   const [pushStatus, setPushStatus] = useState<string>('default');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const filteredNotifications = notifications.filter((item) => {
-    if (selectedFilter === 'all') return true;
-    return item.category === selectedFilter;
+    const matchesCategory = selectedFilter === 'all' || item.category === selectedFilter;
+    if (!matchesCategory) return false;
+
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+
+    const title = (item.title || '').toLowerCase();
+    const message = (item.message || '').toLowerCase();
+    const transTitleAr = (item.translations?.ar?.title || '').toLowerCase();
+    const transMsgAr = (item.translations?.ar?.message || '').toLowerCase();
+    const transTitleEn = (item.translations?.en?.title || '').toLowerCase();
+    const transMsgEn = (item.translations?.en?.message || '').toLowerCase();
+
+    return (
+      title.includes(query) ||
+      message.includes(query) ||
+      transTitleAr.includes(query) ||
+      transMsgAr.includes(query) ||
+      transTitleEn.includes(query) ||
+      transMsgEn.includes(query)
+    );
   });
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -160,6 +181,28 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                 >
                   <X className="w-5 h-5" />
                 </button>
+              </div>
+            </div>
+
+            {/* Search Input for News & Notifications */}
+            <div className="px-4 py-2 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={isAr ? 'البحث عن الأخبار، التوقعات، أو محتوى الإشعارات...' : 'Search news, sports predictions, or notifications...'}
+                  className="w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2 ps-9 pe-8 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-500/50"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-full"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 

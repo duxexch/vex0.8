@@ -894,7 +894,7 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                   return (
                     <div
                       key={company.id}
-                      className="bg-white border border-slate-200 hover:border-slate-300 rounded-2xl p-4 transition-all duration-200 shadow-2xs hover:shadow-xs flex flex-col justify-between relative overflow-hidden h-full group"
+                      className="bg-white border border-slate-200 hover:border-slate-300 rounded-2xl p-4 transition-all duration-200 shadow-2xs hover:shadow-md flex flex-col justify-between relative overflow-hidden h-full group spotlight-surface tilt-card-3d"
                     >
                       {/* Top Color Accent Line */}
                       <div

@@ -1428,10 +1428,11 @@ ${primeMatch.teams} (${primeMatch.league})
 {"title": "...", "message": "..."}`;
 
         const res = await client.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-3.5-flash',
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
+            tools: [{ googleSearch: {} }],
           },
         });
 
@@ -1588,11 +1589,12 @@ ${primeMatch.teams} (${primeMatch.league})
 }`;
 
         const res = await client.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-3.5-flash',
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
             temperature: 0.4,
+            tools: [{ googleSearch: {} }],
           },
         });
 

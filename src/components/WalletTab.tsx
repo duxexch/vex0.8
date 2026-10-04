@@ -101,7 +101,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
   return (
     <div className="space-y-3.5 pb-24 animate-fade-in select-none">
       {/* Top Total Balance Summary Card */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs text-slate-900 space-y-3.5">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs text-slate-900 space-y-3.5 spotlight-surface tilt-card-3d">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
             <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">

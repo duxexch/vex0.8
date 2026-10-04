@@ -10,6 +10,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { storage } from './server/storage';
 import { ServerCompensationRequest } from './server/seedData';
 import { agentEngine, calculateNotificationTiming } from './server/agentEngine';
+import { resolveCleanHost, generateRobotsTxt, generateSitemapXml, renderSeoMetaHead } from './server/seoEngine';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
 const currentDirname = currentFilename ? path.dirname(currentFilename) : process.cwd();
@@ -51,6 +52,44 @@ app.use((req, res, next) => {
     "default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https: wss: data: blob: *; img-src 'self' https: data: blob:; font-src 'self' https: data:; frame-ancestors *;"
   );
   next();
+});
+
+// Multi-Domain Alias 301 Permanent Redirect Middleware
+app.use((req, res, next) => {
+  const { shouldRedirectAlias, redirectUrl } = resolveCleanHost(req);
+  if (shouldRedirectAlias && redirectUrl) {
+    return res.redirect(301, redirectUrl);
+  }
+  next();
+});
+
+// Dynamic Multi-Domain Robots.txt Endpoint
+app.get('/robots.txt', (req, res) => {
+  const { hostname } = resolveCleanHost(req);
+  const content = generateRobotsTxt(hostname);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(content);
+});
+
+// Dynamic Multi-Domain XML Sitemap Endpoint
+app.get('/sitemap.xml', (req, res) => {
+  const { hostname } = resolveCleanHost(req);
+  const content = generateSitemapXml(hostname);
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(content);
+});
+
+// Production System & SEO Health Check Endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    domainsConfigured: 5,
+    environment: process.env.NODE_ENV || 'production',
+  });
 });
 
 // Advanced In-Memory Rate Limiter (Protection against DDoS and Brute Force)
@@ -631,8 +670,11 @@ app.post('/api/ai/agent-broadcast', async (req, res) => {
   if (client) {
     try {
       const response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: `قم بصياغة إشعار عاجل وقوي باللغة العربية لا يتجاوز 25 كلمة يتضمن توقيع وتحليل سريع لمباراة قمة بين ${topMatch.homeTeam} و ${topMatch.awayTeam} مع خيار مقترح ونسبة ثقة عالية.`,
+        model: 'gemini-3.5-flash',
+        contents: `قم بالبحث باستخدام جوجل والإنترنت عن أحدث الأخبار الفورية والغيابات والتشكيلة لمباراة القمة بين ${topMatch.homeTeam} و ${topMatch.awayTeam}. بناءً على الأخبار الحية الحقيقية، قم بصياغة إشعار وتنبيه عاجل وقوي باللغة العربية لا يتجاوز 25 كلمة يتضمن توقيع وتحليل حقيقي ملموس للمباراة مع خيار مقترح ونسبة ثقة عالية.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
       });
       if (response.text) {
         aiAlertText = response.text.trim();
@@ -3117,8 +3159,19 @@ async function setupServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { index: false }));
     app.get('*', (req, res) => {
+      try {
+        const indexPath = path.join(distPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+          const rawHtml = fs.readFileSync(indexPath, 'utf-8');
+          const seoHtml = renderSeoMetaHead(req, rawHtml);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.send(seoHtml);
+        }
+      } catch (err) {
+        console.error('Error serving pre-rendered HTML:', err);
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

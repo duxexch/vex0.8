@@ -68,7 +68,7 @@ export const LotteryPrizeCards: React.FC<LotteryPrizeCardsProps> = ({
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              className={`relative overflow-hidden rounded-2xl p-4.5 transition-all duration-300 group flex flex-col justify-between ${
+              className={`relative overflow-hidden rounded-2xl p-4.5 transition-all duration-300 group flex flex-col justify-between spotlight-surface tilt-card-3d ${
                 isJackpot
                   ? 'bg-gradient-to-br from-amber-950/40 via-slate-900/80 to-slate-950/90 backdrop-blur-xl border-2 border-amber-500/60 shadow-xl shadow-amber-500/10 hover:border-amber-400'
                   : 'bg-gradient-to-br from-slate-900/70 via-slate-900/60 to-slate-950/80 backdrop-blur-xl border border-white/10 dark:border-slate-800/80 hover:border-amber-500/40 shadow-lg shadow-black/20'

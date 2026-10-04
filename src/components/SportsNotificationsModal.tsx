@@ -565,11 +565,13 @@ export const SportsNotificationsModal: React.FC<SportsNotificationsModalProps> =
                                       </span>
                                       
                                       {/* Custom Switch Toggle */}
-                                      <div className={`w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                                      <div className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer ${
                                         isSubscribed ? 'bg-emerald-600' : 'bg-slate-200'
                                       }`}>
-                                        <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
-                                          isSubscribed ? (isAr ? '-translate-x-4' : 'translate-x-4') : 'translate-x-0'
+                                        <div className={`w-4 h-4 rounded-full bg-white shadow-md transition-all duration-200 absolute top-0.5 ${
+                                          isAr
+                                            ? isSubscribed ? 'left-0.5' : 'left-[18px]'
+                                            : isSubscribed ? 'left-[18px]' : 'left-0.5'
                                         }`} />
                                       </div>
                                     </div>

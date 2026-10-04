@@ -1,5 +1,26 @@
 @import "tailwindcss";
 
+:root {
+  --color-primary: #059669;
+  --color-primary-hover: #047857;
+  --color-accent: #f59e0b;
+  --color-bg-light: #f8fafc;
+  --color-surface-light: #ffffff;
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+  --color-border-light: rgba(226, 232, 240, 0.9);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+  --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-normal: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-slow: 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 @layer utilities {
   .safe-area-top {
     padding-top: calc(env(safe-area-inset-top, 0px));
@@ -16,6 +37,90 @@
   .touch-target {
     min-height: 44px;
     min-width: 44px;
+  }
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+}
+
+/* 3D Dynamic Surface Spotlight Lighting */
+.spotlight-surface {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(
+    600px circle at var(--spotlight-x, 50%) var(--spotlight-y, 50%),
+    rgba(255, 255, 255, 0.18),
+    transparent 40%
+  );
+  opacity: var(--spotlight-opacity, 0);
+  transition: opacity 0.25s ease;
+  z-index: 10;
+}
+
+/* 3D Tilt Card Component Style */
+.tilt-card-3d {
+  transform-style: preserve-3d;
+  transform: perspective(1000px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(0);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  will-change: transform;
+}
+
+/* Magnetic Button Target */
+.magnetic-target {
+  transform: translate3d(var(--magnetic-x, 0px), var(--magnetic-y, 0px), 0);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* 3D Tactile Interactive Buttons */
+.btn-3d-primary {
+  position: relative;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-3d-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(5, 150, 105, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.btn-3d-primary:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 2px 6px rgba(5, 150, 105, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.btn-3d-gold {
+  position: relative;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-3d-gold:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(245, 158, 11, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.btn-3d-gold:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Reduced Motion Override for Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .tilt-card-3d,
+  .magnetic-target,
+  .btn-3d-primary,
+  .btn-3d-gold {
+    transform: none !important;
+    transition: none !important;
+  }
+  .spotlight-surface::before {
+    display: none !important;
   }
 }
 
@@ -97,6 +202,26 @@ input, textarea {
     box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.25), 0 0 16px rgba(245, 158, 11, 0.65);
     transform: scale(1.04);
   }
+}
+
+@keyframes shimmerWave {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(241, 245, 249, 0.9) 0%,
+    rgba(226, 232, 240, 1) 50%,
+    rgba(241, 245, 249, 0.9) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 1.6s infinite ease-in-out;
 }
 
 .animate-fade-in {
