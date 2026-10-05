@@ -58,6 +58,7 @@ const STORAGE_KEYS = {
   BRANDING: 'vex_app_branding',
   NOTIFICATIONS: 'vex_app_notifications',
   PHONE_CHANGE_REQUESTS: 'vex_phone_change_requests',
+  PHONE_REF: 'vex_phone_ref',
 };
 
 // SHA-256 for secure PIN hashing
@@ -81,8 +82,73 @@ async function sha256(str: string): Promise<string> {
   return Math.abs(hash).toString(16).padStart(8, '0');
 }
 
+export function normalizePhoneRef(phone: string): string {
+  const digits = (phone || '').replace(/[^0-9]/g, '');
+  return digits.length >= 7 && digits.length <= 15 ? digits : '';
+}
+
+function migrateLocalRecordsToUid(newUid: string, oldUid: string): void {
+  if (typeof window === 'undefined' || !newUid || !oldUid || oldUid === newUid) return;
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k !== STORAGE_KEYS.UID) keys.push(k);
+  }
+  keys.forEach((key) => {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    let changed = false;
+    const walk = (node: any): void => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (node.user_id === oldUid) {
+        node.user_id = newUid;
+        changed = true;
+      }
+      if (node.target_user_id === oldUid) {
+        node.target_user_id = newUid;
+        changed = true;
+      }
+      Object.keys(node).forEach((k) => walk(node[k]));
+    };
+    walk(parsed);
+    if (changed) localStorage.setItem(key, JSON.stringify(parsed));
+  });
+}
+
+export function bindPhoneAsReference(phone: string): string {
+  if (typeof window === 'undefined') return phone || '';
+  const digits = normalizePhoneRef(phone);
+  const current = localStorage.getItem(STORAGE_KEYS.UID) || '';
+  if (!digits) return current;
+  localStorage.setItem(STORAGE_KEYS.PHONE_REF, digits);
+  if (current !== digits) {
+    migrateLocalRecordsToUid(digits, current);
+    localStorage.setItem(STORAGE_KEYS.UID, digits);
+  }
+  return digits;
+}
+
 export function getOrCreateUserId(): string {
   if (typeof window === 'undefined') return 'WCm5x8k2ab3f';
+  const phoneRef = localStorage.getItem(STORAGE_KEYS.PHONE_REF);
+  if (phoneRef) {
+    const uid = localStorage.getItem(STORAGE_KEYS.UID);
+    if (uid !== phoneRef) {
+      migrateLocalRecordsToUid(phoneRef, uid || '');
+      localStorage.setItem(STORAGE_KEYS.UID, phoneRef);
+    }
+    return phoneRef;
+  }
   let uid = localStorage.getItem(STORAGE_KEYS.UID);
   if (!uid) {
     const timePart = Date.now().toString(36);
@@ -106,13 +172,31 @@ export function generateReferralCode(userId: string, companyId: string): string 
 
 class VexMobileApiService {
   private userId: string;
+  private serverProfileSynced = false;
 
   constructor() {
+    // Backfill: profiles verified before phone-reference existed become phone-keyed
+    if (typeof window !== 'undefined' && !localStorage.getItem(STORAGE_KEYS.PHONE_REF)) {
+      try {
+        const existing = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROFILE) || 'null');
+        if (existing && existing.is_phone_verified && existing.phone_number) {
+          bindPhoneAsReference(existing.phone_number);
+        }
+      } catch {
+        // pass
+      }
+    }
     this.userId = getOrCreateUserId();
     this.initDefaultData();
   }
 
   public getUserId(): string {
+    return this.userId;
+  }
+
+  public bindPhoneAsReference(phone: string): string {
+    const uid = bindPhoneAsReference(phone);
+    if (uid) this.userId = uid;
     return this.userId;
   }
 
@@ -210,6 +294,34 @@ class VexMobileApiService {
             totalInteractions: 415,
           };
           localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(prof));
+        }
+        // One-time adoption: if this phone reference is verified on the server
+        // (registered from another device), mirror that state into the local profile.
+        if (!this.serverProfileSynced && !prof.is_phone_verified) {
+          const ref = normalizePhoneRef(prof.phone_number) || localStorage.getItem(STORAGE_KEYS.PHONE_REF);
+          if (ref) {
+            this.serverProfileSynced = true;
+            try {
+              const res = await fetch(`/api/users/${ref}/profile`);
+              if (res.ok) {
+                const data = await res.json();
+                const sp = data && data.profile;
+                if (sp && sp.is_phone_verified && sp.phone_number) {
+                  prof.phone_number = sp.phone_number;
+                  prof.is_phone_verified = true;
+                  prof.phone_locked = true;
+                  prof.user_id = ref;
+                  if (sp.telegram_username) prof.telegram_username = sp.telegram_username;
+                  if (sp.telegram_id) prof.telegram_id = String(sp.telegram_id);
+                  localStorage.setItem(STORAGE_KEYS.PHONE_REF, ref);
+                  localStorage.setItem(STORAGE_KEYS.UID, ref);
+                  localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(prof));
+                }
+              }
+            } catch {
+              // offline / non-server environment — keep local state
+            }
+          }
         }
         return prof;
       } catch {
@@ -467,6 +579,8 @@ class VexMobileApiService {
     const profile = await this.getUserProfile();
     profile.is_phone_verified = true;
     profile.phone_locked = true;
+    this.bindPhoneAsReference(profile.phone_number);
+    profile.user_id = this.userId;
     localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_OTP);
 
@@ -645,6 +759,9 @@ class VexMobileApiService {
         profile.telegram_id = String(data.telegram_id);
       }
 
+      // The verified phone number becomes the reference key for the user's data
+      this.bindPhoneAsReference(profile.phone_number);
+      profile.user_id = this.userId;
       localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
 
       await this.broadcastNotification(
@@ -667,6 +784,8 @@ class VexMobileApiService {
           profile.phone_number = session.phone_number;
           profile.is_phone_verified = true;
           profile.phone_locked = true;
+          this.bindPhoneAsReference(profile.phone_number);
+          profile.user_id = this.userId;
           localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
           localStorage.removeItem(STORAGE_KEYS.ACTIVE_OTP);
           return {
@@ -846,6 +965,8 @@ class VexMobileApiService {
       profile.phone_number = req.new_phone;
       profile.is_phone_verified = true;
       profile.phone_locked = true;
+      this.bindPhoneAsReference(req.new_phone);
+      profile.user_id = this.userId;
       localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
     }
 
@@ -1920,6 +2041,7 @@ class VexMobileApiService {
 
     // Purge all user data
     localStorage.removeItem(STORAGE_KEYS.UID);
+    localStorage.removeItem(STORAGE_KEYS.PHONE_REF);
     localStorage.removeItem(STORAGE_KEYS.PROFILE);
     localStorage.removeItem(STORAGE_KEYS.PIN_HASH);
     localStorage.removeItem(STORAGE_KEYS.ACCOUNTS);

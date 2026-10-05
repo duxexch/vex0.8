@@ -19,6 +19,27 @@
   --transition-normal: 250ms cubic-bezier(0.16, 1, 0.3, 1);
   --transition-slow: 400ms cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Motion System Tokens (Phase 1/90 — single source of truth) ── */
+  --motion-fast: 150ms;   /* micro feedback: press, icon nudge, focus */
+  --motion-normal: 250ms; /* hover / interaction / card depth */
+  --motion-slow: 400ms;   /* entrance / reveal / deeper transitions */
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+
+  /* ── Depth / Elevation Hierarchy (Phase 59/60) ── */
+  --elev-0: none;
+  --elev-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
+  --elev-2: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+  --elev-3: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -4px rgba(15, 23, 42, 0.06);
+  --elev-4: 0 20px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
+
+  /* ── Safe Motion Limits (Phase 91 — hard clamps for pointer effects) ── */
+  --limit-tilt: 6deg;
+  --limit-magnetic: 8px;
+  --limit-lift: -3px;
+  --limit-press: 0.98;
 }
 
 @layer utilities {
@@ -110,17 +131,135 @@
   box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-/* Reduced Motion Override for Accessibility */
+/* ═══════════════════════════════════════════════════════════
+   INTERACTION SYSTEM — Cards, Reveal, Button feedback, Icons
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Card system (Phase 15/23/42): lift + press physics ── */
+.card-interactive {
+  transition:
+    transform var(--motion-normal) var(--ease-standard),
+    box-shadow var(--motion-normal) var(--ease-standard),
+    border-color var(--motion-normal) var(--ease-standard);
+}
+.card-interactive:hover {
+  transform: translateY(var(--limit-lift));
+  box-shadow: var(--elev-3);
+}
+.card-interactive:active {
+  transform: translateY(1px) scale(var(--limit-press));
+  box-shadow: var(--elev-1);
+  transition-duration: var(--motion-fast);
+}
+/* Tilt cards own their transform — depth via shadow response only */
+.card-interactive.tilt-card-3d:hover {
+  transform: perspective(1000px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  box-shadow: var(--elev-3);
+}
+/* Featured surface: stronger baseline elevation + border clarity */
+.card-featured {
+  box-shadow: var(--elev-2);
+  border-color: rgba(5, 150, 105, 0.35);
+}
+.card-featured:hover {
+  box-shadow: var(--elev-3);
+}
+
+/* ── Scroll reveal (Phase 27/28): set by useScrollReveal via useLayoutEffect (no flash) ── */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity var(--motion-slow) var(--ease-decelerate),
+    transform var(--motion-slow) var(--ease-decelerate);
+}
+[data-reveal='in'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Button state feedback (Phase 11/12/13): success pop + soft error nudge ── */
+@keyframes statePop {
+  0% { transform: scale(0.55); opacity: 0; }
+  60% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-state-pop {
+  animation: statePop var(--motion-normal) var(--ease-spring) both;
+}
+@keyframes softNudge {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-2px); }
+  70% { transform: translateX(2px); }
+}
+.animate-soft-nudge {
+  animation: softNudge 240ms ease-in-out 1 both;
+}
+.btn-feedback-success:not(:disabled) {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+.btn-feedback-error:not(:disabled) {
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.45), 0 4px 12px rgba(244, 63, 94, 0.2) !important;
+}
+
+/* ── Button icon directional motion (Phase 10): opt-in via data-dir ── */
+.btn-motion .btn-icon {
+  display: inline-flex;
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+.btn-motion:hover:not(:disabled) .btn-icon[data-dir='next'] {
+  transform: translateX(3px);
+}
+[dir='rtl'] .btn-motion:hover:not(:disabled) .btn-icon[data-dir='next'] {
+  transform: translateX(-3px);
+}
+.btn-motion:hover:not(:disabled) .btn-icon[data-dir='down'] {
+  transform: translateY(2px);
+}
+.btn-motion:hover:not(:disabled) .btn-icon[data-dir='up'] {
+  transform: translateY(-2px);
+}
+
+/* ── Smart header elevation (Phase 30): applied on scroll state ── */
+.header-elevated {
+  box-shadow: var(--elev-2);
+}
+
+/* ── Depth-consistent surface baseline (Phase 38) ── */
+.surface-elevated {
+  box-shadow: var(--elev-1);
+  border: 1px solid var(--color-border-light);
+}
+
+/* Reduced Motion Override for Accessibility (Phase 49 — mandatory) */
 @media (prefers-reduced-motion: reduce) {
   .tilt-card-3d,
   .magnetic-target,
   .btn-3d-primary,
-  .btn-3d-gold {
+  .btn-3d-gold,
+  .card-interactive,
+  .card-interactive:hover,
+  .card-interactive:active {
     transform: none !important;
     transition: none !important;
+    animation: none !important;
   }
   .spotlight-surface::before {
     display: none !important;
+  }
+  [data-reveal],
+  [data-reveal='in'] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .animate-state-pop,
+  .animate-soft-nudge {
+    animation: none !important;
+  }
+  .header-elevated {
+    box-shadow: none !important;
   }
 }
 

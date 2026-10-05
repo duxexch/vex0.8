@@ -74,6 +74,35 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// ==============================================================================
+// 🔐 SESSION GUARD CLIENT — bounce to /auth-required when the server says
+// the Telegram session is missing/expired (SESSION_REQUIRED / INVALID_SESSION /
+// SESSION_EXPIRED / SESSION_NOT_VERIFIED).
+// ==============================================================================
+if (typeof window !== 'undefined') {
+  const originalFetch = window.fetch.bind(window);
+  const AUTH_ERRORS = ['SESSION_REQUIRED', 'INVALID_SESSION', 'SESSION_EXPIRED', 'SESSION_NOT_VERIFIED'];
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const res = await originalFetch(input, init);
+    try {
+      if (res.status === 401 || res.status === 403) {
+        const data = await res.clone().json();
+        if (data && typeof data.error === 'string' && AUTH_ERRORS.includes(data.error)) {
+          const here = window.location.pathname;
+          if (!here.startsWith('/auth-required')) {
+            const redirect = here + window.location.search;
+            window.location.assign('/auth-required?redirect=' + encodeURIComponent(redirect));
+          }
+        }
+      }
+    } catch {
+      // response is not JSON or already consumed — nothing to do
+    }
+    return res;
+  };
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <LanguageProvider>

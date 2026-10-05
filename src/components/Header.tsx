@@ -110,6 +110,32 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [activeTab]);
 
+  // Smart header (Phase 30): elevation state when content scrolls beneath.
+  // Capture-phase listener catches the inner scroll container (scroll events don't bubble).
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    let raf = 0;
+    const onScrollCapture = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const top =
+          typeof document.scrollingElement?.scrollTop === 'number'
+            ? document.scrollingElement.scrollTop
+            : 0;
+        // Find any actively scrolling ancestor region: check the primary app scroller
+        const scroller = document.querySelector<HTMLElement>('.overflow-y-auto');
+        const st = scroller ? scroller.scrollTop : top;
+        setScrolled(st > 6);
+      });
+    };
+    window.addEventListener('scroll', onScrollCapture, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScrollCapture, { capture: true });
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   const currentLangObj = LANGUAGES.find((l) => l.code === lang) || LANGUAGES[0];
 
   // All 8 sections - icons only, no scrolling, full access
@@ -175,7 +201,11 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 text-slate-900 safe-area-top shadow-xs select-none">
+      <header
+        className={`sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 text-slate-900 safe-area-top shadow-xs select-none transition-shadow duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          scrolled ? 'header-elevated' : ''
+        }`}
+      >
       {/* 1. Main Top App Bar Row */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2 flex items-center justify-between gap-2 sm:gap-3">
         {/* Left: Branding & Status Badges */}

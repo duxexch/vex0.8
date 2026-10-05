@@ -11,6 +11,8 @@ import { storage } from './server/storage';
 import { ServerCompensationRequest } from './server/seedData';
 import { agentEngine, calculateNotificationTiming } from './server/agentEngine';
 import { resolveCleanHost, generateRobotsTxt, generateSitemapXml, renderSeoMetaHead } from './server/seoEngine';
+import { geoLocaleMiddleware } from './server/geoLocale';
+import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS } from './server/sessionGuard';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
 const currentDirname = currentFilename ? path.dirname(currentFilename) : process.cwd();
@@ -63,6 +65,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Geo-Locale Detection Middleware (Accept-Language + GeoIP)
+app.use(geoLocaleMiddleware);
+
 // Dynamic Multi-Domain Robots.txt Endpoint
 app.get('/robots.txt', (req, res) => {
   const { hostname } = resolveCleanHost(req);
@@ -113,6 +118,43 @@ app.use('/api/', (req, res, next) => {
   record.count++;
   next();
 });
+
+// Session Guard Middleware (protects routes requiring authentication)
+const authRequiredMiddleware = createAuthRequiredMiddleware({
+  publicPaths: [
+    '/',
+    '/health',
+    '/robots.txt',
+    '/sitemap.xml',
+    '/api/telegram/*',
+    '/api/health',
+    '/api/app-branding',
+    '/api/manifest.json',
+    '/api/media/assets',
+    '/api/lottery/status',
+    '/api/viral/*',
+    '/auth-required',
+    '/favicon.ico',
+    '/manifest.json',
+    '/icon-*.svg',
+    '/icon-*.png',
+    '/sw.js',
+    '/offline.html',
+    '/_next/*',
+    '/static/*',
+    '/assets/*',
+    // Vite dev-server tooling paths (no-ops in production)
+    '/@vite/*',
+    '/@react-refresh',
+    '/@fs/*',
+    '/src/*',
+    '/node_modules/*',
+    '/__vite_ping',
+  ],
+  redirectPath: '/auth-required',
+  apiMode: false,
+});
+app.use(authRequiredMiddleware);
 
 // Lazy Google Gen AI initialization
 let aiClient: GoogleGenAI | null = null;
@@ -2350,6 +2392,9 @@ const TELEGRAM_VERIFIED_HISTORY: Array<{
   session_id: string;
 }> = [];
 
+// Connect session store to session guard middleware
+setSessionStore(TELEGRAM_SESSIONS);
+
 // Helper: Mask token for display
 function maskTelegramToken(token: string): string {
   if (!token) return '';
@@ -2469,6 +2514,7 @@ async function handleTelegramUpdate(update: any) {
       TELEGRAM_SESSIONS.set(sessionId, session);
     } else {
       session.status = 'contact_received';
+      session.expires_at = Date.now() + 15 * 60 * 1000;
       session.phone_number = cleanPhone;
       session.telegram_username = telegramUsername;
       session.telegram_id = telegramUserId;
@@ -2513,6 +2559,17 @@ async function handleTelegramUpdate(update: any) {
     let deepLinkPayload = parts[1] || '';
     if (deepLinkPayload.startsWith('v_')) {
       const sessId = deepLinkPayload;
+      // Ensure the deep-linked session exists (auth pages create it server-side;
+      // this guards against stale/foreign payloads so the contact flow binds correctly)
+      if (!TELEGRAM_SESSIONS.has(sessId)) {
+        TELEGRAM_SESSIONS.set(sessId, {
+          session_id: sessId,
+          user_id: 'user_guest',
+          created_at: Date.now(),
+          expires_at: Date.now() + 15 * 60 * 1000,
+          status: 'pending_telegram',
+        });
+      }
       if (telegramUserId) {
         TELEGRAM_USER_SESSIONS.set(telegramUserId, sessId);
       }
@@ -2779,9 +2836,41 @@ app.post('/api/telegram/verify-code', (req, res) => {
 
   // Success: mark verified
   session.status = 'verified';
+  session.expires_at = Date.now() + SESSION_TTL_MS;
   TELEGRAM_ACTIVE_CODES.delete(cleanCode);
 
+  // Issue the HttpOnly session cookie so the session guard admits this browser
+  const isSecure =
+    req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+  res.setHeader('Set-Cookie', buildSessionCookie(session.session_id, isSecure));
+
   const verifiedPhone = session.phone_number || '';
+
+  // Registration identity: the verified phone number is the reference key for this user's data.
+  // Any legacy profile keyed by the client-generated uid is re-keyed to the phone.
+  const phoneRef = verifiedPhone.replace(/[^0-9]/g, '');
+  if (phoneRef.length >= 7) {
+    const legacyId = typeof userId === 'string' ? userId.trim() : '';
+    if (legacyId && legacyId !== phoneRef && legacyId.length >= 3) {
+      const profiles = storage.getUserProfiles();
+      const legacyIdx = profiles.findIndex((p: any) => p && p.user_id === legacyId);
+      if (legacyIdx >= 0) {
+        const dupIdx = profiles.findIndex((p: any) => p && p.user_id === phoneRef);
+        if (dupIdx >= 0 && dupIdx !== legacyIdx) profiles.splice(legacyIdx, 1);
+        else profiles[legacyIdx].user_id = phoneRef;
+        storage.saveUserProfiles(profiles);
+      }
+    }
+    const phoneProfile = storage.getUserProfile(phoneRef);
+    phoneProfile.phone_number = verifiedPhone;
+    phoneProfile.is_phone_verified = true;
+    phoneProfile.phone_locked = true;
+    phoneProfile.phone_reference = true;
+    if (session.telegram_username) phoneProfile.telegram_username = session.telegram_username;
+    if (session.telegram_id) phoneProfile.telegram_id = String(session.telegram_id);
+    phoneProfile.updated_at = new Date().toISOString();
+    storage.saveUserProfile(phoneProfile);
+  }
 
   TELEGRAM_VERIFIED_HISTORY.unshift({
     phone: verifiedPhone,
@@ -2811,7 +2900,9 @@ app.post('/api/telegram/verify-code', (req, res) => {
 
   res.json({
     success: true,
+    session_id: session.session_id,
     phone_number: verifiedPhone,
+    phone_ref: phoneRef,
     telegram_username: session.telegram_username,
     telegram_id: session.telegram_id,
     message: `تم تأكيد وتوثيق رقم هاتفك (${verifiedPhone}) وقفله في المحفظة بنجاح!`,
@@ -2844,6 +2935,7 @@ app.post('/api/telegram/simulate-contact', (req, res) => {
   };
 
   session.status = 'contact_received';
+  session.expires_at = Date.now() + 15 * 60 * 1000;
   session.phone_number = cleanPhone;
   session.code = code;
   session.telegram_username = telegramUsername || 'demo_user';
@@ -2875,6 +2967,33 @@ app.post('/api/telegram/webhook', async (req, res) => {
     console.error('❌ [Telegram Webhook] Error:', err);
   }
   res.sendStatus(200);
+});
+
+// Auth Required Page — shown when session is missing/invalid
+app.get('/auth-required', (req, res) => {
+  const redirect = req.query.redirect as string || '/';
+  const domain = req.query.domain as string || 'vex.deals';
+  const htmlPath = path.join(currentDirname, 'public', 'auth-required.html');
+  
+  if (!fs.existsSync(htmlPath)) {
+    return res.status(404).send('Auth required page not found');
+  }
+  
+  let html = fs.readFileSync(htmlPath, 'utf-8');
+  
+  // Inject query params for client-side
+  const scriptTag = `<script>
+    window.__AUTH_REDIRECT__ = "${redirect.replace(/"/g, '\\"')}";
+    window.__AUTH_DOMAIN__ = "${domain.replace(/"/g, '\\"')}";
+  </script>`;
+  
+  html = html.replace('</head>', `${scriptTag}</head>`);
+  
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.send(html);
 });
 
 // ========================================================

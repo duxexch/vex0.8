@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>تسجيل الدخول مطلوب | VEX Deals</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Cairo', sans-serif; }
+    .domain-card { transition: all 0.2s ease; }
+    .domain-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    .domain-card.selected { border-color: #059669; box-shadow: 0 0 0 2px #059669; }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in-up { animation: fadeInUp 0.5s ease forwards; }
+    @keyframes pulseDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .pulse-dot { animation: pulseDot 1.2s ease-in-out infinite; }
+    #codeInput { letter-spacing: 0.35em; }
+  </style>
+</head>
+<body class="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+  <div class="w-full max-w-4xl mx-auto animate-fade-in-up">
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-emerald-100 mb-6">
+        <svg class="w-10 h-10 text-emerald-600 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-3">جلسة مطلوبة</h1>
+      <p class="text-gray-600 text-lg max-w-2xl mx-auto">
+        للوصول لهذه الصفحة، تحتاج لتسجيل الدخول عبر بوت تيليجرام المعتمد.<br>
+        اختر دومينك المفضل بالأسفل للبدء.
+      </p>
+    </div>
+
+    <!-- Domain Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8" id="domainGrid">
+      <button type="button" class="domain-card p-6 rounded-2xl border-2 border-gray-200 bg-white flex flex-col items-center cursor-pointer" data-domain="vex.deals" data-locale="ar_eg" onclick="selectDomain(this)">
+        <div class="w-16 h-16 rounded-xl bg-emerald-100 flex items-center justify-center mb-4">
+          <svg class="w-8 h-8 text-emerald-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-1">VEX Deals</h3>
+        <p class="text-gray-500 text-sm text-center">المنصة الأساسية — مصر والعالم</p>
+        <span class="mt-3 inline-block px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-full">الرئيسي</span>
+      </button>
+
+      <button type="button" class="domain-card p-6 rounded-2xl border-2 border-gray-200 bg-white flex flex-col items-center cursor-pointer" data-domain="betjam.sbs" data-locale="ar_gulf" onclick="selectDomain(this)">
+        <div class="w-16 h-16 rounded-xl bg-amber-100 flex items-center justify-center mb-4">
+          <svg class="w-8 h-8 text-amber-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-1">Betjam Partner Portal</h3>
+        <p class="text-gray-500 text-sm text-center">بوابة بتجام المعتمدة — الخليج</p>
+        <span class="mt-3 inline-block px-3 py-1 text-xs font-medium bg-amber-50 text-amber-700 rounded-full">شريك</span>
+      </button>
+
+      <button type="button" class="domain-card p-6 rounded-2xl border-2 border-gray-200 bg-white flex flex-col items-center cursor-pointer" data-domain="betongame.cloud" data-locale="ar_gulf" onclick="selectDomain(this)">
+        <div class="w-16 h-16 rounded-xl bg-blue-100 flex items-center justify-center mb-4">
+          <svg class="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-1">BetOnGame Cloud</h3>
+        <p class="text-gray-500 text-sm text-center">بوابة BetOnGame — الألعاب</p>
+        <span class="mt-3 inline-block px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded-full">شريك</span>
+      </button>
+
+      <button type="button" class="domain-card p-6 rounded-2xl border-2 border-gray-200 bg-white flex flex-col items-center cursor-pointer" data-domain="1xbetservices.com" data-locale="ar_gulf" onclick="selectDomain(this)">
+        <div class="w-16 h-16 rounded-xl bg-sky-100 flex items-center justify-center mb-4">
+          <svg class="w-8 h-8 text-sky-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-1">1xBet Services</h3>
+        <p class="text-gray-500 text-sm text-center">خدمات 1xBet المعتمدة — الخليج</p>
+        <span class="mt-3 inline-block px-3 py-1 text-xs font-medium bg-sky-50 text-sky-700 rounded-full">شريك</span>
+      </button>
+
+      <button type="button" class="domain-card p-6 rounded-2xl border-2 border-gray-200 bg-white flex flex-col items-center cursor-pointer" data-domain="vixo.uno" data-locale="ar_eg" onclick="selectDomain(this)">
+        <div class="w-16 h-16 rounded-xl bg-emerald-100 flex items-center justify-center mb-4">
+          <svg class="w-8 h-8 text-emerald-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-1">VIXO Network</h3>
+        <p class="text-gray-500 text-sm text-center">شبكة VIXO — إعادة توجيه</p>
+        <span class="mt-3 inline-block px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-full">تحويل</span>
+      </button>
+    </div>
+
+    <!-- Selected Domain Action -->
+    <div id="selectedAction" class="hidden animate-fade-in-up">
+      <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-6">
+        <div class="flex items-center justify-center mb-4">
+          <svg class="w-10 h-10 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 class="text-2xl font-bold text-emerald-800 text-center mb-2" id="selectedDomainName">VEX Deals</h2>
+        <p class="text-emerald-700 text-center mb-6" id="selectedActionHint">تم اختيار هذا الدومين. اضغط الزر بالأسفل لفتح بوت تيليجرام وإنشاء جلسة آمنة.</p>
+
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+          <a id="telegramBtn" href="#" target="_blank" rel="noopener" class="flex-1 sm:w-auto inline-flex items-center justify-center px-8 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-60" onclick="return openTelegram(event)">
+            <svg class="w-5 h-5 ml-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.8c-2.77.6-3.36-1.34-3.36-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.6.07-.6 1 .07 1.36 1.02 1.36 1.02.79 1.52 2.07 1.08 2.58.83.08-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.65.7 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.3.69.9.69 1.82V21c0 .28.16.54.67.5C20.14 23.84 22 19.59 22 12c0-5.52-4.477-10-10-10z"/></svg>
+            <span class="ml-2 text-lg">افتح في تيليجرام</span>
+          </a>
+          <button onclick="goBack()" class="flex-1 sm:w-auto inline-flex items-center justify-center px-8 py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors">
+            <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            <span class="ml-2 text-lg">تغيير الدومين</span>
+          </button>
+        </div>
+
+        <!-- Session status -->
+        <div id="sessionStatus" class="mt-5 text-center text-sm font-medium text-emerald-700">
+          <span class="pulse-dot">●</span> جاري إنشاء جلسة آمنة...
+        </div>
+        <div id="sessionError" class="hidden mt-3 text-center text-sm text-red-600">
+          <span id="sessionErrorMsg"></span>
+          <button class="mx-2 underline text-red-700" onclick="startSession()">إعادة المحاولة</button>
+        </div>
+
+        <!-- Code entry -->
+        <div id="codeSection" class="hidden mt-6 pt-6 border-t border-emerald-200">
+          <p class="text-center text-gray-800 font-bold mb-1">📞 تم استلام جهة الاتصال</p>
+          <p class="text-center text-gray-500 text-sm mb-4">الرجاء إدخال رمز التأكيد المكوّن من 6 أرقام الذي وصلك في رسالة البوت</p>
+          <div class="flex gap-3 max-w-sm mx-auto" dir="ltr">
+            <input id="codeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"
+              class="flex-1 px-4 py-3 text-center text-xl font-bold border-2 border-gray-300 rounded-xl focus:border-emerald-500 focus:outline-none"
+              oninput="onCodeInput()">
+            <button id="verifyBtn" onclick="verifyCode()" class="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors">تأكيد</button>
+          </div>
+          <p id="codeError" class="hidden text-red-600 text-sm text-center mt-3"></p>
+        </div>
+
+        <!-- Verified -->
+        <div id="verifiedSection" class="hidden mt-6 pt-6 border-t border-emerald-200 text-center">
+          <div class="text-4xl mb-2">✅</div>
+          <p class="text-emerald-800 font-bold text-lg">تم التحقق بنجاح! جارٍ تحويلك...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fallback Message -->
+    <div class="mt-8 text-center text-gray-500 text-sm" id="fallbackSection">
+      <p>إذا لم يفتح البوت تلقائياً، انسخ الرابط وافتحه في تطبيق تيليجرام:</p>
+      <code id="deepLinkCode" class="block mt-2 px-4 py-2 bg-gray-100 rounded-lg text-xs text-gray-700 break-all" dir="ltr"></code>
+      <button onclick="copyDeepLink()" class="mt-2 text-emerald-600 hover:underline text-sm">نسخ الرابط</button>
+    </div>
+  </div>
+
+  <script>
+    const PRODUCTION_HOSTS = ['vex.deals', 'betjam.sbs', 'betongame.cloud', '1xbetservices.com', 'vixo.uno'];
+    const SESSION_STORAGE_KEY = 'vex_auth_session';
+
+    let selectedDomain = null;
+    let currentSession = null; // { session_id, deep_link, bot_username, bot_configured }
+    let pollTimer = null;
+    let loginFinished = false;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const redirectParam = sanitizeRedirect(urlParams.get('redirect') || '/');
+    const domainParam = urlParams.get('domain');
+
+    const domainConfig = {
+      'vex.deals': { name: 'VEX Deals', locale: 'ar_eg', color: 'emerald', flag: '🇪🇬', desc: 'المنصة الأساسية' },
+      'betjam.sbs': { name: 'Betjam Partner Portal', locale: 'ar_gulf', color: 'amber', flag: '🇸🇦', desc: 'بوابة بتجام' },
+      'betongame.cloud': { name: 'BetOnGame Cloud', locale: 'ar_gulf', color: 'blue', flag: '🌐', desc: 'بوابة BetOnGame' },
+      '1xbetservices.com': { name: '1xBet Services', locale: 'ar_gulf', color: 'sky', flag: '🇸🇦', desc: 'خدمات 1xBet' },
+      'vixo.uno': { name: 'VIXO Network', locale: 'ar_eg', color: 'emerald', flag: '🌐', desc: 'إعادة توجيه' },
+    };
+
+    function sanitizeRedirect(r) {
+      return (typeof r === 'string' && r.startsWith('/') && !r.startsWith('//') && !r.startsWith('/\\')) ? r : '/';
+    }
+
+    function isLocalHost() {
+      const h = location.hostname;
+      return !h || h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+    }
+
+    // Card click: switch to the chosen domain (session cookies are per-origin),
+    // unless we are on localhost/dev where cross-navigation makes no sense.
+    function selectDomain(btn) {
+      const domain = btn.dataset.domain;
+      const host = location.hostname;
+      if (!isLocalHost() && PRODUCTION_HOSTS.includes(host) && host !== domain) {
+        location.href = 'https://' + domain + location.pathname + location.search;
+        return;
+      }
+      showDomainPanel(btn);
+    }
+
+    function selectDomainByKey(domain) {
+      const btn = document.querySelector('[data-domain="' + domain + '"]');
+      if (btn) showDomainPanel(btn);
+    }
+
+    function showDomainPanel(btn) {
+      document.querySelectorAll('.domain-card').forEach(function (c) { c.classList.remove('selected'); });
+      btn.classList.add('selected');
+      selectedDomain = btn.dataset.domain;
+      const config = domainConfig[selectedDomain];
+      document.getElementById('domainGrid').classList.add('hidden');
+      document.getElementById('selectedAction').classList.remove('hidden');
+      document.getElementById('selectedDomainName').textContent = config ? config.name : selectedDomain;
+
+      // Resume a saved fresh session, otherwise create a new one
+      const saved = loadSavedSession();
+      if (saved && saved.domain === selectedDomain && saved.session_id && saved.deep_link && Date.now() - saved.ts < 30 * 60 * 1000) {
+        currentSession = saved;
+        applyDeepLink(saved.deep_link);
+        setStatus('<span class="pulse-dot">●</span> استئناف الجلسة السابقة — تحقق من حالة البوت...');
+        startPolling();
+      } else {
+        startSession();
+      }
+    }
+
+    function goBack() {
+      stopPolling();
+      currentSession = null;
+      clearSavedSession();
+      document.getElementById('selectedAction').classList.add('hidden');
+      document.getElementById('domainGrid').classList.remove('hidden');
+      document.getElementById('codeSection').classList.add('hidden');
+      document.getElementById('verifiedSection').classList.add('hidden');
+      document.getElementById('sessionError').classList.add('hidden');
+      document.querySelectorAll('.domain-card').forEach(function (c) { c.classList.remove('selected'); });
+      selectedDomain = null;
+    }
+
+    function openTelegram(e) {
+      if (!currentSession || !currentSession.deep_link) {
+        e.preventDefault();
+        setStatus('<span class="pulse-dot">●</span> جاري إنشاء الجلسة، لحظة من فضلك...');
+        startSession();
+        return false;
+      }
+      return true;
+    }
+
+    async function startSession() {
+      document.getElementById('sessionError').classList.add('hidden');
+      setStatus('<span class="pulse-dot">●</span> جاري إنشاء جلسة آمنة...');
+      try {
+        const res = await fetch('/api/telegram/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: 'web_' + (localStorage.getItem('vex_uid') || 'guest') }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success || !data.session_id) {
+          throw new Error(data.error || 'bad response');
+        }
+        currentSession = {
+          session_id: data.session_id,
+          deep_link: data.deep_link,
+          bot_username: data.bot_username,
+          bot_configured: data.bot_configured,
+          domain: selectedDomain,
+          ts: Date.now(),
+        };
+        saveSession(currentSession);
+        applyDeepLink(data.deep_link);
+        if (data.bot_configured === false) {
+          setStatus('⚠️ البوت غير مفعّل حالياً — تواصل مع الدعم لتفعيل التحقق.');
+        } else {
+          setStatus('✅ الجلسة جاهزة — افتح البوت وشارك جهة الاتصال الخاصة بك.');
+        }
+        startPolling();
+      } catch (err) {
+        showSessionError('تعذر إنشاء الجلسة — تحقق من الاتصال بالخادم.');
+      }
+    }
+
+    function applyDeepLink(url) {
+      const btn = document.getElementById('telegramBtn');
+      btn.href = url;
+      document.getElementById('deepLinkCode').textContent = url || '';
+    }
+
+    function setStatus(html) {
+      const el = document.getElementById('sessionStatus');
+      el.innerHTML = html;
+      el.classList.remove('hidden');
+    }
+
+    function showSessionError(msg) {
+      document.getElementById('sessionErrorMsg').textContent = msg;
+      document.getElementById('sessionError').classList.remove('hidden');
+      setStatus('⚠️ تعذر متابعة الجلسة تلقائياً.');
+    }
+
+    function startPolling() {
+      if (pollTimer || loginFinished) return;
+      pollTimer = setInterval(checkSession, 3000);
+      checkSession();
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    async function checkSession() {
+      if (!currentSession || !currentSession.session_id || loginFinished) return;
+      try {
+        const res = await fetch('/api/telegram/session-status/' + encodeURIComponent(currentSession.session_id));
+        if (res.status === 404) {
+          // Session lost/expired server-side — recreate silently
+          stopPolling();
+          clearSavedSession();
+          startSession();
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success) return;
+        if (data.status === 'verified') {
+          finishLogin(data);
+          return;
+        }
+        if (data.status === 'contact_received' || data.has_code) {
+          document.getElementById('codeSection').classList.remove('hidden');
+          setStatus('📞 تم استلام جهة الاتصال — أدخل رمز التأكيد بالأسفل لتفعيل الدخول.');
+        }
+      } catch (e) { /* transient network error — keep polling */ }
+    }
+
+    function onCodeInput() {
+      const input = document.getElementById('codeInput');
+      input.value = (input.value || '').replace(/\D/g, '').slice(0, 6);
+      hideCodeError();
+      if (input.value.length === 6) verifyCode();
+    }
+
+    function showCodeError(msg) {
+      const el = document.getElementById('codeError');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function hideCodeError() {
+      document.getElementById('codeError').classList.add('hidden');
+    }
+
+    async function verifyCode() {
+      if (!currentSession) return;
+      const input = document.getElementById('codeInput');
+      const code = (input.value || '').replace(/\D/g, '');
+      if (code.length !== 6) { showCodeError('أدخل الرمز المكوّن من 6 أرقام بالضبط.'); return; }
+
+      const btn = document.getElementById('verifyBtn');
+      btn.disabled = true;
+      hideCodeError();
+      try {
+        const res = await fetch('/api/telegram/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: code,
+            sessionId: currentSession.session_id,
+            userId: localStorage.getItem('vex_comp_uid') || ''
+          }),
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (res.ok && data.success) {
+          finishLogin(data);
+        } else {
+          showCodeError(data.error || 'رمز غير صحيح — حاول مرة أخرى.');
+          btn.disabled = false;
+        }
+      } catch (e) {
+        showCodeError('تعذر الاتصال بالخادم — حاول مرة أخرى.');
+        btn.disabled = false;
+      }
+    }
+
+    function finishLogin(data) {
+      if (loginFinished) return;
+      loginFinished = true;
+      stopPolling();
+      clearSavedSession();
+      // The verified phone number is the reference key for this user's data:
+      // pin it locally (the app migrates any existing records to it on load).
+      try {
+        var phone = data && data.phone_number ? data.phone_number : '';
+        var digits = String(phone).replace(/\D/g, '');
+        if (digits.length >= 7) {
+          localStorage.setItem('vex_phone_ref', digits);
+          var prof = null;
+          try { prof = JSON.parse(localStorage.getItem('vex_comp_profile') || 'null'); } catch (e) {}
+          if (!prof || typeof prof !== 'object') prof = {};
+          prof.user_id = digits;
+          prof.phone_number = phone;
+          prof.is_phone_verified = true;
+          prof.phone_locked = true;
+          if (data.telegram_username) prof.telegram_username = data.telegram_username;
+          if (data.telegram_id) prof.telegram_id = String(data.telegram_id);
+          localStorage.setItem('vex_comp_profile', JSON.stringify(prof));
+        }
+      } catch (e) {}
+      document.getElementById('codeSection').classList.add('hidden');
+      document.getElementById('verifiedSection').classList.remove('hidden');
+      setStatus('✅ تم التحقق بنجاح — جارٍ تحويلك إلى الموقع...');
+      setTimeout(function () { location.href = redirectParam; }, 700);
+    }
+
+    function copyDeepLink() {
+      const text = document.getElementById('deepLinkCode').textContent;
+      if (navigator.clipboard && text) {
+        navigator.clipboard.writeText(text).then(function () { alert('تم نسخ الرابط!'); });
+      }
+    }
+
+    function saveSession(s) {
+      try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(s)); } catch (e) {}
+    }
+
+    function loadSavedSession() {
+      try { return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)); } catch (e) { return null; }
+    }
+
+    function clearSavedSession() {
+      try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (e) {}
+    }
+
+    // Initial load: pre-select from geo-locale suggestion (never force cross-domain here —
+    // the suggested domain only reflects the visitor's region).
+    const saved = loadSavedSession();
+    const initialDomain = (saved && saved.domain) || domainParam || null;
+    if (initialDomain && domainConfig[initialDomain]) {
+      setTimeout(function () { selectDomainByKey(initialDomain); }, 60);
+    }
+  </script>
+</body>
+</html>

@@ -7,6 +7,8 @@ import { CompaniesTabSkeleton } from './SkeletonLoader';
 import { getCompanyTheme } from '../data/companyThemes';
 import { getLocalizedCompany } from '../utils/companyTranslator';
 import { triggerHaptic } from '../utils/haptics';
+import { useScrollReveal } from '../hooks/useScrollReveal';
+import { Card } from './Card';
 import {
   Copy,
   Check,
@@ -56,6 +58,8 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
   isLoading = false,
   onCopyToast,
 }) => {
+  // Scroll reveal for the quick-action surface (Phase 27/28)
+  const quickActionsRef = useScrollReveal<HTMLDivElement>();
   const [search, setSearch] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showAllPartners, setShowAllPartners] = useState(false);
@@ -235,12 +239,16 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
             return (
               <div className="space-y-4 pt-2">
                 {/* Quick Action Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <a
+                <div ref={quickActionsRef} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Card
+                    as="a"
                     href={affLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-emerald-500 transition-all flex items-center gap-3 group"
+                    variant="interactive"
+                    tilt
+                    spotlight
+                    className="flex items-center gap-3 group hover:border-emerald-500 shadow-xs"
                   >
                     <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
                       <ExternalLink className="w-5 h-5" />
@@ -253,13 +261,17 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                         {isAr ? `سجل بالكود (${promo}) للبونص` : `Register with code (${promo})`}
                       </p>
                     </div>
-                  </a>
+                  </Card>
 
-                  <a
+                  <Card
+                    as="a"
                     href={appLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-sky-500 transition-all flex items-center gap-3 group"
+                    variant="interactive"
+                    tilt
+                    spotlight
+                    className="flex items-center gap-3 group hover:border-sky-500 shadow-xs"
                   >
                     <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
                       <Download className="w-5 h-5" />
@@ -272,11 +284,16 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                         {isAr ? 'تطبيق سريع وآمن لأندرويد وآيفون' : 'Fast & secure app for Android/iOS'}
                       </p>
                     </div>
-                  </a>
+                  </Card>
 
-                  <button
+                  <Card
+                    as="button"
+                    type="button"
                     onClick={() => onRequestComp(exclusiveCompany.id)}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-purple-500 transition-all flex items-center gap-3 group text-left w-full cursor-pointer"
+                    variant="interactive"
+                    tilt
+                    spotlight
+                    className="flex items-center gap-3 group hover:border-purple-500 shadow-xs"
                   >
                     <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
                       <ShieldCheck className="w-5 h-5" />
@@ -289,7 +306,7 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                         {isAr ? 'استرداد نقدي فوري على خسائر رهاناتك' : 'Instant cashback on losses'}
                       </p>
                     </div>
-                  </button>
+                  </Card>
                 </div>
 
                 {/* Section 1: About & Overview */}

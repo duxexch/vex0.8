@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'motion/react';
+import { motion, MotionConfig } from 'motion/react';
 import { io } from 'socket.io-client';
 import {
   Building2,
@@ -481,6 +481,7 @@ export default function App() {
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
 
   return (
+    <MotionConfig reducedMotion="user">
     <div
       className="h-screen w-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 selection:bg-emerald-100 selection:text-emerald-900 select-none"
       dir={lang === 'ar' ? 'rtl' : 'ltr'}
@@ -852,5 +853,6 @@ export default function App() {
       {/* Global Copy Success Toast Notification */}
       <Toast message={toastMessage} lang={lang} />
     </div>
+    </MotionConfig>
   );
 }
