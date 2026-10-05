@@ -195,6 +195,24 @@ export const storage = {
     return notif;
   },
 
+  // 6b. Site Posts (cross-published from Telegram channels to the website)
+  getSitePosts(): any[] {
+    return readJsonFile<any[]>('site-posts.json', []);
+  },
+  saveSitePosts(posts: any[]): void {
+    writeJsonFile('site-posts.json', posts);
+  },
+  addSitePost(post: any): any {
+    const list = this.getSitePosts();
+    list.unshift(post);
+    if (list.length > 300) list.length = 300;
+    this.saveSitePosts(list);
+    return post;
+  },
+  findSitePostByHash(sha1: string): any | null {
+    return this.getSitePosts().find((p) => p && p.sha1 === sha1) || null;
+  },
+
   // 7. AI Agents Management
   getAiAgents(): any[] {
     return readJsonFile<any[]>('ai_agents.json', []);

@@ -24,6 +24,7 @@ import {
   AppNotification,
   SportsMatchFixture,
   SportsNewsItem,
+  SitePost,
   AiMatchAnalysis,
   NotificationCategory,
 } from './types';
@@ -149,6 +150,41 @@ export default function App() {
   // AI Match Analysis & Fixtures
   const [fixtures, setFixtures] = useState<SportsMatchFixture[]>([]);
   const [sportsNews, setSportsNews] = useState<SportsNewsItem[]>([]);
+  const [sitePosts, setSitePosts] = useState<SitePost[]>([]);
+  const [openNewsFeed, setOpenNewsFeed] = useState(false);
+
+  const formatPostTime = (iso: string): string => {
+    const diffMs = Math.max(0, Date.now() - new Date(iso).getTime());
+    const mins = Math.floor(diffMs / 60000);
+    if (lang === 'ar') {
+      if (mins < 1) return 'الآن';
+      if (mins < 60) return `منذ ${mins} دقيقة`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `منذ ${hrs} ساعة`;
+      const days = Math.floor(hrs / 24);
+      return days === 1 ? 'أمس' : `منذ ${days} يوم`;
+    }
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return days === 1 ? 'yesterday' : `${days}d ago`;
+  };
+
+  const mergedNews: SportsNewsItem[] = [
+    ...sitePosts.map((p): SportsNewsItem => ({
+      id: p.id,
+      title: p.title,
+      summary: p.excerpt || p.text.slice(0, 240),
+      source: p.channel ? `VEX • ${p.channel}` : 'VEX Deals',
+      publishedAt: formatPostTime(p.createdAt),
+      category: p.company || 'VEX',
+      imageUrl: p.image || '',
+      url: p.externalUrl || undefined,
+    })),
+    ...sportsNews,
+  ];
   const [loadingFixtures, setLoadingFixtures] = useState(false);
   const [selectedFixtureForAi, setSelectedFixtureForAi] = useState<SportsMatchFixture | null>(null);
 
@@ -291,7 +327,7 @@ export default function App() {
     try {
       setIsLoadingData(true);
       setLoadingFixtures(true);
-      const [comps, myAccs, myWallets, myReqs, myRefs, myTrans, profile, sportsFixtures, newsList] = await Promise.all([
+      const [comps, myAccs, myWallets, myReqs, myRefs, myTrans, profile, sportsFixtures, newsList, sitePostsList] = await Promise.all([
         vexApi.getCompanies(),
         vexApi.getMyAccounts(),
         vexApi.getWallets(),
@@ -301,6 +337,7 @@ export default function App() {
         vexApi.getUserProfile(),
         vexApi.getSportsFixtures(),
         vexApi.getSportsNews(),
+        vexApi.getSitePosts(),
       ]);
 
       setCompanies(comps);
@@ -312,6 +349,7 @@ export default function App() {
       setUserProfile(profile);
       setFixtures(sportsFixtures);
       setSportsNews(newsList);
+      setSitePosts(sitePostsList);
       setUserId(vexApi.getUserId());
     } catch (err) {
       console.error('Failed to load VEX data:', err);
@@ -594,10 +632,12 @@ export default function App() {
             {activeTab === 'ai-sports' && (
               <AiSportsHubTab
                 fixtures={fixtures}
-                news={sportsNews}
+                news={mergedNews}
                 loadingFixtures={loadingFixtures}
                 onAnalyzeMatch={(fixture) => setSelectedFixtureForAi(fixture)}
                 onTriggerAgentBroadcast={handleTriggerAiPrediction}
+                initialNews={openNewsFeed}
+                onNewsOpened={() => setOpenNewsFeed(false)}
                 lang={lang}
                 userId={userId}
               />
@@ -767,6 +807,9 @@ export default function App() {
         onMarkAllRead={() => handleMarkNotificationRead('all')}
         onSelectNotificationAction={(notif) => {
           if (notif.data?.targetTab) {
+            if (notif.data?.source === 'site_post') {
+              setOpenNewsFeed(true);
+            }
             setActiveTab(notif.data.targetTab as any);
             setNotifCenterOpen(false);
           }

@@ -565,6 +565,22 @@ export interface SportsNewsItem {
   url?: string;
 }
 
+export interface SitePost {
+  id: string;
+  title: string;
+  text: string;
+  excerpt: string;
+  company: string;
+  lang: string;
+  channel: string;
+  messageId: number | null;
+  image: string | null;
+  source: string;
+  externalUrl: string | null;
+  sha1?: string;
+  createdAt: string;
+}
+
 export type TabType = 'companies' | 'wallets' | 'transfers' | 'referrals' | 'activity' | 'ai-sports' | 'unlucky-wall' | 'lottery';
 
 export interface SportsCategory {

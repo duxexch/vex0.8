@@ -109,6 +109,8 @@ interface AiSportsHubTabProps {
   loadingFixtures?: boolean;
   onAnalyzeMatch: (fixture: SportsMatchFixture) => void;
   onTriggerAgentBroadcast?: () => void;
+  initialNews?: boolean;
+  onNewsOpened?: () => void;
   lang: Language;
   userId?: string;
 }
@@ -119,13 +121,23 @@ export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
   loadingFixtures = false,
   onAnalyzeMatch,
   onTriggerAgentBroadcast,
+  initialNews = false,
+  onNewsOpened,
   lang,
   userId,
 }) => {
 
   const isAr = lang === 'ar';
-  const [activeSubTab, setActiveSubTab] = useState<'fixtures' | 'news'>('fixtures');
+  const [activeSubTab, setActiveSubTab] = useState<'fixtures' | 'news'>(initialNews ? 'news' : 'fixtures');
   const [broadcastLoading, setBroadcastLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialNews && typeof onNewsOpened === 'function') {
+      onNewsOpened();
+    }
+    // Consume the flag once on mount (tab remounts on each tab switch)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
   const [targetCategoryIdForAlerts, setTargetCategoryIdForAlerts] = useState<string | null>(null);
 
@@ -985,12 +997,18 @@ END:VCALENDAR`;
             >
               <div>
                 <div className="h-40 w-full relative overflow-hidden bg-slate-100">
-                  <img
-                    src={item.imageUrl}
-                    alt={item.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
-                  />
+                  {item.imageUrl ? (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.title}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-emerald-500/25 via-sky-500/20 to-indigo-500/25 flex items-center justify-center">
+                      <Newspaper className="w-9 h-9 text-emerald-600/70" />
+                    </div>
+                  )}
                   <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-md bg-white/90 backdrop-blur-xs text-emerald-700 text-[10px] font-bold border border-slate-200">
                     {item.category}
                   </span>

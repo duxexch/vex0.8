@@ -20,6 +20,7 @@ import {
   SportsMatchFixture,
   AiMatchAnalysis,
   SportsNewsItem,
+  SitePost,
   NotificationCategory,
   PLATFORM_DOMAIN,
   PLATFORM_URL,
@@ -2259,6 +2260,22 @@ class VexMobileApiService {
         imageUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80',
       },
     ];
+  }
+
+  // --------------------------------------------------------------------------
+  // Site Posts — cross-published content from Telegram channels
+  // --------------------------------------------------------------------------
+  public async getSitePosts(limit = 30): Promise<SitePost[]> {
+    try {
+      const res = await fetch(`/api/site-posts?limit=${limit}`);
+      if (res.ok) {
+        const data = await res.json();
+        return Array.isArray(data.posts) ? data.posts : [];
+      }
+    } catch (err) {
+      console.warn('Failed to load site posts:', err);
+    }
+    return [];
   }
 
   // --------------------------------------------------------------------------

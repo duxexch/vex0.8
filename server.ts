@@ -13,6 +13,7 @@ import { agentEngine, calculateNotificationTiming } from './server/agentEngine';
 import { resolveCleanHost, generateRobotsTxt, generateSitemapXml, renderSeoMetaHead } from './server/seoEngine';
 import { geoLocaleMiddleware } from './server/geoLocale';
 import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS } from './server/sessionGuard';
+import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
 const currentDirname = currentFilename ? path.dirname(currentFilename) : process.cwd();
@@ -133,6 +134,8 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/api/media/assets',
     '/api/lottery/status',
     '/api/viral/*',
+    '/api/site-posts',
+    '/site-posts-media/*',
     '/auth-required',
     '/favicon.ico',
     '/manifest.json',
@@ -577,6 +580,152 @@ app.get('/api/sports/news', (req, res) => {
     updatedAt: new Date().toISOString(),
   });
 });
+
+// ==========================================
+// Site Posts — cross-published from the Telegram content pipeline
+// ==========================================
+const SITE_POSTS_API_KEY = process.env.PANEL_API_KEY || 'vex_hermes_FkVWYOPLZ230Ru22ib0vRDDKOJL4agfhSBDUuUoMQIM';
+const SITE_POSTS_MEDIA_DIR = path.join(process.cwd(), 'data', 'site-posts-media');
+const SITE_POSTS_MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
+function sitePostStripHtml(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#?\w+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sitePostSniffExt(buf: Buffer): string | null {
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length > 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  if (buf.length > 4 && buf.toString('ascii', 0, 3) === 'GIF') return 'gif';
+  return null;
+}
+
+// Public feed of cross-published posts (merged into the website news tab)
+app.get('/api/site-posts', (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '30'), 10) || 30, 1), 100);
+    const all = storage.getSitePosts();
+    res.json({
+      posts: all.slice(0, limit),
+      total: all.length,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Ingest from the content pipeline (protected by X-API-Key, not session)
+app.post('/api/site-posts', (req, res) => {
+  try {
+    const key = req.headers['x-api-key'];
+    if (!key || key !== SITE_POSTS_API_KEY) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    const body = req.body || {};
+    const rawText = typeof body.text === 'string' ? body.text : '';
+    if (!rawText.trim()) {
+      return res.status(400).json({ error: 'Missing text' });
+    }
+    if (rawText.length > 8000) {
+      return res.status(400).json({ error: 'text too long' });
+    }
+
+    const plain = sitePostStripHtml(rawText);
+    if (!plain) {
+      return res.status(400).json({ error: 'Empty text after sanitization' });
+    }
+
+    const computedSha1 = crypto.createHash('sha1').update(plain).digest('hex');
+    // Stable dedupe key supplied by the content pipeline (pre-sanitize text),
+    // so the same source content published to multiple channels maps to one post.
+    const sha1 = typeof body.dedupeKey === 'string' && /^[a-f0-9]{40}$/i.test(body.dedupeKey)
+      ? body.dedupeKey.toLowerCase()
+      : computedSha1;
+    const existing = storage.findSitePostByHash(sha1);
+    if (existing) {
+      return res.json({ ok: true, duplicate: true, post: existing });
+    }
+
+    let image: string | null = null;
+    if (typeof body.imageBase64 === 'string' && body.imageBase64) {
+      try {
+        const b64 = body.imageBase64.replace(/^data:[^,]+,/, '');
+        const raw = Buffer.from(b64, 'base64');
+        if (raw.length > 0 && raw.length <= SITE_POSTS_MAX_IMAGE_BYTES) {
+          const ext = sitePostSniffExt(raw);
+          if (ext) {
+            fs.mkdirSync(SITE_POSTS_MEDIA_DIR, { recursive: true });
+            const fileName = `SP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+            fs.writeFileSync(path.join(SITE_POSTS_MEDIA_DIR, fileName), raw);
+            image = `/site-posts-media/${fileName}`;
+          }
+        }
+      } catch (imgErr) {
+        console.warn('[SitePosts] Image decode failed:', imgErr);
+      }
+    }
+
+    const firstRawLine = rawText.split(/\r?\n/).map((l: string) => l.trim()).find((l: string) => l) || rawText;
+    const title = sitePostStripHtml(
+      typeof body.title === 'string' && body.title.trim() ? body.title : firstRawLine
+    ).slice(0, 160);
+    const excerpt = plain.slice(0, 400);
+
+    const post = {
+      id: `SP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      text: plain.slice(0, 4000),
+      excerpt,
+      company: typeof body.company === 'string' ? body.company.slice(0, 60) : '',
+      lang: body.lang === 'en' ? 'en' : 'ar',
+      channel: typeof body.channel === 'string' ? body.channel.slice(0, 120) : '',
+      messageId: typeof body.messageId === 'number' ? body.messageId : null,
+      image,
+      source: typeof body.source === 'string' ? body.source.slice(0, 40) : 'telegram',
+      externalUrl: typeof body.externalUrl === 'string' ? body.externalUrl.slice(0, 300) : null,
+      sha1,
+      createdAt: new Date().toISOString(),
+    };
+
+    storage.addSitePost(post);
+
+    const notif = {
+      id: `NOTIF-SITEPOST-${Date.now()}`,
+      title: post.title,
+      message: excerpt,
+      category: 'sports_news' as const,
+      timestamp: post.createdAt,
+      read: false,
+      data: {
+        postId: post.id,
+        targetTab: 'ai-sports',
+        actionUrl: '/#ai-sports',
+        source: 'site_post',
+      },
+    };
+    storage.addNotification(notif);
+    io.emit('notification', notif);
+
+    console.log(`📰 [SitePosts] Published ${post.id} (${post.company || 'VEX'}) -> notification ${notif.id}`);
+    return res.json({ ok: true, post, notification: notif });
+  } catch (err: any) {
+    console.error('[SitePosts] Ingest error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve stored post media
+app.use('/site-posts-media', express.static(SITE_POSTS_MEDIA_DIR, { maxAge: '7d', fallthrough: true }));
 
 // AI Match Tactical Analysis using Gemini
 app.post('/api/ai/analyze-match', async (req, res) => {
