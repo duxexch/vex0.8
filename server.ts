@@ -2769,15 +2769,21 @@ async function startTelegramPolling() {
     telegramPollingActive = false;
     return;
   }
+  if (process.env.TELEGRAM_POLLING_DISABLED === '1' || process.env.TELEGRAM_POLLING_DISABLED === 'true') {
+    telegramPollingActive = false;
+    console.log('🤖 [Telegram Polling Daemon] Disabled via TELEGRAM_POLLING_DISABLED (running without getUpdates).');
+    return;
+  }
   if (telegramPollingActive) return;
   telegramPollingActive = true;
-  console.log(`🤖 [Telegram Polling Daemon] Started listening for @${telegramConfig.bot_username || 'Bot'} updates...`);
+  console.log(`🤖 [Telegram Polling Daemon] Started listening for @${telegramConfig.bot_username || 'Bot'} updates (allowed: message, channel_post, edited_channel_post, my_chat_member)...`);
 
   (async () => {
     while (telegramPollingActive && telegramConfig.bot_token && telegramConfig.is_active) {
       try {
         telegramPollingAbortController = new AbortController();
-        const url = `https://api.telegram.org/bot${telegramConfig.bot_token}/getUpdates?offset=${telegramPollingOffset}&timeout=15&allowed_updates=["message"]`;
+        const allowedUpdates = JSON.stringify(['message', 'channel_post', 'edited_channel_post', 'my_chat_member']);
+        const url = `https://api.telegram.org/bot${telegramConfig.bot_token}/getUpdates?offset=${telegramPollingOffset}&timeout=15&allowed_updates=${encodeURIComponent(allowedUpdates)}`;
         const res = await fetch(url, { signal: telegramPollingAbortController.signal });
         if (!res.ok) {
           await new Promise((r) => setTimeout(r, 6000));
@@ -2787,6 +2793,7 @@ async function startTelegramPolling() {
         if (data && data.ok && Array.isArray(data.result)) {
           for (const update of data.result) {
             telegramPollingOffset = update.update_id + 1;
+            recordTelegramRelay(update);
             await handleTelegramUpdate(update);
           }
         }
@@ -2806,6 +2813,55 @@ function stopTelegramPolling() {
     telegramPollingAbortController = null;
   }
 }
+
+// TELEGRAM RELAY — this server is the sole getUpdates poller; every update is
+// buffered here so the VEX_Content watcher can pull channel_post/my_chat_member
+// events over HTTP instead of racing the same token with a second poller.
+const TELEGRAM_RELAY_PATH = path.join(process.cwd(), 'data', 'telegram_relay.json');
+const TELEGRAM_RELAY_MAX = 400;
+
+function loadTelegramRelay(): { items: any[] } {
+  try {
+    if (fs.existsSync(TELEGRAM_RELAY_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(TELEGRAM_RELAY_PATH, 'utf-8'));
+      if (parsed && Array.isArray(parsed.items)) return parsed;
+    }
+  } catch (err) {
+    console.error('[Telegram Relay] read failed:', err);
+  }
+  return { items: [] };
+}
+
+function recordTelegramRelay(update: any) {
+  try {
+    if (!update || typeof update.update_id !== 'number') return;
+    const relay = loadTelegramRelay();
+    const last = relay.items.length ? relay.items[relay.items.length - 1].update_id : -1;
+    if (update.update_id <= last) return;
+    relay.items.push(update);
+    if (relay.items.length > TELEGRAM_RELAY_MAX) {
+      relay.items.splice(0, relay.items.length - TELEGRAM_RELAY_MAX);
+    }
+    fs.mkdirSync(path.dirname(TELEGRAM_RELAY_PATH), { recursive: true });
+    fs.writeFileSync(TELEGRAM_RELAY_PATH, JSON.stringify(relay));
+  } catch (err) {
+    console.error('[Telegram Relay] write failed:', err);
+  }
+}
+
+// Pull endpoint for the VEX_Content watcher (X-API-Key, no session).
+app.get('/api/telegram/relay', (req, res) => {
+  const key = String((req.headers['x-api-key'] as string) || req.query.key || '');
+  if (key !== SITE_POSTS_API_KEY) {
+    return res.status(401).json({ success: false, error: 'unauthorized' });
+  }
+  const cursor = Number(req.query.cursor || 0) || 0;
+  const limit = Math.min(Math.max(Number(req.query.limit || 100) || 100, 1), 200);
+  const relay = loadTelegramRelay();
+  const items = relay.items.filter((u: any) => (u?.update_id || 0) > cursor).slice(0, limit);
+  const nextCursor = items.length ? items[items.length - 1].update_id : cursor;
+  res.json({ success: true, items, cursor: nextCursor, buffered: relay.items.length });
+});
 
 // TELEGRAM API ENDPOINTS
 
