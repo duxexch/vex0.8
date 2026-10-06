@@ -41,7 +41,7 @@ export const INITIAL_COMPANIES: Company[] = [
     details: 'أفضل احتمالات الفوز وتغطية شاملة للدوريات العالمية مع سحب فوري وكاش باك أسبوعي سخي',
     is_active: true,
     promo_code: 'ml_3154096',
-    affiliate_link: 'https://refpa39407.com/L?tag=d_5074314m_59685c_11&site=5074314&ad=59685&r=affilat',
+    affiliate_link: 'https://melbetegypt.com/en?tag=d_5074314m_59685c_',
     app_link: 'https://refpa3665.com/L?tag=d_5074314m_70867c_&site=5074314&ad=70867',
     color: '#f59e0b',
     description: 'منصة سريعة وموثوقة بنظام مكافآت ترحيبية استثنائي وتأمين كامل',
