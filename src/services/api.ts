@@ -202,6 +202,126 @@ class VexMobileApiService {
   }
 
   // --------------------------------------------------------------------------
+  // Sync: persist ALL local user datasets server-side keyed by the phone
+  // reference, and restore them when the same number is linked anywhere.
+  // --------------------------------------------------------------------------
+  private readLocalArray(key: string): any[] {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private static syncItemKey(item: any): string {
+    if (!item || typeof item !== 'object') return String(item ?? '');
+    const id = item.id ?? item.transfer_id ?? item.tx_id ?? item.wallet_id ?? item.notification_id;
+    if (id !== undefined && id !== null && String(id) !== '') return String(id);
+    try {
+      return JSON.stringify(item);
+    } catch {
+      return '';
+    }
+  }
+
+  public async pushUserDataToServer(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    const phoneRef = localStorage.getItem(STORAGE_KEYS.PHONE_REF);
+    if (!phoneRef) return false;
+    try {
+      let pinHash = '';
+      try {
+        pinHash = localStorage.getItem(STORAGE_KEYS.PIN_HASH) || '';
+      } catch {
+        pinHash = '';
+      }
+      const res = await fetch(`/api/users/${phoneRef}/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wallets: this.readLocalArray(STORAGE_KEYS.WALLETS),
+          accounts: this.readLocalArray(STORAGE_KEYS.ACCOUNTS),
+          transfers: this.readLocalArray(STORAGE_KEYS.TRANSFERS),
+          referrals: this.readLocalArray(STORAGE_KEYS.REFERRALS),
+          notifications: this.readLocalArray(STORAGE_KEYS.NOTIFICATIONS),
+          pin_hash: pinHash,
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  public async pullUserDataFromServer(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    const phoneRef = localStorage.getItem(STORAGE_KEYS.PHONE_REF);
+    if (!phoneRef) return false;
+    try {
+      const res = await fetch(`/api/users/${phoneRef}/sync`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data || !data.success || !data.sync) return false;
+      const sync = data.sync;
+
+      const merge = (key: string, serverArr: any[]): void => {
+        if (!Array.isArray(serverArr)) return;
+        const localArr = this.readLocalArray(key);
+        if (localArr.length === 0) {
+          // Nothing local → restore the server copy wholesale
+          try {
+            localStorage.setItem(key, JSON.stringify(serverArr));
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        // Union: server wins on id conflicts, local-only entries are kept
+        const seen = new Map<string, any>();
+        for (const item of serverArr) {
+          const k = VexMobileApiService.syncItemKey(item);
+          if (k) seen.set(k, item);
+        }
+        for (const item of localArr) {
+          const k = VexMobileApiService.syncItemKey(item);
+          if (k && !seen.has(k)) seen.set(k, item);
+        }
+        try {
+          localStorage.setItem(key, JSON.stringify(Array.from(seen.values())));
+        } catch {
+          // ignore
+        }
+      };
+
+      merge(STORAGE_KEYS.WALLETS, sync.wallets);
+      merge(STORAGE_KEYS.ACCOUNTS, sync.accounts);
+      merge(STORAGE_KEYS.TRANSFERS, sync.transfers);
+      merge(STORAGE_KEYS.REFERRALS, sync.referrals);
+      merge(STORAGE_KEYS.NOTIFICATIONS, sync.notifications);
+
+      if (typeof sync.pin_hash === 'string' && sync.pin_hash) {
+        try {
+          if (!localStorage.getItem(STORAGE_KEYS.PIN_HASH)) {
+            localStorage.setItem(STORAGE_KEYS.PIN_HASH, sync.pin_hash);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Called right after the phone is linked: restore server data, then push merged state. */
+  public async syncAfterPhoneLink(): Promise<void> {
+    await this.pullUserDataFromServer();
+    await this.pushUserDataToServer();
+  }
+
+  // --------------------------------------------------------------------------
   // Default Data Seeding & Store Simulation
   // --------------------------------------------------------------------------
   public initDefaultData(forceReset: boolean = false) {
@@ -278,6 +398,12 @@ class VexMobileApiService {
         // If phone was verified, it is locked permanently
         if (prof.is_phone_verified && prof.phone_number) {
           prof.phone_locked = true;
+          // Returning verified user on this device: restore datasets once per boot
+          if (!this.serverProfileSynced) {
+            this.serverProfileSynced = true;
+            const ref = localStorage.getItem(STORAGE_KEYS.PHONE_REF);
+            if (ref) this.pullUserDataFromServer().catch(() => undefined);
+          }
         }
         if (!prof.engagementBehavior) {
           prof.engagementBehavior = {
@@ -317,6 +443,8 @@ class VexMobileApiService {
                   localStorage.setItem(STORAGE_KEYS.PHONE_REF, ref);
                   localStorage.setItem(STORAGE_KEYS.UID, ref);
                   localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(prof));
+                  // This number is verified server-side → restore its datasets (cache-clear recovery)
+                  this.pullUserDataFromServer().catch(() => undefined);
                 }
               }
             } catch {
@@ -673,6 +801,12 @@ class VexMobileApiService {
       });
       if (res.ok) {
         const data = await res.json();
+        // Persist the session number (رقم محفوظ) — gone on cache clear, by design
+        try {
+          if (data.session_id) localStorage.setItem('vex_session_id', data.session_id);
+        } catch {
+          // ignore
+        }
         return {
           session_id: data.session_id,
           user_id: this.userId,
@@ -749,6 +883,13 @@ class VexMobileApiService {
         throw new Error(data.error || 'رمز التحقق غير صحيح أو انتهت صلاحيته.');
       }
 
+      // Verified: store the session number for header-based auth (x-session-id)
+      try {
+        if (data.session_id) localStorage.setItem('vex_session_id', data.session_id);
+      } catch {
+        // ignore
+      }
+
       // Successfully verified and locked
       profile.phone_number = data.phone_number;
       profile.is_phone_verified = true;
@@ -764,6 +905,9 @@ class VexMobileApiService {
       this.bindPhoneAsReference(profile.phone_number);
       profile.user_id = this.userId;
       localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+
+      // Restore any server-side datasets for this number, then push the merged state
+      await this.syncAfterPhoneLink();
 
       await this.broadcastNotification(
         '🔒 تم تأكيد وقفل رقم هاتفك بالمحفظة',

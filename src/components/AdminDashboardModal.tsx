@@ -21,6 +21,7 @@ import { IntegrationTester } from './IntegrationTester';
 import { IntegrationHealthDashboard } from './IntegrationHealthDashboard';
 import { AdminAiAgentsHub } from './AdminAiAgentsHub';
 import { COMPANY_THEMES, getCompanyTheme } from '../data/companyThemes';
+import { COUNTRIES } from '../data/countries';
 import { autoTranslateCompany } from '../utils/companyTranslator';
 import { vexApi } from '../services/api';
 import { generateDefaultCompanyApiMethods } from '../data/defaultApiMethods';
@@ -387,6 +388,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       descriptionEn: 'Instant transfer via Vodafone Cash wallet',
       badge: 'محفظة إلكترونية',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_instapay',
@@ -402,6 +405,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       descriptionEn: 'Instant payment network - free transfer from any bank account',
       badge: 'دفع لحظي IPN',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_etisalat',
@@ -417,6 +422,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       descriptionEn: 'Etisalat Cash digital wallet',
       badge: 'محفظة إلكترونية',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_orange',
@@ -432,6 +439,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       descriptionEn: 'Orange Cash digital wallet',
       badge: 'محفظة إلكترونية',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_we',
@@ -447,6 +456,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       descriptionEn: 'WE Pay digital wallet',
       badge: 'محفظة إلكترونية',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_bank',
@@ -462,6 +473,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       descriptionEn: 'Direct transfer to any Egyptian bank account or Meeza card',
       badge: 'حساب بنكي / آيبان',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
   ]);
   const [editingPm, setEditingPm] = useState<PaymentMethod | null>(null);
@@ -479,6 +492,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     descriptionAr: '',
     descriptionEn: '',
     is_active: true,
+    scope: 'global' as 'global' | 'countries',
+    countries: [] as string[],
   });
   const [pmSaveSuccess, setPmSaveSuccess] = useState(false);
 
@@ -1786,7 +1801,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       icon: Split,
                     },
                     { id: 'notifications', label: t('مركز الإشعارات الفورية', 'Notifications Hub', 'Центр уведомлений'), icon: Bell },
-                    { id: 'payment_methods', label: t('إدارة وسائل الدفع المصرية', 'Egyptian Payment Methods', 'Египетские платежные методы'), icon: DollarSign },
+                    { id: 'payment_methods', label: t('إدارة وسائل الدفع', 'Payment Methods', 'Способы оплаты'), icon: DollarSign },
                     { id: 'lottery_manager', label: t('إدارة اليانصيب والسحوبات', 'Lottery & Draws Engine', 'Управление лотереей'), icon: Trophy },
                     { id: 'compliance', label: t('امتثال المتاجر', 'Store Compliance', 'Соответствие магазинам'), icon: FileText },
                   ].map((tab) => {
@@ -6062,13 +6077,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                        {t('إدارة وسائل الدفع المصرية', 'Egyptian Payment Methods Management', 'Управление египетскими способами оплаты')}
+                        {t('إدارة وسائل الدفع', 'Payment Methods Management', 'Управление способами оплаты')}
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         {t(
-                          'إضافة وتعديل وتعطيل وسائل الدفع المتاحة للمستخدمين (فودافون كاش، إنستا باي، اتصالات كاش، أورانج كاش، وي باي، التحويل البنكي).',
-                          'Add, edit, and toggle active status for Egyptian payment gateways shown to users.',
-                          'Добавление, редактирование и переключение статуса египетских платежных шлюзов.'
+                          'إضافة وتعديل وتعطيل وسائل الدفع، وتحديد نطاق عرض كل وسيلة (عالمية 🌍 أو لدول محددة 🌐).',
+                          'Add, edit, and toggle payment methods, and set each method\'s scope (global 🌍 or specific countries 🌐).',
+                          'Добавление, редактирование и настройка охвата способов оплаты (глобально 🌍 или по странам 🌐).'
                         )}
                       </p>
                     </div>
@@ -6088,6 +6103,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                           descriptionAr: '',
                           descriptionEn: '',
                           is_active: true,
+                          scope: 'global',
+                          countries: [],
                         });
                         setIsAddingPm(true);
                       }}
@@ -6294,6 +6311,77 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                             )}
                           </p>
                         </div>
+
+                        {/* Scope: global vs specific countries */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-slate-600 dark:text-slate-400 font-bold mb-1.5">
+                            {t('نطاق العرض (الدول)', 'Scope (Countries)', 'Охват (страны)')}
+                          </label>
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <button
+                              type="button"
+                              onClick={() => setPmForm({ ...pmForm, scope: 'global' })}
+                              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer ${
+                                pmForm.scope === 'global'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              <span>🌍</span>
+                              <span>{t('عالمي (كل الدول)', 'Global (All Countries)', 'Глобально')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPmForm({ ...pmForm, scope: 'countries' })}
+                              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer ${
+                                pmForm.scope === 'countries'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              <span>🌐</span>
+                              <span>{t('دول محددة', 'Specific Countries', 'Конкретные страны')}</span>
+                            </button>
+                          </div>
+                          {pmForm.scope === 'countries' && (
+                            <>
+                              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl">
+                                {COUNTRIES.map((c) => {
+                                  const selected = pmForm.countries.includes(c.iso);
+                                  return (
+                                    <button
+                                      key={c.iso}
+                                      type="button"
+                                      onClick={() =>
+                                        setPmForm({
+                                          ...pmForm,
+                                          countries: selected
+                                            ? pmForm.countries.filter((iso) => iso !== c.iso)
+                                            : [...pmForm.countries, c.iso],
+                                        })
+                                      }
+                                      className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                        selected
+                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-400 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-700'
+                                          : 'bg-slate-100 text-slate-600 border border-transparent hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                                      }`}
+                                    >
+                                      <span>{c.flag}</span>
+                                      <span>{lang === 'ar' ? c.nameAr : c.nameEn}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                {t(
+                                  `الوسائل المختارة تظهر فقط لمستخدمي هذه الدول (${pmForm.countries.length} مختارة). الوسائل غير المحددة تظهر للجميع.`,
+                                  `This method is shown only to users from the selected countries (${pmForm.countries.length} selected). Unscoped methods show for everyone.`,
+                                  'Метод отображается только пользователям из выбранных стран.'
+                                )}
+                              </p>
+                            </>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
@@ -6334,6 +6422,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                 descriptionAr: pmForm.descriptionAr || finalInstructions,
                                 descriptionEn: pmForm.descriptionEn || '',
                                 is_active: pmForm.is_active,
+                                scope: pmForm.scope === 'countries' && pmForm.countries.length > 0 ? 'countries' : 'global',
+                                countries: pmForm.scope === 'countries' ? pmForm.countries : [],
                                 created_at: new Date().toISOString(),
                                 updated_at: new Date().toISOString(),
                               };
@@ -6354,6 +6444,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                       badge: pmForm.badge || m.badge,
                                       descriptionAr: pmForm.descriptionAr || m.descriptionAr,
                                       is_active: pmForm.is_active,
+                                      scope: pmForm.scope === 'countries' && pmForm.countries.length > 0 ? 'countries' : 'global',
+                                      countries: pmForm.scope === 'countries' ? pmForm.countries : [],
                                       updated_at: new Date().toISOString(),
                                     }
                                   : m
@@ -6401,6 +6493,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                   {pm.badge}
                                 </span>
                               )}
+                              <span
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                title={
+                                  pm.scope === 'countries' && (pm.countries || []).length > 0
+                                    ? (pm.countries || []).join(', ')
+                                    : '🌍'
+                                }
+                              >
+                                {pm.scope === 'countries' && (pm.countries || []).length > 0
+                                  ? `🌐 ${(pm.countries || []).length}`
+                                  : '🌍'}
+                              </span>
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
                                   pm.is_active
@@ -6452,6 +6556,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                     descriptionAr: pm.descriptionAr || '',
                                     descriptionEn: pm.descriptionEn || '',
                                     is_active: pm.is_active ?? true,
+                                    scope: pm.scope === 'countries' ? 'countries' : 'global',
+                                    countries: Array.isArray(pm.countries) ? pm.countries : [],
                                   });
                                   setIsAddingPm(false);
                                 }}

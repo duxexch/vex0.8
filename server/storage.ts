@@ -889,6 +889,32 @@ export const storage = {
     this.saveReferrals(list);
     return list[0];
   },
+
+  // 9. Per-user synced datasets (guest-first persistence: restored on phone re-link)
+  getUserSyncDatasets(userId: string): {
+    wallets: any[];
+    accounts: any[];
+    transfers: any[];
+    referrals: any[];
+    notifications: any[];
+  } {
+    return {
+      wallets: this.getUserSyncCollection(userId, 'wallets'),
+      accounts: this.getUserSyncCollection(userId, 'accounts'),
+      transfers: this.getUserSyncCollection(userId, 'transfers'),
+      referrals: this.getUserSyncCollection(userId, 'referrals'),
+      notifications: this.getUserSyncCollection(userId, 'notifications'),
+    };
+  },
+  getUserSyncCollection(userId: string, kind: string): any[] {
+    const all = readJsonFile<Record<string, any[]>>(`user_${kind}.json`, {});
+    return Array.isArray(all[userId]) ? all[userId] : [];
+  },
+  setUserSyncCollection(userId: string, kind: string, items: any[]): void {
+    const all = readJsonFile<Record<string, any[]>>(`user_${kind}.json`, {});
+    all[userId] = Array.isArray(items) ? items : [];
+    writeJsonFile(`user_${kind}.json`, all);
+  },
 };
 
 // Initial verification and seed on boot

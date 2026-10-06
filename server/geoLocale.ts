@@ -13,8 +13,25 @@ export interface GeoLocaleInfo {
   countryName: string;
   countryFlag: string;
   suggestedDomain: string;
+  currency: string;
   confidence: 'high' | 'medium' | 'low';
   source: 'accept-language' | 'geoip' | 'fallback';
+}
+
+// Country → display currency (used ONLY for the visitor's currency preference)
+const CURRENCY_BY_COUNTRY: Record<string, string> = {
+  EG: 'EGP', SA: 'SAR', AE: 'AED', KW: 'KWD', QA: 'QAR', BH: 'BHD',
+  OM: 'OMR', IQ: 'IQD', JO: 'JOD', LB: 'LBP', SY: 'SYP', YE: 'YER',
+  US: 'USD', RU: 'RUB', GB: 'GBP', TR: 'TRY', DE: 'EUR', FR: 'EUR',
+  ES: 'EUR', IT: 'EUR', NL: 'EUR', PT: 'EUR', GR: 'EUR', BE: 'EUR',
+  AT: 'EUR', IE: 'EUR', FI: 'EUR', SK: 'EUR', SI: 'EUR', LT: 'EUR',
+  LV: 'EUR', EE: 'EUR', LU: 'EUR', CY: 'EUR', MT: 'EUR', HR: 'EUR',
+  DZ: 'DZD', MA: 'MAD', TN: 'TND', LY: 'LYD', SD: 'SDG',
+};
+
+export function currencyForCountry(iso: string | undefined): string {
+  if (!iso) return 'USD';
+  return CURRENCY_BY_COUNTRY[String(iso).toUpperCase()] || 'USD';
 }
 
 // Gulf countries
@@ -158,6 +175,7 @@ export async function geoLocaleMiddleware(req: Request, res: Response, next: Nex
         countryName: geoData.country_name || countryCode,
         countryFlag: geoData.flag || 'https://flagsapi.com/' + countryCode + '/flat/32.png',
         suggestedDomain: getSuggestedDomainByCode(countryCode),
+        currency: currencyForCountry(countryCode),
         confidence: 'high',
         source: 'geoip',
         ip,
@@ -193,6 +211,7 @@ export async function geoLocaleMiddleware(req: Request, res: Response, next: Nex
         countryName,
         countryFlag,
         suggestedDomain: getSuggestedDomainByCode(countryCode),
+        currency: currencyForCountry(countryCode),
         confidence,
         source: 'accept-language',
         ip: req.ip,
@@ -211,6 +230,7 @@ export async function geoLocaleMiddleware(req: Request, res: Response, next: Nex
       countryName: 'Egypt',
       countryFlag: '🇪🇬',
       suggestedDomain: 'vex.deals',
+      currency: 'EGP',
       confidence: 'low',
       source: 'fallback',
       ip: '',

@@ -15,6 +15,8 @@ export interface SessionData {
 
 export interface AuthRequiredOptions {
   publicPaths?: string[];
+  protectedPaths?: string[];
+  publicWritePaths?: string[];
   redirectPath?: string;
   apiMode?: boolean;
 }
@@ -66,7 +68,18 @@ export function setSessionStore(store: Map<string, any>) {
 
 function isPublicPath(path: string, publicPaths: string[]): boolean {
   return publicPaths.some(p => {
-    if (p.endsWith('*')) return path.startsWith(p.slice(0, -1));
+    if (p.includes('*')) {
+      // Trailing wildcard: prefix match (multi-segment, e.g. /api/viral/*).
+      if (p.endsWith('*') && !p.slice(0, -1).includes('*')) {
+        return path.startsWith(p.slice(0, -1));
+      }
+      // Embedded wildcard: single-segment glob (e.g. /api/users/*/activity, /icon-*.svg).
+      const source = p
+        .split('*')
+        .map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('[^/]+');
+      return new RegExp(`^${source}(/.*)?$`).test(path);
+    }
     return path === p || path.startsWith(p + '/');
   });
 }
@@ -95,13 +108,7 @@ export function createAuthRequiredMiddleware(options: AuthRequiredOptions = {}) 
       '/sitemap.xml',
       '/api/telegram/*',
       '/api/health',
-      '/api/telegram/session',
-      '/api/telegram/session-status/*',
-      '/api/telegram/verify-code',
-      '/api/telegram/simulate-contact',
       '/auth-required',
-      '/login',
-      '/register',
       '/favicon.ico',
       '/icon-*.svg',
       '/icon-*.png',
@@ -112,15 +119,64 @@ export function createAuthRequiredMiddleware(options: AuthRequiredOptions = {}) 
       '/static/*',
       '/assets/*',
     ],
+    // Always require a VERIFIED session (any HTTP method).
+    protectedPaths: protectedPathsOpt = [],
+    // Explicit bypasses that win over protectedPaths (pipeline ingests, guest analytics…).
+    publicWritePaths: publicWritePathsOpt = [],
     redirectPath = '/auth-required',
     apiMode = false,
   } = options;
+  const protectedPaths = protectedPathsOpt;
+  const publicWritePaths = publicWritePathsOpt;
+  const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const path = req.path;
 
-      if (isPublicPath(path, publicPaths)) {
+      // 1) Session resolution (non-blocking): attach if valid, remember the error if not.
+      const sessionId = getSessionIdFromRequest(req);
+      let sessionError: { status: number; error: string; message: string } | null = null;
+      if (sessionId) {
+        const session = SESSION_STORE.get(sessionId);
+        if (!session) {
+          sessionError = {
+            status: 401,
+            error: 'INVALID_SESSION',
+            message: 'Session not found. Please log in again.',
+          };
+        } else if (Date.now() > session.expires_at) {
+          SESSION_STORE.delete(sessionId);
+          sessionError = {
+            status: 401,
+            error: 'SESSION_EXPIRED',
+            message: 'Session expired. Please log in again.',
+          };
+        } else if (session.status !== 'verified') {
+          sessionError = {
+            status: 403,
+            error: 'SESSION_NOT_VERIFIED',
+            message: 'Session not verified. Please complete Telegram verification.',
+          };
+        } else {
+          // Sliding renewal: verified sessions stay alive while actively used
+          const renewalTarget = Date.now() + SESSION_TTL_MS;
+          if (session.expires_at < renewalTarget - 60 * 1000) {
+            session.expires_at = renewalTarget;
+          }
+          (req as any).session = session;
+          (req as any).sessionId = sessionId;
+          (req as any).userId = session.user_id;
+        }
+      }
+
+      // 2) Always-public paths (SEO, auth flow, telegram OTP, assets…) — SAFE METHODS ONLY.
+      //    Writes on a public path must be explicitly listed in publicWritePaths
+      //    (otherwise a public GET route like /api/app-branding would expose its POST too).
+      if (
+        SAFE_METHODS.has(req.method.toUpperCase()) &&
+        isPublicPath(path, publicPaths)
+      ) {
         return next();
       }
 
@@ -138,8 +194,21 @@ export function createAuthRequiredMiddleware(options: AuthRequiredOptions = {}) 
         return next();
       }
 
-      const sessionId = getSessionIdFromRequest(req);
+      // 3) Explicit write bypasses (ingest pipelines, guest interaction logging…).
+      if (isPublicPath(path, publicWritePaths)) {
+        return next();
+      }
 
+      // 4) Guest browsing model: reads (GET/HEAD/OPTIONS) are open for everyone.
+      //    Only explicitly protected paths and write operations require a login.
+      const needsAuth =
+        isPublicPath(path, protectedPaths) || !SAFE_METHODS.has(req.method.toUpperCase());
+
+      if (!needsAuth) {
+        return next();
+      }
+
+      // 5) Enforce authentication for protected paths + all writes.
       if (!sessionId) {
         if (apiMode || req.path.startsWith('/api/')) {
           res.status(401).json({
@@ -153,13 +222,11 @@ export function createAuthRequiredMiddleware(options: AuthRequiredOptions = {}) 
         return;
       }
 
-      const session = SESSION_STORE.get(sessionId);
-
-      if (!session) {
+      if (sessionError) {
         if (apiMode || req.path.startsWith('/api/')) {
-          res.status(401).json({
-            error: 'INVALID_SESSION',
-            message: 'Session not found. Please log in again.',
+          res.status(sessionError.status).json({
+            error: sessionError.error,
+            message: sessionError.message,
             redirect: '/auth-required',
           });
           return;
@@ -167,43 +234,6 @@ export function createAuthRequiredMiddleware(options: AuthRequiredOptions = {}) 
         redirectToAuth(req, res, redirectPath);
         return;
       }
-
-      if (Date.now() > session.expires_at) {
-        SESSION_STORE.delete(sessionId);
-        if (apiMode || req.path.startsWith('/api/')) {
-          res.status(401).json({
-            error: 'SESSION_EXPIRED',
-            message: 'Session expired. Please log in again.',
-            redirect: '/auth-required',
-          });
-          return;
-        }
-        redirectToAuth(req, res, redirectPath);
-        return;
-      }
-
-      if (session.status !== 'verified') {
-        if (apiMode || req.path.startsWith('/api/')) {
-          res.status(403).json({
-            error: 'SESSION_NOT_VERIFIED',
-            message: 'Session not verified. Please complete Telegram verification.',
-            redirect: '/auth-required',
-          });
-          return;
-        }
-        redirectToAuth(req, res, redirectPath);
-        return;
-      }
-
-      // Sliding renewal: verified sessions stay alive while actively used
-      const renewalTarget = Date.now() + SESSION_TTL_MS;
-      if (session.expires_at < renewalTarget - 60 * 1000) {
-        session.expires_at = renewalTarget;
-      }
-
-      (req as any).session = session;
-      (req as any).sessionId = sessionId;
-      (req as any).userId = session.user_id;
 
       next();
     } catch (e) {

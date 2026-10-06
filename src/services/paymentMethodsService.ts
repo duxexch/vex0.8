@@ -17,6 +17,8 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     descriptionEn: 'Instant transfer via Vodafone Cash wallet',
     badge: 'محفظة إلكترونية',
     is_active: true,
+    scope: 'countries',
+    countries: ['EG'],
   },
   {
     id: 'pm_instapay',
@@ -32,6 +34,8 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     descriptionEn: 'Instant payment network - free transfer from any bank account',
     badge: 'دفع لحظي IPN',
     is_active: true,
+    scope: 'countries',
+    countries: ['EG'],
   },
   {
     id: 'pm_etisalat',
@@ -47,6 +51,8 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     descriptionEn: 'Etisalat Cash digital wallet',
     badge: 'محفظة إلكترونية',
     is_active: true,
+    scope: 'countries',
+    countries: ['EG'],
   },
   {
     id: 'pm_orange',
@@ -62,6 +68,8 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     descriptionEn: 'Orange Cash digital wallet',
     badge: 'محفظة إلكترونية',
     is_active: true,
+    scope: 'countries',
+    countries: ['EG'],
   },
   {
     id: 'pm_we',
@@ -77,6 +85,8 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     descriptionEn: 'WE Pay digital wallet',
     badge: 'محفظة إلكترونية',
     is_active: true,
+    scope: 'countries',
+    countries: ['EG'],
   },
   {
     id: 'pm_bank',
@@ -92,6 +102,8 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     descriptionEn: 'Direct transfer to any Egyptian bank account or Meeza card',
     badge: 'حساب بنكي / آيبان',
     is_active: true,
+    scope: 'countries',
+    countries: ['EG'],
   },
 ];
 

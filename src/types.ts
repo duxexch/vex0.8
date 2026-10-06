@@ -713,6 +713,10 @@ export interface PaymentMethod {
   minDeposit?: number;
   maxDeposit?: number;
   currency?: string;
+  /** Visibility scope: 'global' (all countries) or 'countries' (restricted to `countries`). Default 'global'. */
+  scope?: 'global' | 'countries';
+  /** ISO2 country codes when scope === 'countries'. */
+  countries?: string[];
   created_at?: string;
   updated_at?: string;
 }

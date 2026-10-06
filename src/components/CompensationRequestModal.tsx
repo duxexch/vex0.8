@@ -4,6 +4,7 @@ import { CompensationAccount, Language } from '../types';
 import { TRANSLATIONS } from '../data/translations';
 import { WORLD_CURRENCIES, WorldCurrency, getCurrencyName } from '../data/currencies';
 import { vexApi } from '../services/api';
+import { requirePhoneLink } from '../utils/requireLink';
 import {
   X,
   UploadCloud,
@@ -217,6 +218,16 @@ export const CompensationRequestModal: React.FC<CompensationRequestModalProps> =
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Guest-first: compensation submissions require a linked phone number
+    if (!requirePhoneLink()) {
+      setError(
+        lang === 'ar'
+          ? 'يجب ربط رقم هاتفك أولاً لتقديم طلب التعويض — تم فتح نافذة التحقق.'
+          : 'Link your phone number first to submit a compensation request — verification window opened.'
+      );
+      return;
+    }
 
     const numAmount = parseFloat(amount);
     if (!numAmount || numAmount <= 0) {

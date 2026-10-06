@@ -445,6 +445,8 @@ export const DEFAULT_APP_BRANDING = {
       descriptionAr: 'التحويل السريع والفوري عبر محفظة فودافون كاش المصرية',
       descriptionEn: 'Instant transfer via Vodafone Cash wallet',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_instapay',
@@ -455,6 +457,8 @@ export const DEFAULT_APP_BRANDING = {
       descriptionAr: 'شبكة المدفوعات اللحظية - تحويل فوري مجاني من أي حساب بنكي',
       descriptionEn: 'Instant payment network - free transfer from any bank account',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_etisalat',
@@ -465,6 +469,8 @@ export const DEFAULT_APP_BRANDING = {
       descriptionAr: 'محفظة اتصالات كاش لاستلام وتحويل الأموال',
       descriptionEn: 'Etisalat Cash digital wallet',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_orange',
@@ -475,6 +481,8 @@ export const DEFAULT_APP_BRANDING = {
       descriptionAr: 'محفظة أورانج كاش الرقمية المعتمدة',
       descriptionEn: 'Orange Cash digital wallet',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_we',
@@ -485,6 +493,8 @@ export const DEFAULT_APP_BRANDING = {
       descriptionAr: 'محفظة المصرية للاتصالات WE Pay',
       descriptionEn: 'WE Pay digital wallet',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
     {
       id: 'pm_bank',
@@ -495,6 +505,8 @@ export const DEFAULT_APP_BRANDING = {
       descriptionAr: 'تحويل مباشر لأي حساب بنكي مصري أو بطاقة ميزة الوطنية',
       descriptionEn: 'Direct transfer to any Egyptian bank account or Meeza card',
       is_active: true,
+      scope: 'countries',
+      countries: ['EG'],
     },
   ],
   companyCustomWebsites: {

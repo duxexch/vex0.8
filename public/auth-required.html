@@ -243,7 +243,7 @@
         const res = await fetch('/api/telegram/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: 'web_' + (localStorage.getItem('vex_uid') || 'guest') }),
+          body: JSON.stringify({ userId: 'web_' + (localStorage.getItem('vex_comp_uid') || 'guest') }),
         });
         const data = await res.json();
         if (!res.ok || !data.success || !data.session_id) {
@@ -376,6 +376,11 @@
       if (loginFinished) return;
       loginFinished = true;
       stopPolling();
+      // Persist the session number for header-based auth (x-session-id)
+      try {
+        var sid = (data && data.session_id) || (currentSession && currentSession.session_id) || '';
+        if (sid) localStorage.setItem('vex_session_id', sid);
+      } catch (e) {}
       clearSavedSession();
       // The verified phone number is the reference key for this user's data:
       // pin it locally (the app migrates any existing records to it on load).
@@ -411,6 +416,7 @@
 
     function saveSession(s) {
       try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(s)); } catch (e) {}
+      try { if (s && s.session_id) localStorage.setItem('vex_session_id', s.session_id); } catch (e) {}
     }
 
     function loadSavedSession() {

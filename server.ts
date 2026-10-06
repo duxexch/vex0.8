@@ -13,6 +13,7 @@ import { agentEngine, calculateNotificationTiming } from './server/agentEngine';
 import { resolveCleanHost, generateRobotsTxt, generateSitemapXml, renderSeoMetaHead } from './server/seoEngine';
 import { geoLocaleMiddleware } from './server/geoLocale';
 import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS } from './server/sessionGuard';
+import { buildBotPromoMessage } from './server/botPromo';
 import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
@@ -120,7 +121,8 @@ app.use('/api/', (req, res, next) => {
   next();
 });
 
-// Session Guard Middleware (protects routes requiring authentication)
+// Session Guard Middleware — guest-first model:
+// reads (GET/HEAD/OPTIONS) are public, writes + protected prefixes need a verified session.
 const authRequiredMiddleware = createAuthRequiredMiddleware({
   publicPaths: [
     '/',
@@ -129,6 +131,7 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/sitemap.xml',
     '/api/telegram/*',
     '/api/health',
+    '/api/geo',
     '/api/app-branding',
     '/api/manifest.json',
     '/api/media/assets',
@@ -153,6 +156,21 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/src/*',
     '/node_modules/*',
     '/__vite_ping',
+  ],
+  protectedPaths: [
+    '/api/admin',
+    '/api/ai/admin',
+    '/api/users', // private user data (profile / sync / preferences)
+    '/api/user', // phone-change requests
+  ],
+  publicWritePaths: [
+    '/api/users/*/activity', // guest interaction logging (no login needed)
+    '/api/site-posts', // pipeline ingest (validated by X-API-Key inside the route)
+    '/api/notifications/mark-read', // guest dismissing the global feed (local-first UX)
+    '/api/ai/analyze-match', // AI analysis is a read-like feature, open to guests
+    '/api/lottery/sync-draw', // draw-state mirror runs automatically when guests browse the lottery tab
+    '/api/telegram/*', // verification flow (create session, verify code, webhook) is guest-open by design
+    '/api/viral/*', // engagement endpoints (unlucky wall, votes, referrals, challenges) stay guest-open
   ],
   redirectPath: '/auth-required',
   apiMode: false,
@@ -415,6 +433,22 @@ app.post('/api/admin/data-reset', (req, res) => {
   });
 });
 
+// Geo → language + currency suggestion for first-time visitors (public, guest-safe)
+app.get('/api/geo', (req, res) => {
+  const info: any = (req as any).geoLocale || {};
+  res.json({
+    success: true,
+    locale: info.locale || 'ar_eg',
+    countryIso: info.countryIso || 'EG',
+    countryName: info.countryName || 'Egypt',
+    countryFlag: info.countryFlag || '🇪🇬',
+    currency: info.currency || 'EGP',
+    suggestedDomain: info.suggestedDomain || 'vex.deals',
+    confidence: info.confidence || 'low',
+    source: info.source || 'fallback',
+  });
+});
+
 // App Branding (Name & Icon)
 app.get('/api/app-branding', (req, res) => {
   currentBranding = storage.getAppBranding();
@@ -492,8 +526,17 @@ app.post('/api/payment-methods', (req, res) => {
   if (!Array.isArray(paymentMethods)) {
     return res.status(400).json({ error: 'Invalid payment methods format' });
   }
+  // Light scope validation: keep only well-formed scope/countries, default to global
+  const sanitized = paymentMethods.map((pm: any) => {
+    if (!pm || typeof pm !== 'object') return pm;
+    const scope = pm.scope === 'countries' ? 'countries' : 'global';
+    const countries = Array.isArray(pm.countries)
+      ? pm.countries.filter((c: any) => typeof c === 'string' && /^[A-Za-z]{2}$/.test(c)).map((c: string) => c.toUpperCase())
+      : [];
+    return { ...pm, scope, countries: scope === 'countries' ? countries : [] };
+  });
   const branding = storage.getAppBranding();
-  branding.paymentMethods = paymentMethods;
+  branding.paymentMethods = sanitized;
   storage.saveAppBranding(branding);
   currentBranding = branding;
   io.emit('payment_methods_updated', branding.paymentMethods);
@@ -1134,6 +1177,71 @@ app.get('/api/users/:userId/profile', (req, res) => {
   try {
     const profile = storage.getUserProfile(req.params.userId);
     res.json({ success: true, profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9b-2. Synced user datasets — guest-first persistence (restore on phone re-link).
+// Ownership: the verified session's user_id (phone reference) must match :userId.
+function assertSyncOwnership(req: any, res: any): string | null {
+  const userId = String(req.params.userId || '').trim();
+  const sessionUser = String(req.session?.user_id || req.userId || '');
+  if (!sessionUser || !userId || sessionUser !== userId) {
+    res.status(403).json({
+      error: 'SYNC_FORBIDDEN',
+      message: 'لا تملك صلاحية الوصول لبيانات هذا المستخدم.',
+    });
+    return null;
+  }
+  return userId;
+}
+
+const SYNC_COLLECTION_KEYS = ['wallets', 'accounts', 'transfers', 'referrals', 'notifications'] as const;
+
+app.get('/api/users/:userId/sync', (req, res) => {
+  try {
+    const userId = assertSyncOwnership(req, res);
+    if (!userId) return;
+    const data = storage.getUserSyncDatasets(userId);
+    const profile = storage.getUserProfile(userId);
+    res.json({
+      success: true,
+      sync: {
+        wallets: data.wallets,
+        accounts: data.accounts,
+        transfers: data.transfers,
+        referrals: data.referrals,
+        notifications: data.notifications,
+        pin_hash: typeof profile?.pin_hash === 'string' ? profile.pin_hash : '',
+        profile,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users/:userId/sync', (req, res) => {
+  try {
+    const userId = assertSyncOwnership(req, res);
+    if (!userId) return;
+    const body = req.body || {};
+    const saved: Record<string, number> = {};
+    for (const key of SYNC_COLLECTION_KEYS) {
+      if (Array.isArray(body[key])) {
+        storage.setUserSyncCollection(userId, key, body[key]);
+        saved[key] = body[key].length;
+      }
+    }
+    if (typeof body.pin_hash === 'string' && body.pin_hash.length >= 8 && body.pin_hash.length <= 256) {
+      const profile = storage.getUserProfile(userId);
+      profile.pin_hash = body.pin_hash;
+      profile.updated_at = new Date().toISOString();
+      storage.saveUserProfile(profile);
+      saved.pin_hash = 1;
+    }
+    res.json({ success: true, saved });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2603,6 +2711,27 @@ let telegramPollingActive = false;
 let telegramPollingOffset = 0;
 let telegramPollingAbortController: AbortController | null = null;
 
+function maskPhone(phone: string): string {
+  if (!phone || phone.length <= 7) return phone || '';
+  return phone.slice(0, 4) + '•••••' + phone.slice(-3);
+}
+
+// simulate-contact is a dev/testing helper: only loopback/private origins may mint codes.
+function isLoopbackOrPrivateIp(ip: string): boolean {
+  const clean = String(ip || '').trim().toLowerCase().replace(/^::ffff:/, '');
+  if (!clean) return false;
+  if (clean === '::1' || clean === 'localhost') return true;
+  if (clean === '127.0.0.1' || clean.startsWith('127.')) return true;
+  if (clean.startsWith('10.')) return true;
+  if (clean.startsWith('192.168.')) return true;
+  const m172 = clean.match(/^172\.(\d+)\./);
+  if (m172) {
+    const second = Number(m172[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
 async function handleTelegramUpdate(update: any) {
   const message = update.message;
   if (!message || !message.chat) return;
@@ -2626,18 +2755,34 @@ async function handleTelegramUpdate(update: any) {
       cleanPhone = '+' + cleanPhone;
     }
 
-    // Find linked session for this Telegram user or find first pending session
-    let sessionId = TELEGRAM_USER_SESSIONS.get(telegramUserId);
-    let session = sessionId ? TELEGRAM_SESSIONS.get(sessionId) : null;
+    // Only a session bound to THIS telegram user (via the website deep link) may receive the contact.
+    // Never fall back to "first pending session" — that hijacks another visitor's verification.
+    const boundSessionId = telegramUserId ? TELEGRAM_USER_SESSIONS.get(telegramUserId) : undefined;
+    const sessionId = boundSessionId;
+    const session = boundSessionId ? TELEGRAM_SESSIONS.get(boundSessionId) : undefined;
 
-    if (!session || session.status === 'verified') {
-      for (const s of Array.from(TELEGRAM_SESSIONS.values())) {
-        if (s.status === 'pending_telegram' && Date.now() < s.expires_at) {
-          session = s;
-          sessionId = s.session_id;
-          break;
+    if (session && session.status === 'verified') {
+      await sendTelegramMessage(
+        chatId,
+        `✅ حسابك مرتبط مسبقاً بالرقم \`${session.phone_number || ''}\`.\n\n` +
+          `لطلب رمز تحقق جديد: افتح الموقع واضغط «طلب رمز» ثم عد إلى هنا.`,
+        { remove_keyboard: true, parse_mode: 'Markdown' }
+      );
+      return;
+    }
+
+    if (!session || !sessionId) {
+      // No bound session: promo + instructions instead of hijacking someone else's session.
+      await sendTelegramMessage(
+        chatId,
+        `${buildBotPromoMessage()}\n\n📌 لربط حسابك بحسابك: افتح الموقع واضغط «طلب رمز» ثم عد إلى هنا وأرسل جهة الاتصال.`,
+        {
+          keyboard: [[{ text: '📲 مشاركة جهة الاتصال لتأكيد المحفظة', request_contact: true }]],
+          resize_keyboard: true,
+          one_time_keyboard: true,
         }
-      }
+      );
+      return;
     }
 
     // Generate unique 6-digit OTP code
@@ -2646,41 +2791,26 @@ async function handleTelegramUpdate(update: any) {
       code = Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    if (!session) {
-      sessionId = `v_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-      session = {
-        session_id: sessionId,
-        user_id: `user_${telegramUserId}`,
-        created_at: Date.now(),
-        expires_at: Date.now() + 15 * 60 * 1000,
-        status: 'contact_received',
-        phone_number: cleanPhone,
-        telegram_username: telegramUsername,
-        telegram_id: telegramUserId,
-        telegram_first_name: telegramFirstName,
-        code,
-      };
-      TELEGRAM_SESSIONS.set(sessionId, session);
-    } else {
-      session.status = 'contact_received';
-      session.expires_at = Date.now() + 15 * 60 * 1000;
-      session.phone_number = cleanPhone;
-      session.telegram_username = telegramUsername;
-      session.telegram_id = telegramUserId;
-      session.telegram_first_name = telegramFirstName;
-      session.code = code;
-    }
+    session.status = 'contact_received';
+    session.expires_at = Date.now() + 15 * 60 * 1000;
+    session.phone_number = cleanPhone;
+    session.telegram_username = telegramUsername;
+    session.telegram_id = telegramUserId;
+    session.telegram_first_name = telegramFirstName;
+    session.code = code;
+    TELEGRAM_SESSIONS.set(sessionId, session);
 
     TELEGRAM_ACTIVE_CODES.set(code, session);
     if (telegramUserId) {
       TELEGRAM_USER_SESSIONS.set(telegramUserId, sessionId);
     }
 
-    // Emit live WebSocket update to the browser
+    // Emit live WebSocket update to the browser — the code itself NEVER leaves server/bot:
+    // it is delivered only inside Telegram, and the web app polls/accepts manual entry.
     io.emit('telegram_contact_received', {
       sessionId,
-      phone: cleanPhone,
-      code,
+      phone: maskPhone(cleanPhone),
+      has_code: true,
       telegramUsername,
       telegramId: telegramUserId,
     });
@@ -2705,7 +2835,7 @@ async function handleTelegramUpdate(update: any) {
   // Case 2: /start or /start v_SESSION_ID
   if (text.startsWith('/start')) {
     const parts = text.split(' ');
-    let deepLinkPayload = parts[1] || '';
+    const deepLinkPayload = parts[1] || '';
     if (deepLinkPayload.startsWith('v_')) {
       const sessId = deepLinkPayload;
       // Ensure the deep-linked session exists (auth pages create it server-side;
@@ -2722,15 +2852,30 @@ async function handleTelegramUpdate(update: any) {
       if (telegramUserId) {
         TELEGRAM_USER_SESSIONS.set(telegramUserId, sessId);
       }
+
+      const welcomeMsg =
+        `مرحباً بك في نظام التوثيق والأمان لمحفظة *VEX Deals* 🛡️\n\n` +
+        `لحماية حسابك ومحفظتك من العمليات غير المصرح بها، يلزم بروتوكول الأمان ربط رقم هاتفك الحقيقي بالمحفظة لمرة واحدة فقط.\n\n` +
+        `يرجى الضغط على الزر أدناه لمشاركة جهة الاتصال الخاصة بك (رقم هاتفك):`;
+
+      await sendTelegramMessage(chatId, welcomeMsg, {
+        parse_mode: 'Markdown',
+        keyboard: [
+          [
+            {
+              text: '📲 مشاركة جهة الاتصال لتأكيد المحفظة',
+              request_contact: true,
+            },
+          ],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      });
+      return;
     }
 
-    const welcomeMsg =
-      `مرحباً بك في نظام التوثيق والأمان لمحفظة *VEX Deals* 🛡️\n\n` +
-      `لحماية حسابك ومحفظتك من العمليات غير المصرح بها، يلزم بروتوكول الأمان ربط رقم هاتفك الحقيقي بالمحفظة لمرة واحدة فقط.\n\n` +
-      `يرجى الضغط على الزر أدناه لمشاركة جهة الاتصال الخاصة بك (رقم هاتفك):`;
-
-    await sendTelegramMessage(chatId, welcomeMsg, {
-      parse_mode: 'Markdown',
+    // No / unknown session payload → promotional post (Part 4 of the plan)
+    await sendTelegramMessage(chatId, buildBotPromoMessage(), {
       keyboard: [
         [
           {
@@ -2746,22 +2891,45 @@ async function handleTelegramUpdate(update: any) {
   }
 
   // Case 3: Any other text
-  const helpMsg =
-    `لتأكيد رقم هاتفك والحصول على رمز تفعيل المحفظة الفريد (6 أرقام)، يرجى الضغط على زر *[📲 مشاركة جهة الاتصال]* أدناه:`;
+  const boundSessionId = telegramUserId ? TELEGRAM_USER_SESSIONS.get(telegramUserId) : undefined;
+  const boundSession = boundSessionId ? TELEGRAM_SESSIONS.get(boundSessionId) : undefined;
+  if (boundSession && boundSession.status !== 'verified') {
+    const helpMsg =
+      `لتأكيد رقم هاتفك والحصول على رمز تفعيل المحفظة الفريد (6 أرقام)، يرجى الضغط على زر *[📲 مشاركة جهة الاتصال]* أدناه:`;
 
-  await sendTelegramMessage(chatId, helpMsg, {
-    parse_mode: 'Markdown',
-    keyboard: [
-      [
-        {
-          text: '📲 مشاركة جهة الاتصال لتأكيد المحفظة',
-          request_contact: true,
-        },
+    await sendTelegramMessage(chatId, helpMsg, {
+      parse_mode: 'Markdown',
+      keyboard: [
+        [
+          {
+            text: '📲 مشاركة جهة الاتصال لتأكيد المحفظة',
+            request_contact: true,
+          },
+        ],
       ],
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: true,
-  });
+      resize_keyboard: true,
+      one_time_keyboard: true,
+    });
+    return;
+  }
+
+  // No bound session (or already verified) → promo + instructions
+  await sendTelegramMessage(
+    chatId,
+    `${buildBotPromoMessage()}\n\n📌 لربط حسابك: افتح الموقع واضغط «طلب رمز» ثم عد إلى هنا وأرسل جهة الاتصال.`,
+    {
+      keyboard: [
+        [
+          {
+            text: '📲 مشاركة جهة الاتصال لتأكيد المحفظة',
+            request_contact: true,
+          },
+        ],
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: true,
+    }
+  );
 }
 
 async function startTelegramPolling() {
@@ -3034,6 +3202,15 @@ app.post('/api/telegram/verify-code', (req, res) => {
     });
   }
 
+  // The code must be bound to the session that requests it (prevents cross-session code reuse)
+  if (!sessionId || typeof sessionId !== 'string' || session.session_id !== sessionId) {
+    TELEGRAM_ACTIVE_CODES.delete(cleanCode);
+    return res.status(400).json({
+      error: 'CODE_SESSION_MISMATCH',
+      message: 'رمز التحقق غير مرتبط بهذه الجلسة. اطلب رمزاً جديداً من الموقع.',
+    });
+  }
+
   if (Date.now() > session.expires_at) {
     TELEGRAM_ACTIVE_CODES.delete(cleanCode);
     return res.status(400).json({ error: 'انتهت صلاحية رمز التحقق (أكثر من 15 دقيقة). اطلب رمزاً جديداً.' });
@@ -3055,6 +3232,8 @@ app.post('/api/telegram/verify-code', (req, res) => {
   // Any legacy profile keyed by the client-generated uid is re-keyed to the phone.
   const phoneRef = verifiedPhone.replace(/[^0-9]/g, '');
   if (phoneRef.length >= 7) {
+    // Bind the session identity to the phone reference (ownership key for sync/restore)
+    session.user_id = phoneRef;
     const legacyId = typeof userId === 'string' ? userId.trim() : '';
     if (legacyId && legacyId !== phoneRef && legacyId.length >= 3) {
       const profiles = storage.getUserProfiles();
@@ -3114,8 +3293,18 @@ app.post('/api/telegram/verify-code', (req, res) => {
   });
 });
 
-// 7. Simulate Telegram Contact Sharing (Testing & Dev Mode)
+// 7. Simulate Telegram Contact Sharing (Testing & Dev Mode) — loopback/private origins only
 app.post('/api/telegram/simulate-contact', (req, res) => {
+  const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || String(req.headers['x-real-ip'] || '').trim()
+    || String(req.socket.remoteAddress || '').trim();
+  if (!isLoopbackOrPrivateIp(rawIp)) {
+    return res.status(403).json({
+      error: 'FORBIDDEN',
+      message: 'simulate-contact متاح فقط من الشبكة المحلية (وضع التطوير).',
+    });
+  }
+
   const { sessionId, phone, telegramUsername } = req.body;
 
   const targetSession = sessionId ? TELEGRAM_SESSIONS.get(sessionId) : null;
@@ -3148,10 +3337,11 @@ app.post('/api/telegram/simulate-contact', (req, res) => {
   TELEGRAM_SESSIONS.set(sessId, session);
   TELEGRAM_ACTIVE_CODES.set(code, session);
 
+  // Never broadcast the code over sockets — only this HTTP caller sees it (dev/testing).
   io.emit('telegram_contact_received', {
     sessionId: sessId,
-    phone: cleanPhone,
-    code,
+    phone: maskPhone(cleanPhone),
+    has_code: true,
     telegramUsername: session.telegram_username,
   });
 

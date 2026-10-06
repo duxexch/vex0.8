@@ -33,6 +33,7 @@ import { vexApi } from './services/api';
 import { requestFCMToken, onForegroundMessage } from './services/firebaseClient';
 import { recursiveLocalizeCompanies } from './utils/companyTranslator';
 import { detectUserRegionalCurrency } from './utils/currency';
+import { requirePhoneLink } from './utils/requireLink';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { CompaniesTab } from './components/CompaniesTab';
@@ -111,6 +112,47 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('vex_display_currency', displayCurrency);
   }, [displayCurrency]);
+
+  // Geo boot: first visit derives language + currency from the visitor's region.
+  // Only applies when the user has never chosen manually (manual choice always wins).
+  useEffect(() => {
+    let cancelled = false;
+    const applyGeoDefaults = async () => {
+      const langChosen = !!localStorage.getItem('vex_lang');
+      const currencyChosen = !!localStorage.getItem('vex_display_currency');
+      if (langChosen && currencyChosen) return;
+      try {
+        const res = await fetch('/api/geo');
+        if (!res.ok) return;
+        const geo = await res.json();
+        if (cancelled || !geo) return;
+
+        if (!langChosen && geo.locale) {
+          const iso = String(geo.countryIso || '').toUpperCase();
+          let nextLang: Language = 'en';
+          if (String(geo.locale).startsWith('ar') || ['EG', 'SA', 'AE', 'QA', 'KW', 'BH', 'OM', 'IQ', 'JO', 'LB', 'PS', 'YE', 'SD', 'SY'].includes(iso)) {
+            nextLang = 'ar';
+          } else if (['RU', 'BY', 'KZ'].includes(iso)) {
+            nextLang = 'ru';
+          } else if (iso === 'ES') {
+            nextLang = 'es';
+          }
+          setLang((prev) => (prev === nextLang ? prev : nextLang));
+        }
+
+        if (!currencyChosen && geo.currency) {
+          setDisplayCurrency(detectUserRegionalCurrency(geo.currency));
+        }
+      } catch {
+        // offline / geo unavailable — keep defaults
+      }
+    };
+    applyGeoDefaults();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // App Branding (Admin controllable)
   const [appBranding, setAppBranding] = useState<AppBranding>({
@@ -399,6 +441,12 @@ export default function App() {
       showToast(lang === 'ar' ? 'إشعار جديد في الوقت الحقيقي!' : 'New real-time alert!');
     });
 
+    // Bridge: Telegram contact events → window (PhoneVerificationModal listens on window).
+    // The OTP code itself is intentionally NOT part of this payload (server-side security).
+    socket.on('telegram_contact_received', (payload: any) => {
+      window.dispatchEvent(new CustomEvent('telegram_contact_received', { detail: payload }));
+    });
+
     // Heartbeat ping interval to keep Nginx reverse proxy connection alive (every 25 seconds)
     const heartbeatInterval = setInterval(() => {
       if (socket.connected) {
@@ -411,6 +459,15 @@ export default function App() {
       socket.disconnect();
     };
   }, [lang]);
+
+  // Guest-first: protected actions ask the guest to link their phone (in-app modal)
+  useEffect(() => {
+    const onRequireLink = () => {
+      setPhoneModalOpen(true);
+    };
+    window.addEventListener('vex:require-link', onRequireLink as EventListener);
+    return () => window.removeEventListener('vex:require-link', onRequireLink as EventListener);
+  }, []);
 
   // Toggle Language
   const handleToggleLang = () => {
@@ -602,7 +659,9 @@ export default function App() {
                 companies={localizedCompanies}
                 accounts={accounts}
                 branding={appBranding}
-                onOpenRegister={(company) => setRegisterModalCompany(company)}
+                onOpenRegister={(company) => {
+                  if (requirePhoneLink(userProfile)) setRegisterModalCompany(company);
+                }}
                 onOpenDetails={(company) => setDetailsModalCompany(company)}
                 onRequestComp={handleRequestComp}
                 lang={lang}
@@ -620,7 +679,9 @@ export default function App() {
                 onGoToTransfer={handleGoToTransfer}
                 onGoToReferral={handleGoToReferral}
                 onRequestComp={handleRequestComp}
-                onOpenDepositUnfreeze={() => setDepositUnfreezeModalOpen(true)}
+                onOpenDepositUnfreeze={() => {
+                  if (requirePhoneLink(userProfile)) setDepositUnfreezeModalOpen(true);
+                }}
                 onOpenPhoneModal={() => setPhoneModalOpen(true)}
                 lang={lang}
                 isLoading={isLoadingData}
@@ -746,7 +807,7 @@ export default function App() {
         onClose={() => setDetailsModalCompany(null)}
         onRegisterClick={(comp) => {
           setDetailsModalCompany(null);
-          setRegisterModalCompany(comp);
+          if (requirePhoneLink(userProfile)) setRegisterModalCompany(comp);
         }}
         lang={lang}
         onCopyToast={showToast}

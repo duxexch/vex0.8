@@ -88,20 +88,21 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
     };
   }, [isOpen, userProfile, isAr]);
 
-  // Listen for socket.io live updates for contact received
+  // Listen for socket.io live updates for contact received (bridged to window by App.tsx).
+  // The OTP code is never sent to the browser — it is delivered only inside Telegram.
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const handleContactReceived = (e: any) => {
       const data = e.detail || e;
-      if (data && data.code) {
-        setContactReceivedNotice({
-          phone: data.phone,
-          code: data.code,
-          telegramUsername: data.telegramUsername,
-        });
-        setCode(data.code);
-      }
+      if (!data || !data.has_code) return;
+      // Only react to events for THIS modal's verification session
+      if (data.sessionId && session?.session_id && data.sessionId !== session.session_id) return;
+      setContactReceivedNotice({
+        phone: data.phone || '',
+        code: '',
+        telegramUsername: data.telegramUsername,
+      });
     };
 
     window.addEventListener('telegram_contact_received' as any, handleContactReceived);
@@ -109,7 +110,7 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
     return () => {
       window.removeEventListener('telegram_contact_received' as any, handleContactReceived);
     };
-  }, []);
+  }, [session?.session_id]);
 
   if (!isOpen) return null;
 
@@ -390,10 +391,24 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800/80">
-                    <span>{isAr ? 'رمز التأكيد المولد (6 أرقام):' : 'Generated 6-digit Code:'}</span>
-                    <strong className="font-mono font-black text-sm tracking-widest text-emerald-800 dark:text-emerald-300">
-                      {contactReceivedNotice.code}
-                    </strong>
+                    <span>
+                      {contactReceivedNotice.code
+                        ? isAr
+                          ? 'رمز التأكيد المولد (6 أرقام):'
+                          : 'Generated 6-digit Code:'
+                        : isAr
+                          ? '🔐 الرمز وصل للبوت — افتح تيليجرام وأنسخه ثم ألصقه هنا:'
+                          : '🔐 Code sent to the bot — open Telegram, copy it, paste here:'}
+                    </span>
+                    {contactReceivedNotice.code ? (
+                      <strong className="font-mono font-black text-sm tracking-widest text-emerald-800 dark:text-emerald-300">
+                        {contactReceivedNotice.code}
+                      </strong>
+                    ) : (
+                      <strong className="font-mono font-black text-sm tracking-widest text-emerald-800 dark:text-emerald-300">
+                        ●●●●●●
+                      </strong>
+                    )}
                   </div>
                 </div>
               )}

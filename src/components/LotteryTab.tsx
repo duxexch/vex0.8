@@ -35,6 +35,7 @@ import {
   Wallet as UserWallet 
 } from '../types';
 import { lotteryService } from '../services/lotteryService';
+import { requirePhoneLink } from '../utils/requireLink';
 import { LotteryPrizeCards } from './lottery/LotteryPrizeCards';
 import { LotteryWinningsHistory } from './lottery/LotteryWinningsHistory';
 import { LotteryTierAlertsModal } from './lottery/LotteryTierAlertsModal';
@@ -293,6 +294,16 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
   const handlePurchase = async () => {
     if (!activeDraw) return;
     setErrorMessage(null);
+
+    // Guest-first: ticket purchases require a linked phone number
+    if (!requirePhoneLink()) {
+      setErrorMessage(
+        isAr
+          ? 'يجب ربط رقم هاتفك أولاً لشراء التذاكر — تم فتح نافذة التحقق.'
+          : 'Link your phone number first to purchase tickets — verification window opened.'
+      );
+      return;
+    }
 
     if (selectedMainNumbers.length !== 5) {
       setErrorMessage(

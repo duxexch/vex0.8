@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Company, Language, Wallet, PaymentMethod } from '../types';
+import { formatScopeBadge } from '../data/countries';
 import { TRANSLATIONS } from '../data/translations';
 import { formatCurrency } from '../utils/currency';
 import { vexApi } from '../services/api';
@@ -82,6 +83,10 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
 
   const activePaymentMethods = paymentMethods.filter((pm) => pm.is_active !== false);
   const selectedPm = activePaymentMethods.find((pm) => pm.id === selectedPmId) || activePaymentMethods[0];
+  const scopeLabel = (pm: PaymentMethod): string =>
+    pm.scope === 'countries' && (pm.countries || []).length > 0
+      ? `${(pm.countries || []).length} دول / countries`
+      : 'عالمي / Global';
 
   const handleCopy = (text: string) => {
     if (!text) return;
@@ -351,6 +356,12 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
                             <span className="font-bold text-xs truncate">
                               {lang === 'ar' ? pm.nameAr || pm.name : pm.nameEn || pm.name}
                             </span>
+                            <span
+                              className="text-[10px] shrink-0"
+                              title={scopeLabel(pm)}
+                            >
+                              {formatScopeBadge(pm.scope, pm.countries)}
+                            </span>
                             {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
                           </div>
                           {pm.badge && (
@@ -378,6 +389,12 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
                             {selectedPm.badge}
                           </span>
                         )}
+                        <span
+                          className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700"
+                          title={scopeLabel(selectedPm)}
+                        >
+                          {formatScopeBadge(selectedPm.scope, selectedPm.countries)}
+                        </span>
                       </div>
 
                       {/* Account Number & 1-Click Copy */}

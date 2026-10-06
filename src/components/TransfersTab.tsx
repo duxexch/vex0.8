@@ -118,6 +118,8 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
     setSuccessMsg(null);
 
     if (!userProfile?.is_phone_verified) {
+      // Guest-first: open the in-app phone-link modal instead of just showing an error
+      window.dispatchEvent(new CustomEvent('vex:require-link'));
       setError(
         lang === 'ar'
           ? 'يجب ربط وتأكيد رقم هاتفك أولاً لاستقبال رمز التحقق (OTP).'
