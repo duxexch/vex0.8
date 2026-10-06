@@ -21,6 +21,7 @@ import {
   AiMatchAnalysis,
   SportsNewsItem,
   SitePost,
+  PredictionRecord,
   NotificationCategory,
   PLATFORM_DOMAIN,
   PLATFORM_URL,
@@ -2420,6 +2421,83 @@ class VexMobileApiService {
       console.warn('Failed to load site posts:', err);
     }
     return [];
+  }
+
+  // --------------------------------------------------------------------------
+  // Predictions log — pending/settled match forecasts
+  // --------------------------------------------------------------------------
+  public async getPredictions(status: 'all' | 'pending' | 'settled' = 'all'): Promise<{
+    predictions: Array<{
+      postId: string;
+      title: string;
+      lang: string;
+      image: string | null;
+      company: string;
+      createdAt: string;
+      updatedAt: string;
+      prediction: PredictionRecord;
+    }>;
+    total: number;
+    pending: number;
+    settled: number;
+  }> {
+    try {
+      const res = await fetch(`/api/predictions?status=${status}`);
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          predictions: Array.isArray(data.predictions) ? data.predictions : [],
+          total: data.total || 0,
+          pending: data.pending || 0,
+          settled: data.settled || 0,
+        };
+      }
+    } catch (err) {
+      console.warn('Failed to load predictions:', err);
+    }
+    return { predictions: [], total: 0, pending: 0, settled: 0 };
+  }
+
+  // --------------------------------------------------------------------------
+  // Web Push (VAPID) subscriptions
+  // --------------------------------------------------------------------------
+  public async getVapidPublicKey(): Promise<string | null> {
+    try {
+      const res = await fetch('/api/push/vapid-public-key');
+      if (res.ok) {
+        const data = await res.json();
+        return typeof data.publicKey === 'string' ? data.publicKey : null;
+      }
+    } catch {
+      /* push unavailable */
+    }
+    return null;
+  }
+
+  public async subscribePush(subscription: PushSubscription): Promise<boolean> {
+    try {
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  public async unsubscribePush(endpoint: string): Promise<boolean> {
+    try {
+      const res = await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   // --------------------------------------------------------------------------

@@ -14,6 +14,16 @@ import { resolveCleanHost, generateRobotsTxt, generateSitemapXml, renderSeoMetaH
 import { geoLocaleMiddleware } from './server/geoLocale';
 import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS } from './server/sessionGuard';
 import { buildBotPromoMessage } from './server/botPromo';
+import {
+  extractPrediction,
+  extractPredictionSync,
+  buildCompactText,
+  buildCompactTitle,
+  buildResultSuffix,
+  normalizeTeam,
+} from './server/predictionParser';
+import type { ParsedPrediction, PredictionRecord, ActualScore } from './server/predictionParser';
+import { getVapidPublicKey, addSubscription, removeSubscription, sendWebPush } from './server/webPush';
 import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
@@ -171,6 +181,8 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/api/lottery/sync-draw', // draw-state mirror runs automatically when guests browse the lottery tab
     '/api/telegram/*', // verification flow (create session, verify code, webhook) is guest-open by design
     '/api/viral/*', // engagement endpoints (unlucky wall, votes, referrals, challenges) stay guest-open
+    '/api/predictions/*/result', // manual settlement (validated by X-API-Key / session inside the route)
+    '/api/push/*', // Web Push subscribe/unsubscribe (public VAPID key, endpoint-scoped, no PII)
   ],
   redirectPath: '/auth-required',
   apiMode: false,
@@ -643,12 +655,224 @@ function sitePostStripHtml(value: string): string {
     .trim();
 }
 
+// Newline-preserving variant — used ONLY for prediction parsing (line-based odds/% extraction)
+function sitePostStripHtmlMultiline(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6]|blockquote)>/gi, '\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#?\w+;/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function sitePostSniffExt(buf: Buffer): string | null {
   if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
   if (buf.length > 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
   if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
   if (buf.length > 4 && buf.toString('ascii', 0, 3) === 'GIF') return 'gif';
   return null;
+}
+
+// Level-3 fallback: ask Gemini for win probabilities + predicted score.
+// Never throws — extractPrediction's cascade handles null/timeout.
+async function geminiPredictionFn(homeTeam: string, awayTeam: string) {
+  const client = getGeminiClient();
+  if (!client) return null;
+  const response = await client.models.generateContent({
+    model: 'gemini-3.8-flash',
+    contents:
+      `Estimate the football match between ${homeTeam} and ${awayTeam}. ` +
+      'Return ONLY JSON: {"pHome": <0-100>, "pAway": <0-100>, "predictedScore": "<home>-<away>"} ' +
+      'where pHome is the win probability for the first team, pAway for the second, and predictedScore is the most likely final score.',
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          pHome: { type: Type.NUMBER },
+          pAway: { type: Type.NUMBER },
+          predictedScore: { type: Type.STRING },
+        },
+        required: ['pHome', 'pAway', 'predictedScore'],
+      },
+    },
+  });
+  const parsed: any = JSON.parse(response.text || '{}');
+  return {
+    pHome: Number(parsed.pHome),
+    pAway: Number(parsed.pAway),
+    predictedScore: String(parsed.predictedScore || ''),
+  };
+}
+
+// Settle a pending prediction: append result to the post, notify + push, emit socket.
+// Shared by the ESPN auto-poller and the manual result endpoint.
+function settlePredictionByPostId(postId: string, actual: ActualScore, source: string): any | null {
+  const list = storage.getSitePosts();
+  const post = list.find((p: any) => p && p.id === postId && p.prediction && p.prediction.status !== 'settled');
+  if (!post) return null;
+  const pred: PredictionRecord = post.prediction;
+  const lang = post.lang === 'en' ? 'en' : 'ar';
+  const { verdict, suffix } = buildResultSuffix(pred, actual, lang);
+  pred.status = 'settled';
+  pred.actualScore = `${actual.home}-${actual.away}`;
+  pred.verdict = verdict;
+  pred.settledAt = new Date().toISOString();
+  pred.settledBy = source;
+  post.prediction = pred;
+  if (!/✅ النتيجة:|✅ Result:/.test(post.text)) {
+    post.text = `${post.text}${suffix}`.slice(0, 4400);
+    post.excerpt = post.text.slice(0, 400);
+  }
+  post.updatedAt = new Date().toISOString();
+  storage.saveSitePosts(list);
+
+  io.emit('site_post_updated', { postId, post });
+
+  const verdictLine =
+    verdict === 'hit' ? '🎯 توقعنا تحقق!' : verdict === 'miss' ? '❌ لم يتحقق التوقع' : '➖ تعادل';
+  const notif = {
+    id: `NOTIF-PREDRESULT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    title: `✅ ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`,
+    message: lang === 'en'
+      ? `Predicted ${pred.predictedScore} — final ${actual.home}-${actual.away}`
+      : `${suffix.split('\n').filter(Boolean).slice(-1)[0] || verdictLine}`,
+    category: 'ai_prediction' as const,
+    timestamp: new Date().toISOString(),
+    read: false,
+    data: { postId, targetTab: 'ai-sports', actionUrl: '/#ai-sports', source: 'prediction_settlement' },
+  };
+  storage.addNotification(notif);
+  io.emit('notification', notif);
+  void sendWebPush({
+    title: notif.title,
+    body: lang === 'en' ? notif.message : `${verdictLine} ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`,
+    url: '/#ai-sports',
+    tag: `pred-${postId}`,
+  });
+  console.log(`🏁 [Predictions] Settled ${postId}: ${pred.homeTeam} ${actual.home}-${actual.away} ${pred.awayTeam} (${verdict}, via ${source})`);
+  return post;
+}
+
+// One-time idempotent migration: compact + attach predictions to existing posts (sync, no AI at boot).
+function migrateSitePostsPredictions() {
+  try {
+    const list = storage.getSitePosts();
+    let changed = 0;
+    for (const p of list) {
+      if (!p || p.prediction || p.sourceText) continue;
+      const plain = String(p.text || '');
+      if (!plain) continue;
+      const prediction = extractPredictionSync(plain);
+      if (!prediction) continue;
+      const lang = p.lang === 'en' ? 'en' : 'ar';
+      p.sourceText = plain.slice(0, 4000);
+      p.title = buildCompactTitle(prediction, lang);
+      p.text = buildCompactText(prediction, lang);
+      p.excerpt = p.text.slice(0, 400);
+      p.prediction = {
+        ...prediction,
+        status: 'pending',
+        createdAt: p.createdAt || new Date().toISOString(),
+      } as any;
+      p.updatedAt = new Date().toISOString();
+      changed++;
+    }
+    if (changed > 0) {
+      storage.saveSitePosts(list);
+      console.log(`🔮 [Predictions] Migration compacted ${changed} existing site post(s)`);
+    }
+  } catch (err) {
+    console.error('[Predictions] Migration failed:', err);
+  }
+}
+
+// Auto-settlement: poll ESPN (site scoreboard) for finished matches, settle pending predictions.
+const ESPN_SCOREBOARD_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard';
+
+function teamsMatch(a: string, b: string): boolean {
+  const na = normalizeTeam(a);
+  const nb = normalizeTeam(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  return false;
+}
+
+async function fetchFinishedMatches(dateParam: string): Promise<Array<{ homeName: string; awayName: string; home: number; away: number }>> {
+  const resp = await fetch(`${ESPN_SCOREBOARD_BASE}?dates=${dateParam}`, {
+    headers: { 'User-Agent': 'curl/8.0', Accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!resp.ok) throw new Error(`ESPN HTTP ${resp.status}`);
+  const data: any = await resp.json();
+  const finished: Array<{ homeName: string; awayName: string; home: number; away: number }> = [];
+  for (const ev of data?.events || []) {
+    const comp = ev?.competitions?.[0];
+    if (ev?.status?.type?.state !== 'post') continue;
+    const home = (comp?.competitors || []).find((c: any) => c.homeAway === 'home');
+    const away = (comp?.competitors || []).find((c: any) => c.homeAway === 'away');
+    if (!home || !away) continue;
+    const hs = parseInt(String(home.score), 10);
+    const as = parseInt(String(away.score), 10);
+    if (Number.isNaN(hs) || Number.isNaN(as)) continue;
+    finished.push({
+      homeName: String(home.team?.displayName || ''),
+      awayName: String(away.team?.displayName || ''),
+      home: hs,
+      away: as,
+    });
+  }
+  return finished;
+}
+
+async function pollFinishedMatchResults() {
+  try {
+    const today = new Date();
+    const yday = new Date(today.getTime() - 24 * 3600 * 1000);
+    const fmt = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    let finished: Awaited<ReturnType<typeof fetchFinishedMatches>> = [];
+    for (const dateParam of [fmt(today), fmt(yday)]) {
+      try {
+        finished = finished.concat(await fetchFinishedMatches(dateParam));
+      } catch (dayErr) {
+        console.warn('[Predictions] ESPN fetch failed for', dateParam, dayErr);
+      }
+    }
+    if (finished.length === 0) return;
+
+    const pending = storage.getSitePosts().filter((p: any) => p && p.prediction && p.prediction.status === 'pending');
+    if (pending.length === 0) return;
+
+    let settled = 0;
+    for (const post of pending) {
+      const pred: PredictionRecord = post.prediction;
+      for (const m of finished) {
+        const direct = teamsMatch(pred.homeTeam, m.homeName) && teamsMatch(pred.awayTeam, m.awayName);
+        const swapped = teamsMatch(pred.homeTeam, m.awayName) && teamsMatch(pred.awayTeam, m.homeName);
+        if (direct) {
+          if (settlePredictionByPostId(post.id, { home: m.home, away: m.away }, 'espn')) settled++;
+          break;
+        }
+        if (swapped) {
+          if (settlePredictionByPostId(post.id, { home: m.away, away: m.home }, 'espn')) settled++;
+          break;
+        }
+      }
+    }
+    if (settled > 0) {
+      console.log(`🔮 [Predictions] Auto-settled ${settled} prediction(s) from ESPN (${finished.length} finished match(es) checked)`);
+    }
+  } catch (err) {
+    console.error('[Predictions] ESPN settlement poll failed:', err);
+  }
 }
 
 // Public feed of cross-published posts (merged into the website news tab)
@@ -667,7 +891,7 @@ app.get('/api/site-posts', (req, res) => {
 });
 
 // Ingest from the content pipeline (protected by X-API-Key, not session)
-app.post('/api/site-posts', (req, res) => {
+app.post('/api/site-posts', async (req, res) => {
   try {
     const key = req.headers['x-api-key'];
     if (!key || key !== SITE_POSTS_API_KEY) {
@@ -718,19 +942,34 @@ app.post('/api/site-posts', (req, res) => {
       }
     }
 
+    // Match-analysis posts get compacted to two teams + two win% + predicted score.
+    // Promo/news posts keep their original text (extractPrediction returns null for them).
+    let prediction: ParsedPrediction | null = null;
+    try {
+      prediction = await extractPrediction(sitePostStripHtmlMultiline(rawText), geminiPredictionFn);
+    } catch (predErr) {
+      console.warn('[SitePosts] Prediction extraction failed (continuing as plain post):', predErr);
+    }
+
+    const lang = body.lang === 'en' ? 'en' : 'ar';
     const firstRawLine = rawText.split(/\r?\n/).map((l: string) => l.trim()).find((l: string) => l) || rawText;
-    const title = sitePostStripHtml(
-      typeof body.title === 'string' && body.title.trim() ? body.title : firstRawLine
-    ).slice(0, 160);
-    const excerpt = plain.slice(0, 400);
+    const compactTitle = prediction ? buildCompactTitle(prediction, lang) : null;
+    const compactText = prediction ? buildCompactText(prediction, lang) : null;
+    const title = compactTitle
+      || sitePostStripHtml(
+          typeof body.title === 'string' && body.title.trim() ? body.title : firstRawLine
+        ).slice(0, 160);
+    const storedText = (compactText || plain.slice(0, 4000)).slice(0, 4400);
+    const excerpt = compactText ? compactText.slice(0, 400) : plain.slice(0, 400);
+    const sourceText = prediction ? plain.slice(0, 4000) : undefined;
 
     const post = {
       id: `SP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title,
-      text: plain.slice(0, 4000),
+      text: storedText,
       excerpt,
       company: typeof body.company === 'string' ? body.company.slice(0, 60) : '',
-      lang: body.lang === 'en' ? 'en' : 'ar',
+      lang,
       channel: typeof body.channel === 'string' ? body.channel.slice(0, 120) : '',
       messageId: typeof body.messageId === 'number' ? body.messageId : null,
       image,
@@ -738,7 +977,17 @@ app.post('/api/site-posts', (req, res) => {
       externalUrl: typeof body.externalUrl === 'string' ? body.externalUrl.slice(0, 300) : null,
       sha1,
       createdAt: new Date().toISOString(),
-    };
+      ...(sourceText ? { sourceText } : {}),
+      ...(prediction
+        ? {
+            prediction: {
+              ...prediction,
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+            },
+          }
+        : {}),
+    } as any;
 
     storage.addSitePost(post);
 
@@ -746,7 +995,7 @@ app.post('/api/site-posts', (req, res) => {
       id: `NOTIF-SITEPOST-${Date.now()}`,
       title: post.title,
       message: excerpt,
-      category: 'sports_news' as const,
+      category: (prediction ? 'ai_prediction' : 'sports_news') as 'ai_prediction' | 'sports_news',
       timestamp: post.createdAt,
       read: false,
       data: {
@@ -754,16 +1003,119 @@ app.post('/api/site-posts', (req, res) => {
         targetTab: 'ai-sports',
         actionUrl: '/#ai-sports',
         source: 'site_post',
+        ...(prediction ? { prediction: true, pctSource: prediction.pctSource } : {}),
       },
     };
     storage.addNotification(notif);
     io.emit('notification', notif);
+    if (prediction) {
+      io.emit('site_post_updated', { postId: post.id, post });
+      void sendWebPush({
+        title: post.title,
+        body: excerpt,
+        url: '/#ai-sports',
+        tag: `pred-${post.id}`,
+      });
+    }
 
-    console.log(`📰 [SitePosts] Published ${post.id} (${post.company || 'VEX'}) -> notification ${notif.id}`);
+    console.log(
+      `📰 [SitePosts] Published ${post.id} (${post.company || 'VEX'})${prediction ? ` [prediction ${prediction.pctSource}]` : ''} -> notification ${notif.id}`
+    );
     return res.json({ ok: true, post, notification: notif });
   } catch (err: any) {
     console.error('[SitePosts] Ingest error:', err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Predictions log feed — pending + settled
+app.get('/api/predictions', (req, res) => {
+  try {
+    const status = String(req.query.status || 'all');
+    const list = storage
+      .getSitePosts()
+      .filter((p: any) => p && p.prediction)
+      .map((p: any) => ({
+        postId: p.id,
+        title: p.title,
+        lang: p.lang,
+        image: p.image,
+        company: p.company,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt || p.createdAt,
+        prediction: p.prediction,
+      }));
+    const pending = list.filter((x: any) => x.prediction.status === 'pending').length;
+    const settled = list.filter((x: any) => x.prediction.status === 'settled').length;
+    const filtered =
+      status === 'pending'
+        ? list.filter((x: any) => x.prediction.status === 'pending')
+        : status === 'settled'
+          ? list.filter((x: any) => x.prediction.status === 'settled')
+          : list;
+    res.json({ predictions: filtered, total: list.length, pending, settled, updatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manual settlement (Telegram bot or admin) — API key OR an authenticated session
+app.post('/api/predictions/:postId/result', (req, res) => {
+  try {
+    const key = req.headers['x-api-key'];
+    const sessionOk = Boolean((req as any).session || (req as any).userId);
+    if (key !== SITE_POSTS_API_KEY && !sessionOk) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const post = storage.getSitePosts().find((p: any) => p && p.id === String(req.params.postId));
+    if (!post || !post.prediction) {
+      return res.status(404).json({ error: 'Prediction not found' });
+    }
+    if (post.prediction.status === 'settled') {
+      return res.status(409).json({ error: 'Already settled', prediction: post.prediction });
+    }
+    const body = req.body || {};
+    const home = parseInt(String(body.home ?? body.homeScore), 10);
+    const away = parseInt(String(body.away ?? body.awayScore), 10);
+    if (!Number.isInteger(home) || !Number.isInteger(away) || home < 0 || away < 0 || home > 30 || away > 30) {
+      return res.status(400).json({ error: 'Invalid score — expected integer home/away (0-30)' });
+    }
+    const settled = settlePredictionByPostId(String(req.params.postId), { home, away }, 'manual');
+    return res.json({ ok: true, post: settled, prediction: settled?.prediction });
+  } catch (err: any) {
+    console.error('[Predictions] Manual settle error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Web Push subscriptions (public endpoints — VAPID key is public by design)
+app.get('/api/push/vapid-public-key', (_req, res) => {
+  const key = getVapidPublicKey();
+  if (!key) return res.status(503).json({ error: 'Push not configured' });
+  res.json({ publicKey: key });
+});
+
+app.post('/api/push/subscribe', (req, res) => {
+  try {
+    const body = req.body || {};
+    const ok = addSubscription({
+      endpoint: body.endpoint,
+      keys: { p256dh: body.keys?.p256dh, auth: body.keys?.auth },
+    });
+    if (!ok) return res.status(400).json({ error: 'Invalid subscription' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/push/unsubscribe', (req, res) => {
+  try {
+    const endpoint = String(req.body?.endpoint || '');
+    if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
+    res.json({ ok: removeSubscription(endpoint) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -3639,6 +3991,14 @@ app.post('/api/lottery/update-tier-alert-settings', (req, res) => {
 // BACKGROUND NOTIFICATION WORKER FOR DOCKER (Standalone Fallback & Heuristic Scheduler)
 function startDockerNotificationWorker() {
   console.log('🤖 [VEX Docker Notification Worker] Initialized and running in background daemon mode...');
+
+  // One-time idempotent compaction of legacy site posts into predictions
+  migrateSitePostsPredictions();
+
+  // Auto-settle pending predictions from ESPN finished matches (every 5 min)
+  setTimeout(pollFinishedMatchResults, 60 * 1000);
+  setInterval(pollFinishedMatchResults, 5 * 60 * 1000);
+
   setInterval(() => {
     try {
       // 1. Process due scheduled non-urgent notifications

@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { 
   SportsMatchFixture, 
   SportsNewsItem, 
+  SitePost,
   Language, 
   AiMatchAnalysis, 
   SportsCategory,
@@ -106,6 +107,7 @@ const DEFAULT_SPORTS_CATEGORIES: SportsCategory[] = [
 interface AiSportsHubTabProps {
   fixtures?: SportsMatchFixture[];
   news?: SportsNewsItem[];
+  sitePosts?: SitePost[];
   loadingFixtures?: boolean;
   onAnalyzeMatch: (fixture: SportsMatchFixture) => void;
   onTriggerAgentBroadcast?: () => void;
@@ -118,6 +120,7 @@ interface AiSportsHubTabProps {
 export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
   fixtures = [],
   news = [],
+  sitePosts = [],
   loadingFixtures = false,
   onAnalyzeMatch,
   onTriggerAgentBroadcast,
@@ -128,8 +131,42 @@ export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
 }) => {
 
   const isAr = lang === 'ar';
-  const [activeSubTab, setActiveSubTab] = useState<'fixtures' | 'news'>(initialNews ? 'news' : 'fixtures');
+  const [activeSubTab, setActiveSubTab] = useState<'fixtures' | 'news' | 'predictions'>(initialNews ? 'news' : 'fixtures');
   const [broadcastLoading, setBroadcastLoading] = useState(false);
+
+  // Predictions log — derived live from sitePosts (socket keeps them fresh)
+  const predictions = useMemo(() => sitePosts.filter((p) => p && p.prediction), [sitePosts]);
+  const pendingCount = predictions.filter((p) => p.prediction!.status === 'pending').length;
+  const settledList = predictions.filter((p) => p.prediction!.status === 'settled');
+  const verdictCount = (v: 'hit' | 'miss' | 'draw') => settledList.filter((p) => p.prediction!.verdict === v).length;
+  const formatTime = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString(isAr ? 'ar-EG' : 'en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return iso;
+    }
+  };
+  const statusBadge = (p: NonNullable<SitePost['prediction']>) => {
+    if (p.status === 'pending') {
+      return {
+        label: isAr ? '⏳ بانتظار النتيجة' : '⏳ Awaiting result',
+        cls: 'bg-amber-50 text-amber-700 border-amber-200',
+      };
+    }
+    switch (p.verdict) {
+      case 'hit':
+        return { label: isAr ? '✅ تحقق' : '✅ Hit', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+      case 'miss':
+        return { label: isAr ? '❌ لم يتحقق' : '❌ Missed', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+      default:
+        return { label: isAr ? '➖ تعادل' : '➖ Draw', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+    }
+  };
 
   useEffect(() => {
     if (initialNews && typeof onNewsOpened === 'function') {
@@ -440,6 +477,21 @@ END:VCALENDAR`;
           <span>{isAr ? 'الأخبار الرياضية' : 'News'}</span>
           <span className="px-1.5 py-0.2 rounded-md text-[10px] bg-slate-100 text-slate-600 font-mono">
             {news.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('predictions')}
+          className={`flex-1 h-8 flex items-center justify-center gap-1.5 rounded-lg text-xs font-bold transition-all ${
+            activeSubTab === 'predictions'
+              ? 'bg-white text-slate-900 shadow-2xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Bot className="w-3.5 h-3.5 text-purple-600" />
+          <span>{isAr ? 'سجل التوقعات' : 'Predictions'}</span>
+          <span className="px-1.5 py-0.2 rounded-md text-[10px] bg-slate-100 text-slate-600 font-mono">
+            {predictions.length}
           </span>
         </button>
       </div>
@@ -1031,6 +1083,143 @@ END:VCALENDAR`;
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Predictions Log — سجل التوقعات */}
+      {activeSubTab === 'predictions' && (
+        <div className="space-y-3">
+          {/* Summary strip */}
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+            <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+              ⏳ {isAr ? 'بانتظار النتيجة' : 'Awaiting'}: {pendingCount}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+              ✅ {isAr ? 'تحقق' : 'Hit'}: {verdictCount('hit')}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">
+              ❌ {isAr ? 'لم يتحقق' : 'Missed'}: {verdictCount('miss')}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+              ➖ {isAr ? 'تعادل' : 'Draw'}: {verdictCount('draw')}
+            </span>
+          </div>
+
+          {predictions.length === 0 ? (
+            <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center">
+              <Bot className="w-9 h-9 text-purple-400 mx-auto mb-2.5" />
+              <p className="text-sm font-bold text-slate-700">
+                {isAr ? 'لا توجد توقعات منشورة بعد' : 'No predictions published yet'}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                {isAr
+                  ? 'تُنشر توقعات المباريات هنا تلقائيًا بعد تحليل الاحتمالات'
+                  : 'Match forecasts appear here automatically once odds are analyzed'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {predictions.map((post) => {
+                const pred = post.prediction!;
+                const badge = statusBadge(pred);
+                return (
+                  <div
+                    key={post.id}
+                    className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs flex flex-col"
+                  >
+                    <div className="p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-xs font-black text-slate-900 leading-snug truncate">
+                          {pred.homeTeam} × {pred.awayTeam}
+                        </h3>
+                        <span
+                          className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold border ${badge.cls}`}
+                        >
+                          {badge.label}
+                        </span>
+                      </div>
+
+                      {/* Win probability bars */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                          <span className="truncate">🟢 {pred.homeTeam}</span>
+                          <span className="font-mono text-emerald-700">{pred.pHome}%</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-500 rounded-full transition-all"
+                            style={{ width: `${pred.pHome}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                          <span className="truncate">🔵 {pred.awayTeam}</span>
+                          <span className="font-mono text-sky-700">{pred.pAway}%</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-full bg-sky-500 rounded-full transition-all"
+                            style={{ width: `${pred.pAway}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Predicted vs actual score */}
+                      <div className="flex items-center justify-between text-[11px] bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 py-1.5">
+                        <span className="text-slate-600 font-bold flex items-center gap-1">
+                          🎯 {isAr ? 'المتوقع' : 'Predicted'}:
+                          <span className="font-mono text-slate-900">{pred.predictedScore}</span>
+                        </span>
+                        {pred.status === 'settled' && pred.actualScore && (
+                          <span className="font-black text-slate-900 flex items-center gap-1">
+                            {isAr ? 'النتيجة' : 'Final'}:
+                            <span className="font-mono">{pred.actualScore}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {pred.status === 'settled' && (
+                        <div
+                          className={`text-center text-[11px] font-black rounded-xl py-1.5 border ${badge.cls}`}
+                        >
+                          {badge.label}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>{formatTime(pred.createdAt)}</span>
+                        <span className="font-bold text-slate-500">
+                          {pred.pctSource === 'odds'
+                            ? isAr
+                              ? 'من الودز'
+                              : 'From odds'
+                            : pred.pctSource === 'explicit'
+                              ? isAr
+                                ? 'نسبة صريحة'
+                                : 'Explicit %'
+                              : pred.pctSource === 'ai'
+                                ? 'Gemini AI'
+                                : isAr
+                                  ? 'افتراضي'
+                                  : 'Default'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {post.image && (
+                      <div className="h-28 w-full overflow-hidden bg-slate-100 mt-auto">
+                        <img
+                          src={post.image}
+                          alt={pred.homeTeam}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppNotification, Language, NotificationCategory } from '../types';
+import { ensureWebPushSubscription } from '../services/pushService';
 import {
   X,
   Bell,
@@ -71,6 +72,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
         const perm = await Notification.requestPermission();
         setPushStatus(perm);
         if (perm === 'granted') {
+          void ensureWebPushSubscription();
           new Notification('VEX Deals ⚡', {
             body: isAr
               ? 'تم تفعيل الإشعارات الفورية لتوقعات الذكاء الاصطناعي بنجاح!'

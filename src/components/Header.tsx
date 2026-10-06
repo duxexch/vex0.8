@@ -3,6 +3,7 @@ import { Language, UserProfile, AppBranding, TabType } from '../types';
 import { TRANSLATIONS } from '../data/translations';
 import { AppIconRenderer } from './AppIconRenderer';
 import { triggerHaptic } from '../utils/haptics';
+import { ensureWebPushSubscription } from '../services/pushService';
 import {
   ShieldCheck,
   Phone,
@@ -358,6 +359,7 @@ export const Header: React.FC<HeaderProps> = ({
                     const perm = await Notification.requestPermission();
                     setNotificationPermission(perm);
                     if (perm === 'granted') {
+                      void ensureWebPushSubscription();
                       new Notification('VEX Deals ⚡', {
                         body: isAr
                           ? 'تم تفعيل الإشعارات الفورية لتوقعات الذكاء الاصطناعي بنجاح!'

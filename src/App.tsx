@@ -31,6 +31,7 @@ import {
 import { useTranslation } from './i18n';
 import { vexApi } from './services/api';
 import { requestFCMToken, onForegroundMessage } from './services/firebaseClient';
+import { ensureWebPushSubscription } from './services/pushService';
 import { recursiveLocalizeCompanies } from './utils/companyTranslator';
 import { detectUserRegionalCurrency } from './utils/currency';
 import { requirePhoneLink } from './utils/requireLink';
@@ -441,6 +442,19 @@ export default function App() {
       showToast(lang === 'ar' ? 'إشعار جديد في الوقت الحقيقي!' : 'New real-time alert!');
     });
 
+    // Predictions: a site post was created or settled → refresh the feed in place
+    socket.on('site_post_updated', (payload: { postId?: string; post?: SitePost }) => {
+      const updated = payload?.post;
+      if (!updated || !payload?.postId) return;
+      setSitePosts((prev) => {
+        const idx = prev.findIndex((p) => p.id === payload.postId);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = updated;
+        return next;
+      });
+    });
+
     // Bridge: Telegram contact events → window (PhoneVerificationModal listens on window).
     // The OTP code itself is intentionally NOT part of this payload (server-side security).
     socket.on('telegram_contact_received', (payload: any) => {
@@ -467,6 +481,13 @@ export default function App() {
     };
     window.addEventListener('vex:require-link', onRequireLink as EventListener);
     return () => window.removeEventListener('vex:require-link', onRequireLink as EventListener);
+  }, []);
+
+  // Web Push: silently subscribe if permission was already granted in a previous visit
+  useEffect(() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      void ensureWebPushSubscription();
+    }
   }, []);
 
   // Toggle Language
@@ -694,6 +715,7 @@ export default function App() {
               <AiSportsHubTab
                 fixtures={fixtures}
                 news={mergedNews}
+                sitePosts={sitePosts}
                 loadingFixtures={loadingFixtures}
                 onAnalyzeMatch={(fixture) => setSelectedFixtureForAi(fixture)}
                 onTriggerAgentBroadcast={handleTriggerAiPrediction}

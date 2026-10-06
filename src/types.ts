@@ -565,6 +565,21 @@ export interface SportsNewsItem {
   url?: string;
 }
 
+export interface PredictionRecord {
+  homeTeam: string;
+  awayTeam: string;
+  pHome: number;
+  pAway: number;
+  predictedScore: string;
+  pctSource: 'explicit' | 'odds' | 'ai' | 'default';
+  status: 'pending' | 'settled';
+  createdAt: string;
+  actualScore?: string;
+  verdict?: 'hit' | 'miss' | 'draw';
+  settledAt?: string;
+  settledBy?: string;
+}
+
 export interface SitePost {
   id: string;
   title: string;
@@ -579,6 +594,9 @@ export interface SitePost {
   externalUrl: string | null;
   sha1?: string;
   createdAt: string;
+  updatedAt?: string;
+  sourceText?: string;
+  prediction?: PredictionRecord;
 }
 
 export type TabType = 'companies' | 'wallets' | 'transfers' | 'referrals' | 'activity' | 'ai-sports' | 'unlucky-wall' | 'lottery';

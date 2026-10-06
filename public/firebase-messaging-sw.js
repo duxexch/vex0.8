@@ -22,3 +22,39 @@ messaging.onBackgroundMessage((payload) => {
 
   self.registration.showNotification(notificationTitle, notificationOptions);
 });
+
+// Self-hosted Web Push (VAPID from /api/push/vapid-public-key) — predictions & settlements
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  let data;
+  try {
+    data = event.data.json();
+  } catch (e) {
+    data = { title: 'VEX Deals', body: event.data.text() };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'VEX Deals', {
+      body: data.body || '',
+      icon: '/icon-192.svg',
+      badge: '/icon-192.svg',
+      tag: data.tag || 'vex-push',
+      data: { url: data.url || '/#ai-sports' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/#ai-sports';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});
