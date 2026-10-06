@@ -125,6 +125,32 @@ check('ai-post sync defaults to 50/50', p?.pctSource === 'default' && p?.pHome =
   check('normalizeTeam arabic', normalizeTeam('  الرِّيَالـ مَدْرِيد ') === 'الريال مدريد', normalizeTeam('  الرِّيَالـ مَدْرِيد '));
   check('normalizeTeam english', normalizeTeam('Manchester  City!') === 'manchester city', normalizeTeam('Manchester  City!'));
 
+  // 11. teamsMatch — Arabic script vs latin transliteration (ESPN)
+  const { teamsMatch } = await import('../server/predictionParser');
+  const matchCases: Array<[string, string, boolean]> = [
+    ['الأهلي', 'Al Ahly', true],
+    ['الهلال', 'Al Hilal', true],
+    ['سندرلاند', 'Sunderland', true],
+    ['برايتون هوف ألبيون', 'Brighton and Hove Albion', true],
+    ['أرسنال', 'Arsenal', true],
+    ['ليدز يونايتد', 'Leeds United', true],
+    ['ريال مدريد', 'Real Madrid', true],
+    ['مانشستر سيتي', 'Manchester City', true],
+    ['الوداد', 'Wydad AC', true],
+    ['الترجي', 'Esperance Sportive de Tunis', true],
+    ['زد', 'ZED FC', true],
+    ['الزمالك', 'Zamalek SC', true],
+    ['السد', 'Al Sadd SC', true],
+    ['الأهلي', 'Al Hilal', false],
+    ['سندرلاند', 'Leeds United', false],
+    ['ليفربول', 'Manchester City', false],
+    ['برشلونة', 'Al Hilal', false],
+  ];
+  for (const [x, y, want] of matchCases) {
+    const got = teamsMatch(x, y);
+    check(`teamsMatch ${x} ~ ${y} = ${want}`, got === want, `got ${got}`);
+  }
+
   const failed = results.filter(([, ok]) => !ok);
   console.log(`\n== test_prediction_parser: ${results.length - failed.length}/${results.length} passed ==`);
   if (failed.length) {

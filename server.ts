@@ -20,7 +20,7 @@ import {
   buildCompactText,
   buildCompactTitle,
   buildResultSuffix,
-  normalizeTeam,
+  teamsMatch,
 } from './server/predictionParser';
 import type { ParsedPrediction, PredictionRecord, ActualScore } from './server/predictionParser';
 import { getVapidPublicKey, addSubscription, removeSubscription, sendWebPush } from './server/webPush';
@@ -797,14 +797,7 @@ function migrateSitePostsPredictions() {
 // Auto-settlement: poll ESPN (site scoreboard) for finished matches, settle pending predictions.
 const ESPN_SCOREBOARD_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard';
 
-function teamsMatch(a: string, b: string): boolean {
-  const na = normalizeTeam(a);
-  const nb = normalizeTeam(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  if (na.includes(nb) || nb.includes(na)) return true;
-  return false;
-}
+// teamsMatch (Arabic<->English alias aware) is imported from ./server/predictionParser
 
 async function fetchFinishedMatches(dateParam: string): Promise<Array<{ homeName: string; awayName: string; home: number; away: number }>> {
   const resp = await fetch(`${ESPN_SCOREBOARD_BASE}?dates=${dateParam}`, {
@@ -835,11 +828,12 @@ async function fetchFinishedMatches(dateParam: string): Promise<Array<{ homeName
 
 async function pollFinishedMatchResults() {
   try {
-    const today = new Date();
-    const yday = new Date(today.getTime() - 24 * 3600 * 1000);
+    const now = Date.now();
     const fmt = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     let finished: Awaited<ReturnType<typeof fetchFinishedMatches>> = [];
-    for (const dateParam of [fmt(today), fmt(yday)]) {
+    // Today + last 3 days: catches weekend matches even if the poller was down
+    for (let daysAgo = 0; daysAgo <= 3; daysAgo++) {
+      const dateParam = fmt(new Date(now - daysAgo * 24 * 3600 * 1000));
       try {
         finished = finished.concat(await fetchFinishedMatches(dateParam));
       } catch (dayErr) {

@@ -46,6 +46,184 @@ export function normalizeTeam(value: string): string {
     .toLowerCase();
 }
 
+// ---------------------------------------------------------------- Arabic <-> English team matching
+// ESPN returns latin transliterations ("Al Hilal", "Sunderland") while our posts use Arabic
+// script ("الهلال", "سندرلاند"). This dictionary maps normalized Arabic keys to English
+// aliases; matching is substring-based both ways so core keys cover long forms
+// ("برايتون" matches "Brighton and Hove Albion").
+
+function normalizeArabicName(value: string): string {
+  return String(value || '')
+    .replace(/[\u{064B}-\u{0652}\u{0670}\u{0640}]/gu, '')
+    .replace(/[\u0623\u0625\u0622]/g, '\u0627')
+    .replace(/\u0629/g, '\u0647')
+    .replace(/\u0649/g, '\u064a')
+    .replace(/\u0624/g, '\u0648')
+    .replace(/\u0626/g, '\u064a')
+    .toLowerCase()
+    .replace(/[^\u0600-\u06ff\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const TEAM_ALIASES_RAW: Record<string, string[]> = {
+  // England
+  'ريال مدريد': ['real madrid'],
+  'برشلونة': ['barcelona'],
+  'أتلتيكو': ['atletico'],
+  'مانشستر سيتي': ['manchester city'],
+  'مانشستر يونايتد': ['manchester united'],
+  'ليفربول': ['liverpool'],
+  'أرسنال': ['arsenal'],
+  'تشيلسي': ['chelsea'],
+  'توتنهام': ['tottenham'],
+  'برايتون': ['brighton'],
+  'نيوكاسل': ['newcastle'],
+  'أستون فيلا': ['aston villa'],
+  'وست هام': ['west ham'],
+  'إيفرتون': ['everton'],
+  'فولهام': ['fulham'],
+  'كريستال بالاس': ['crystal palace'],
+  'بورنموث': ['bournemouth'],
+  'نوتنغهام': ['nottingham'],
+  'نوتنجهام': ['nottingham'],
+  'ليستر': ['leicester'],
+  'ساوثهامبتون': ['southampton'],
+  'ليدز يونايتد': ['leeds united', 'leeds'],
+  'ليدز': ['leeds'],
+  'سندرلاند': ['sunderland'],
+  'وولفرهامبتون': ['wolverhampton', 'wolves'],
+  'برينتفورد': ['brentford'],
+  'إبسويتش': ['ipswich'],
+  'نوريتش': ['norwich'],
+  'بيرنلي': ['burnley'],
+  'شيفيلد': ['sheffield'],
+  'ويست بروميتش': ['west brom'],
+  // Italy
+  'يوفنتوس': ['juventus'],
+  'ميلان': ['milan'],
+  'إنتر': ['inter'],
+  'نابولي': ['napoli'],
+  'روما': ['roma'],
+  'لاتسيو': ['lazio'],
+  'أتالانتا': ['atalanta'],
+  'فيورنتينا': ['fiorentina'],
+  // Germany / France / Portugal / Netherlands
+  'بايرن ميونخ': ['bayern'],
+  'دورتموند': ['dortmund'],
+  'لايبزيغ': ['leipzig'],
+  'باريس سان جيرمان': ['saint germain', 'paris saint', 'psg'],
+  'سان جيرمان': ['saint germain', 'psg'],
+  'مارسيليا': ['marseille'],
+  'ليون': ['lyon'],
+  'موناكو': ['monaco'],
+  'ليل': ['lille'],
+  'بورتو': ['porto'],
+  'بنفيكا': ['benfica'],
+  'سبورتينغ': ['sporting'],
+  'أياكس': ['ajax'],
+  'فينورد': ['feyenoord'],
+  'بي إس في': ['psv'],
+  // Saudi Arabia
+  'الهلال': ['hilal'],
+  'النصر': ['nassr', 'nasr'],
+  'الأهلي': ['ahly', 'ahli'],
+  'الاتحاد': ['ittihad'],
+  'الشباب': ['shabab'],
+  'الفتح': ['fateh', 'fath'],
+  'القادسية': ['qadsiah', 'kadsiah'],
+  'التعاون': ['taawoun', 'taoun'],
+  'الطائي': ['taai', 'attai'],
+  'الحزم': ['hazem'],
+  'الفيصلي': ['feisli', 'faisali'],
+  'الرائد': ['raed'],
+  'الاتفاق': ['ittfaq'],
+  'الوحدة': ['wahda'],
+  'ضمك': ['damac'],
+  'الرياض': ['riyadh'],
+  // Egypt
+  'الزمالك': ['zamalek'],
+  'بيراموز': ['pyramids'],
+  'بيراميدز': ['pyramids'],
+  'الإسماعيلي': ['ismaily'],
+  'سموحة': ['smouha'],
+  'المقاولون': ['mokawloon', 'makawloon'],
+  'إنبي': ['enppi'],
+  'بتروجت': ['petrojet'],
+  'سيراميكا': ['ceramica'],
+  'المصري': ['misr'],
+  'المقاصة': ['makasa'],
+  'زد': ['zed'],
+  // Morocco / Tunisia / Algeria
+  'الرجاء': ['raja'],
+  'الوداد': ['wydad'],
+  'بركان': ['berkane'],
+  'الترجي': ['esperance'],
+  'الصفاقسي': ['sfax'],
+  'النجم الساحلي': ['sahel', 'es sahel'],
+  'شبيبة القبائل': ['kabylie'],
+  'وفاق سطيف': ['setif'],
+  'مولودية الجزائر': ['mouloudia', 'mc alger'],
+  'قسنطين': ['constantine'],
+  // Iraq / Qatar / UAE / Kuwait / Sudan
+  'الزوراء': ['zawraa'],
+  'القوة الجوية': ['jawiya', 'quwa'],
+  'الشرطة': ['shurta'],
+  'الدحيل': ['duhail'],
+  'السد': ['sadd'],
+  'الريان': ['rayyan'],
+  'العين': ['ain'],
+  'الوصل': ['wasl'],
+  'الشارقة': ['sharjah'],
+  'الكويت': ['kuwait'],
+  'المريخ': ['merrikh'],
+};
+
+const TEAM_ALIASES = new Map<string, string[]>();
+for (const [rawKey, aliases] of Object.entries(TEAM_ALIASES_RAW)) {
+  const n = normalizeArabicName(rawKey).replace(/^ال/, '');
+  if (n.length >= 2 && !TEAM_ALIASES.has(n)) TEAM_ALIASES.set(n, aliases);
+}
+
+function resolveArabicAliases(name: string): string[] {
+  if (!/[\u0600-\u06FF]/.test(name)) return [];
+  const n = normalizeArabicName(name);
+  if (n.length < 2) return [];
+  const stripped = n.replace(/^ال/, '');
+  const variants = stripped !== n && stripped.length >= 2 ? [n, stripped] : [n];
+  const out: string[] = [];
+  for (const [k, aliases] of TEAM_ALIASES) {
+    for (const v of variants) {
+      if (v.includes(k) || (k.length >= 3 && k.includes(v))) {
+        out.push(...aliases);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+function aliasHitsNorm(candidate: string, norm: string): boolean {
+  if (!candidate || !norm) return false;
+  return norm === candidate || norm.includes(candidate) || candidate.includes(norm);
+}
+
+// True when two team names refer to the same club (Arabic script, latin, or mixed).
+export function teamsMatch(a: string, b: string): boolean {
+  const na = normalizeTeam(a);
+  const nb = normalizeTeam(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  for (const cand of resolveArabicAliases(a)) {
+    if (aliasHitsNorm(cand, nb)) return true;
+  }
+  for (const cand of resolveArabicAliases(b)) {
+    if (aliasHitsNorm(cand, na)) return true;
+  }
+  return false;
+}
+
 function cleanTeamName(value: string): string {
   return String(value || '')
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]/gu, ' ')
