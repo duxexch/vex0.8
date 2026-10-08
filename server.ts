@@ -4625,6 +4625,38 @@ Expires: ${new Date(Date.now() + 365*24*60*60*1000).toISOString()}
       }
     });
 
+    // ==================== Auto-submission (zero-touch indexing) ====================
+    // Every 4h + shortly after boot, ping IndexNow with each brand domain's
+    // sitemap + homepage so Bing/Yandex/DuckDuckGo/Seznam index new content
+    // without anyone opening any console. Google ignores IndexNow and instead
+    // crawls robots.txt + sitemap.xml organically (verified live on all domains).
+    const INDEXNOW_HOSTS = ['vex.deals', 'betjam.sbs', 'betongame.cloud', '1xbetservices.com'];
+    async function indexNowPing(host: string, urls: string[]): Promise<void> {
+      try {
+        const r = await fetch('https://api.indexnow.org/indexnow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({
+            host,
+            key: INDEXNOW_KEY,
+            keyLocation: `https://${host}/${INDEXNOW_KEY}.txt`,
+            urlList: urls,
+          }),
+        });
+        console.log(`[IndexNow:auto] ${host} -> HTTP ${r.status} (${urls.length} urls)`);
+      } catch (err) {
+        console.error(`[IndexNow:auto] ${host} failed:`, err);
+      }
+    }
+    async function indexNowAutoCycle(): Promise<void> {
+      for (const host of INDEXNOW_HOSTS) {
+        await indexNowPing(host, [`https://${host}/sitemap.xml`, `https://${host}/`]);
+        await new Promise(s => setTimeout(s, 1500));
+      }
+    }
+    setTimeout(() => { void indexNowAutoCycle(); }, 90 * 1000);
+    setInterval(() => { void indexNowAutoCycle(); }, 4 * 3600 * 1000);
+
     // Dynamic robots.txt per domain - MUST be before express.static
     app.get('/robots.txt', (req, res) => {
       const domain = req.headers.host?.replace(/^www\./, '') || 'vex.deals';
