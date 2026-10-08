@@ -254,7 +254,7 @@ const ANALYZE_SYSTEM = `أنت محلل محتوى رياضي. ترجع JSON ف�
 - entities: أسماء الفرق/اللاعبين (إن وجدت)
 - imageQuery: استعلام بحث صور قصير بالإنجليزية (مثلاً "Real Madrid vs Barcelona")`;
 
-async function analyzeItem(item: RawItem): Promise<AnalyzedItem> {
+async function analyzeItem(item: RawItem): Promise<AnalyzedItem & { usedLlm: boolean }> {
   const base: AnalyzedItem = {
     ...item,
     topics: [],
@@ -264,7 +264,13 @@ async function analyzeItem(item: RawItem): Promise<AnalyzedItem> {
 
   // Live items skip LLM (already classified)
   if (item.kind === 'live') {
-    return { ...base, topics: ['football', 'live'], entities: [item.live?.home || '', item.live?.away || ''].filter(Boolean), imageQuery: `${item.live?.home || ''} vs ${item.live?.away || ''}`.trim() };
+    return {
+      ...base,
+      topics: ['football', 'live'],
+      entities: [item.live?.home || '', item.live?.away || ''].filter(Boolean),
+      imageQuery: `${item.live?.home || ''} vs ${item.live?.away || ''}`.trim(),
+      usedLlm: false,
+    };
   }
 
   try {
@@ -282,6 +288,7 @@ async function analyzeItem(item: RawItem): Promise<AnalyzedItem> {
           topics: Array.isArray(parsed.topics) ? parsed.topics.slice(0, 5) : base.topics,
           entities: Array.isArray(parsed.entities) ? parsed.entities.filter(Boolean).slice(0, 8) : [],
           imageQuery: typeof parsed.imageQuery === 'string' && parsed.imageQuery.trim() ? parsed.imageQuery.slice(0, 80) : base.imageQuery,
+          usedLlm: true,
         };
       }
     }
@@ -300,7 +307,7 @@ async function analyzeItem(item: RawItem): Promise<AnalyzedItem> {
   if (item.categoryKey === 'football') topics.push('football');
   if (item.categoryKey === 'basketball') topics.push('basketball');
   if (topics.length === 0) topics.push('general');
-  return { ...base, topics };
+  return { ...base, topics, usedLlm: false };
 }
 
 async function analyzerAgent(items: RawItem[]): Promise<{ items: AnalyzedItem[]; fallback: boolean; detail: string }> {
@@ -308,7 +315,7 @@ async function analyzerAgent(items: RawItem[]): Promise<{ items: AnalyzedItem[];
   let llmUsed = 0;
   for (const item of items.slice(0, 30)) {
     const analyzed = await analyzeItem(item);
-    if (analyzed.topics.length > 0) llmUsed++;
+    if (analyzed.usedLlm) llmUsed++;
     out.push(analyzed);
   }
   return { items: out, fallback: llmUsed === 0 && out.length > 0, detail: `analyzed ${out.length} items` };

@@ -69,6 +69,11 @@ function load(): ChannelsFile {
     if (fs.existsSync(CHANNELS_PATH)) {
       const data = JSON.parse(fs.readFileSync(CHANNELS_PATH, 'utf-8')) as ChannelsFile;
       if (!Array.isArray(data.channels)) data.channels = [];
+      // Normalize: JSON null on quiet hours must mean "not set"
+      for (const ch of data.channels) {
+        if (ch.quiet_start === null as any) ch.quiet_start = undefined;
+        if (ch.quiet_end === null as any) ch.quiet_end = undefined;
+      }
       if (!data.publisher) data.publisher = { bot_token: '', bot_username: '', bot_name: '', bot_id: '' };
       return data;
     }
@@ -106,7 +111,7 @@ export const channelsStore = {
       if (c.category === 'users' || c.category === 'support') return false;
       if (c.daily_reset !== today) return true; // reset pending — cap not consumed yet
       if (c.daily_used >= c.daily_cap) return false;
-      if (c.quiet_start !== undefined && c.quiet_end !== undefined) {
+      if (c.quiet_start != null && c.quiet_end != null) {
         const qs = c.quiet_start, qe = c.quiet_end;
         const inQuiet = qs < qe ? hour >= qs && hour < qe : hour >= qs || hour < qe;
         if (inQuiet) return false;
