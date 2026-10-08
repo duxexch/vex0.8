@@ -7044,4 +7044,21 @@ ${secsHtml}
   });
 }
 
-setupServer();
+// One-shot pipeline test hook: PIPELINE_ONCE=1 node dist/server.cjs
+// runs collect→analyze→classify→generate→publish once, prints the report, exits.
+if (process.env.PIPELINE_ONCE === '1') {
+  (async () => {
+    try {
+      console.log('[PipelineOnce] running one-shot publish pipeline...');
+      const report = await runPublishPipeline('manual');
+      console.log(JSON.stringify(report, null, 2));
+      const queue = await processPublishQueue();
+      console.log('queue retry:', JSON.stringify(queue));
+    } catch (err: any) {
+      console.error('[PipelineOnce] failed:', err.message);
+    }
+    process.exit(0);
+  })();
+} else {
+  setupServer();
+}
