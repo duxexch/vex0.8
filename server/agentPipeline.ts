@@ -128,7 +128,9 @@ function stripHtml(v: string): string {
 
 async function fetchLiveMatches(): Promise<RawItem[]> {
   try {
-    const resp = await fetch(`${ESPN_LIVE_BASE}?dates=now`, {
+    const now = new Date();
+    const dateParam = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
+    const resp = await fetch(`${ESPN_LIVE_BASE}?dates=${dateParam}`, {
       headers: { 'User-Agent': 'curl/8.0', Accept: 'application/json' },
       signal: AbortSignal.timeout(15000),
     });
@@ -171,25 +173,30 @@ async function fetchLiveMatches(): Promise<RawItem[]> {
 }
 
 async function collectNewsItems(): Promise<RawItem[]> {
+  let articles: ScrapedArticle[] = [];
   try {
-    const articles = await getNewsScraper().scrapeAll();
-    return articles.map((a: ScrapedArticle) => ({
-      id: a.id,
-      kind: 'news' as const,
-      title: a.title,
-      summary: a.summary || a.title,
-      source: a.source,
-      sourceUrl: a.sourceUrl,
-      imageUrl: a.imageUrl,
-      publishedAt: a.publishedAt,
-      categoryKey: a.categoryKey,
-      lang: a.title.match(/[\u0600-\u06FF]/) ? ('ar' as const) : ('en' as const),
-      urgency: 'normal' as const,
-    }));
+    articles = await getNewsScraper().scrapeAll();
   } catch (err: any) {
     console.warn('[Collector] news scrape failed:', err.message);
-    return [];
   }
+  // Fallback: if scraping returned nothing (site down / blocked), use stored items
+  if (articles.length === 0) {
+    articles = getNewsScraper().loadExistingNews().slice(0, 40);
+    if (articles.length) console.warn(`[Collector] scrape empty → using ${articles.length} stored articles as fallback`);
+  }
+  return articles.map((a: ScrapedArticle) => ({
+    id: a.id,
+    kind: 'news' as const,
+    title: a.title,
+    summary: a.summary || a.title,
+    source: a.source,
+    sourceUrl: a.sourceUrl,
+    imageUrl: a.imageUrl,
+    publishedAt: a.publishedAt,
+    categoryKey: a.categoryKey,
+    lang: a.title.match(/[\u0600-\u06FF]/) ? ('ar' as const) : ('en' as const),
+    urgency: 'normal' as const,
+  }));
 }
 
 function collectCapturedItems(): RawItem[] {
@@ -226,12 +233,14 @@ async function collectorAgent(): Promise<{ items: RawItem[]; fallback: boolean; 
   const live = await fetchLiveMatches();               // real-time first (live matches)
   const news = await collectNewsItems();               // then scraped news
   const captured = collectCapturedItems();             // then browser captures
-  const items = [...live, ...news, ...captured];
+  // Priority: live > captured > news; within news newest first. Cap per run.
+  news.sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1));
+  const items = [...live, ...captured, ...news].slice(0, 12);
   const ok = items.length > 0;
   return {
     items,
-    fallback: false,
-    detail: ok ? `${live.length} live, ${news.length} news, ${captured.length} captured` : 'no sources returned items',
+    fallback: live.length === 0 && news.length === 0 && captured.length > 0,
+    detail: ok ? `${live.length} live, ${news.length} news, ${captured.length} captured (processing ${items.length})` : 'no sources returned items',
   };
 }
 
@@ -382,7 +391,7 @@ function templatePost(item: AnalyzedItem, ch: ChannelProfile): string {
   return text.slice(0, 3800);
 }
 
-async function generateForChannel(item: AnalyzedItem, ch: ChannelProfile): Promise<string> {
+async function generateForChannel(item: AnalyzedItem, ch: ChannelProfile): Promise<{ text: string; usedLlm: boolean }> {
   const isLive = item.topics.includes('live');
   const systemPrompt = `أنت كاتب منشورات قنوات تيليجرام رياضية.
 القناة: ${ch.title} (نوعها: ${ch.category}، مواضيعها: ${ch.topics.join(', ')})
@@ -402,12 +411,12 @@ ${isLive ? 'المنشور مباشر — أضف شغف وإلحاح ومنشن 
     if (raw && raw.trim().length > 20) {
       let text = raw.trim().replace(/^```[\w]*\n?|```$/g, '');
       if (ch.brand.signature && !text.includes(ch.brand.signature)) text += `\n\n${ch.brand.signature}`;
-      return text.slice(0, 3900);
+      return { text: text.slice(0, 3900), usedLlm: true };
     }
   } catch (err: any) {
     console.warn('[Generator] LLM failed, using template:', err.message);
   }
-  return templatePost(item, ch);
+  return { text: templatePost(item, ch), usedLlm: false };
 }
 
 async function generatorAgent(pairs: Array<{ item: AnalyzedItem; matches: ChannelMatch[] }>): Promise<{ posts: GeneratedPost[]; fallback: boolean; detail: string }> {
@@ -415,8 +424,8 @@ async function generatorAgent(pairs: Array<{ item: AnalyzedItem; matches: Channe
   let llmUsed = 0;
   for (const pair of pairs) {
     for (const m of pair.matches) {
-      const text = await generateForChannel(pair.item, m.channel);
-      if (!text.startsWith(pair.item.title)) llmUsed++; // template starts with title
+      const { text, usedLlm } = await generateForChannel(pair.item, m.channel);
+      if (usedLlm) llmUsed++;
       posts.push({
         chat_id: m.channel.chat_id,
         channelTitle: m.channel.title,
@@ -425,7 +434,11 @@ async function generatorAgent(pairs: Array<{ item: AnalyzedItem; matches: Channe
       });
     }
   }
-  return { posts, fallback: llmUsed === 0 && posts.length > 0, detail: `${posts.length} posts generated` };
+  return {
+    posts,
+    fallback: posts.length > 0 && llmUsed === 0,
+    detail: `${posts.length} posts generated (${llmUsed} via LLM, ${posts.length - llmUsed} template)`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -683,6 +696,19 @@ export async function runPublishPipeline(trigger: 'manual' | 'schedule' | 'live'
     report.postsGenerated = generated.posts.length;
     report.stages.push({ stage: 'generate', ok: generated.posts.length > 0, fallback: generated.fallback, detail: generated.detail });
     if (generated.posts.length === 0) return finish(report);
+
+    // Quality gate: if every post came from the template fallback (no working LLM),
+    // hold the posts instead of publishing low-effort content. They will flow
+    // automatically once an AI provider key has credits.
+    if (generated.fallback) {
+      report.stages.push({
+        stage: 'publish',
+        ok: false,
+        fallback: true,
+        detail: 'HELD: no working LLM provider (template-only posts) — charge OpenRouter key to enable publishing',
+      });
+      return finish(report);
+    }
 
     // 5. Images
     const imaged = await imageAgent(generated.posts, analyzed.items);

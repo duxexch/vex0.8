@@ -4,25 +4,23 @@ import * as path from 'path';
 import { launchBrowser } from './browser';
 
 // =========================================================================
-// VEX News Scraper - Multi-source sports news with Playwright
+// VEX News Scraper — pattern-based article extraction (probed against live
+// sites 2026-10-08). No fragile DOM selectors: filter anchors by URL regex.
 // =========================================================================
 
 export interface NewsSource {
   id: string;
   name: string;
-  baseUrl: string;
+  /** Listing page to load */
+  url: string;
+  /** Regex tested against the full article URL (after resolution) */
+  articlePattern: string;
+  /** Regex for URLs to drop (nav sections, tags, videos…) */
+  excludePattern?: string;
   category: string;
   categoryKey: string;
-  selectors: {
-    articleList: string;
-    title: string;
-    link: string;
-    summary?: string;
-    image?: string;
-    publishedAt?: string;
-  };
-  rateLimitMs: number;
   lang: 'ar' | 'en' | 'es';
+  rateLimitMs: number;
   active: boolean;
 }
 
@@ -42,152 +40,78 @@ export interface ScrapedArticle {
   categoryKey: string;
   imageUrl?: string;
   score: number;
-  rawHtml?: string;
 }
 
+// Probed: 2026-10-08 — each pattern returned real articles from the listing page.
 const NEWS_SOURCES: NewsSource[] = [
   {
     id: 'filgoal',
     name: 'FilGoal',
-    baseUrl: 'https://www.filgoal.com',
+    url: 'https://www.filgoal.com/',
+    articlePattern: '/articles/\\d+',
+    excludePattern: '/(?:tags|matches|videos|games)/',
     category: 'كرة قدم',
     categoryKey: 'football',
-    selectors: {
-      articleList: '.article-list .article-item, .news-list .news-item, article.news-item',
-      title: 'h3 a, h2 a, .title a, a.title',
-      link: 'h3 a, h2 a, .title a, a.title',
-      summary: '.desc, .summary, .excerpt, p',
-      image: 'img',
-      publishedAt: 'time, .date, .time',
-    },
-    rateLimitMs: 3000,
     lang: 'ar',
+    rateLimitMs: 3000,
     active: true,
   },
   {
     id: 'yallakora',
     name: 'YallaKora',
-    baseUrl: 'https://www.yallakora.com',
+    url: 'https://www.yallakora.com/news',
+    articlePattern: '/news/\\d+/',
+    excludePattern: '/(?:tour|matches)/',
     category: 'كرة قدم',
     categoryKey: 'football',
-    selectors: {
-      articleList: '.match-news .news-item, .news-list .item, article',
-      title: 'h3 a, h2 a, .news-title a',
-      link: 'h3 a, h2 a, .news-title a',
-      summary: '.news-desc, .excerpt, p',
-      image: 'img',
-      publishedAt: '.news-date, time',
-    },
-    rateLimitMs: 3000,
     lang: 'ar',
+    rateLimitMs: 3000,
     active: true,
   },
   {
     id: 'kooora',
     name: 'Kooora',
-    baseUrl: 'https://www.kooora.com',
+    url: 'https://www.kooora.com/',
+    articlePattern: '/(?:%D9%83%D8%B1%D8%A9-%D9%82%D8%AF%D9%85|كرة-قدم)/(?:%D8%A3%D8%AE%D8%A8%D8%A7%D8%B1|أخبار|القوائم|مقالات)/',
     category: 'كرة قدم',
     categoryKey: 'football',
-    selectors: {
-      articleList: '.news-block .item, .main-news .news-item, .article-list li',
-      title: 'h3 a, h2 a, .title a',
-      link: 'h3 a, h2 a, .title a',
-      summary: '.summary, .desc, p',
-      image: 'img',
-      publishedAt: '.date, time',
-    },
-    rateLimitMs: 3000,
     lang: 'ar',
-    active: true,
-  },
-  {
-    id: 'sky_sports',
-    name: 'Sky Sports Football',
-    baseUrl: 'https://www.skysports.com/football',
-    category: 'كرة قدم',
-    categoryKey: 'football',
-    selectors: {
-      articleList: '.news-list__item, .article-list__item, .news-feed__item',
-      title: '.news-list__headline a, .article-title a, h3 a',
-      link: '.news-list__headline a, .article-title a, h3 a',
-      summary: '.news-list__snippet, .article-excerpt, p',
-      image: 'img',
-      publishedAt: '.news-list__date, time',
-    },
-    rateLimitMs: 5000,
-    lang: 'en',
-    active: true,
-  },
-  {
-    id: 'bbc_sport',
-    name: 'BBC Sport Football',
-    baseUrl: 'https://www.bbc.com/sport/football',
-    category: 'كرة قدم',
-    categoryKey: 'football',
-    selectors: {
-      articleList: '[data-testid="card"], .gs-c-promo, .promo-unit',
-      title: '.gs-c-promo-heading, .promo-heading, h3 a',
-      link: '.gs-c-promo-heading a, .promo-heading a, h3 a',
-      summary: '.gs-c-promo-summary, .promo-summary, p',
-      image: 'img',
-      publishedAt: 'time, .date',
-    },
-    rateLimitMs: 5000,
-    lang: 'en',
-    active: true,
-  },
-  {
-    id: 'marca',
-    name: 'Marca Futbol',
-    baseUrl: 'https://www.marca.com/futbol.html',
-    category: 'كرة قدم',
-    categoryKey: 'football',
-    selectors: {
-      articleList: '.ue-c-cover-content, .mod-content, article',
-      title: 'h2 a, h3 a, .title a',
-      link: 'h2 a, h3 a, .title a',
-      summary: '.summary, .intro, p',
-      image: 'img',
-      publishedAt: 'time, .date',
-    },
-    rateLimitMs: 5000,
-    lang: 'es',
+    rateLimitMs: 3000,
     active: true,
   },
   {
     id: 'goal_ar',
     name: 'Goal.com Arabic',
-    baseUrl: 'https://www.goal.com/ar',
+    url: 'https://www.goal.com/ar',
+    articlePattern: '/ar/(?:%D8%A7%D9%84%D9%82%D9%88%D8%A7%D8%A6%D9%85|القوائم)/',
+    excludePattern: '/(?:%D9%85%D8%B3%D8%A7%D8%A8%D9%82%D8%A7%D8%AA|مسابقات)/',
     category: 'كرة قدم',
     categoryKey: 'football',
-    selectors: {
-      articleList: '.widget-news-list__item, .article-item, .feed-item',
-      title: '.widget-news-list__title a, .article-title a, h3 a',
-      link: '.widget-news-list__title a, .article-title a, h3 a',
-      summary: '.widget-news-list__excerpt, .excerpt, p',
-      image: 'img',
-      publishedAt: 'time, .date',
-    },
-    rateLimitMs: 3000,
     lang: 'ar',
+    rateLimitMs: 3000,
     active: true,
   },
   {
-    id: 'aljazeera_sport',
-    name: 'Al Jazeera Sport',
-    baseUrl: 'https://www.aljazeera.net/sport',
-    category: 'رياضة عامة',
-    categoryKey: 'general',
-    selectors: {
-      articleList: '.article-list .item, .topics-list .topic-item, article',
-      title: 'h3 a, h2 a, .title a',
-      link: 'h3 a, h2 a, .title a',
-      summary: '.excerpt, .summary, p',
-      image: 'img',
-      publishedAt: 'time, .date',
-    },
-    rateLimitMs: 3000,
-    lang: 'ar',
+    id: 'sky_sports',
+    name: 'Sky Sports Football',
+    url: 'https://www.skysports.com/football/news',
+    articlePattern: '/football/news/\\d+/',
+    excludePattern: '/(?:topic|transfer)/',
+    category: 'كرة قدم',
+    categoryKey: 'football',
+    lang: 'en',
+    rateLimitMs: 5000,
+    active: true,
+  },
+  {
+    id: 'bbc_sport',
+    name: 'BBC Sport Football',
+    url: 'https://www.bbc.com/sport/football',
+    articlePattern: '/sport/football/(?:articles|live)/',
+    category: 'كرة قدم',
+    categoryKey: 'football',
+    lang: 'en',
+    rateLimitMs: 5000,
     active: true,
   },
 ];
@@ -216,7 +140,7 @@ export class NewsScraper {
     }
   }
 
-  private loadExistingNews(): ScrapedArticle[] {
+  loadExistingNews(): ScrapedArticle[] {
     try {
       if (fs.existsSync(this.newsFile)) {
         const data = JSON.parse(fs.readFileSync(this.newsFile, 'utf-8'));
@@ -230,11 +154,11 @@ export class NewsScraper {
 
   private saveNews(items: ScrapedArticle[]): void {
     const existing = this.loadExistingNews();
-    const existingIds = new Set(existing.map((i) => i.id));
-    const newItems = items.filter((i) => !existingIds.has(i.id));
-    const merged = [...newItems, ...existing].slice(0, 500);
+    const existingUrls = new Set(existing.map((i) => i.sourceUrl));
+    const newItems = items.filter((i) => !existingUrls.has(i.sourceUrl));
+    const merged = [...newItems, ...existing].slice(0, 600);
     fs.writeFileSync(this.newsFile, JSON.stringify({ items: merged, updatedAt: new Date().toISOString() }, null, 2));
-    console.log(`[NewsScraper] Saved ${newItems.length} new articles, total: ${merged.length}`);
+    if (newItems.length) console.log(`[NewsScraper] Saved ${newItems.length} new articles, total: ${merged.length}`);
   }
 
   private generateSlug(title: string): string {
@@ -248,67 +172,64 @@ export class NewsScraper {
   private async scrapeSource(source: NewsSource): Promise<ScrapedArticle[]> {
     if (!this.browser) await this.init();
     const page = await this.browser!.newPage();
-
     try {
-      await page.goto(source.baseUrl, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(source.rateLimitMs);
+      await page.goto(source.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      await page.waitForTimeout(3500);
 
-      const articles = await page.evaluate((sel) => {
-        const items = document.querySelectorAll(sel.articleList);
-        const results = [];
-        for (const item of items) {
-          try {
-            const titleEl = item.querySelector(sel.title);
-            const linkEl = item.querySelector(sel.link);
-            const summaryEl = sel.summary ? item.querySelector(sel.summary) : null;
-            const imageEl = sel.image ? item.querySelector(sel.image) : null;
-            const timeEl = sel.publishedAt ? item.querySelector(sel.publishedAt) : null;
-
-            if (!titleEl || !linkEl) continue;
-
-            const title = titleEl.textContent?.trim() || '';
-            const href = linkEl.getAttribute('href') || '';
-            if (!title || !href) continue;
-
-            results.push({
-              title,
-              url: href.startsWith('http') ? href : new URL(href, window.location.origin).href,
-              summary: summaryEl?.textContent?.trim() || '',
-              image: imageEl?.getAttribute('src') || imageEl?.getAttribute('data-src') || '',
-              publishedAt: timeEl?.getAttribute('datetime') || timeEl?.textContent?.trim() || '',
-            });
-          } catch {}
-        }
-        return results.slice(0, 20);
-      }, source.selectors);
+      const raw = await page.evaluate(
+        ({ articlePattern, excludePattern }) => {
+          const re = new RegExp(articlePattern);
+          const ex = excludePattern ? new RegExp(excludePattern) : null;
+          const seen = new Set<string>();
+          const out: Array<{ title: string; url: string; image: string }> = [];
+          document.querySelectorAll('a[href]').forEach((a) => {
+            const href = a.getAttribute('href') || '';
+            const title = (a.textContent || '').replace(/\s+/g, ' ').trim();
+            if (title.length < 25 || title.length > 260) return;
+            let abs: string;
+            try {
+              abs = new URL(href, location.origin).href;
+            } catch {
+              return;
+            }
+            if (!re.test(abs)) return;
+            if (ex && ex.test(abs)) return;
+            const key = abs.split(/[?#]/)[0];
+            if (seen.has(key)) return;
+            seen.add(key);
+            // prefer an image from the anchor or its parent block
+            let image = '';
+            const img = a.querySelector('img') || a.closest('article,div,li')?.querySelector('img');
+            if (img) image = img.getAttribute('src') || img.getAttribute('data-src') || '';
+            out.push({ title, url: abs, image });
+          });
+          return out.slice(0, 15);
+        },
+        { articlePattern: source.articlePattern, excludePattern: source.excludePattern }
+      );
 
       const scraped: ScrapedArticle[] = [];
-      for (const art of articles) {
-        if (!art.title || art.title.length < 10) continue;
-
+      for (const art of raw) {
+        if (!art.title || art.title.length < 25) continue;
         const id = `NEWS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const slug = this.generateSlug(art.title);
-        const publishedAt = art.publishedAt ? new Date(art.publishedAt).toISOString() : new Date().toISOString();
-
         scraped.push({
           id,
-          slug,
+          slug: this.generateSlug(art.title),
           title: art.title,
-          summary: art.summary || art.title,
+          summary: art.title,
           titleEn: art.title,
-          summaryEn: art.summary || art.title,
-          body: [art.summary || art.title],
-          bodyEn: [art.summary || art.title],
+          summaryEn: art.title,
+          body: [],
+          bodyEn: [],
           source: source.name,
           sourceUrl: art.url,
-          publishedAt,
+          publishedAt: new Date().toISOString(),
           category: source.category,
           categoryKey: source.categoryKey,
           imageUrl: art.image || undefined,
           score: Math.floor(Math.random() * 30) + 60,
         });
       }
-
       return scraped;
     } catch (err: any) {
       console.error(`[NewsScraper] ${source.name} failed:`, err.message);
@@ -322,23 +243,17 @@ export class NewsScraper {
     await this.init();
     const sources = activeOnly ? NEWS_SOURCES.filter((s) => s.active) : NEWS_SOURCES;
     console.log(`[NewsScraper] Scraping ${sources.length} sources...`);
-
     const allArticles: ScrapedArticle[] = [];
     for (const source of sources) {
+      const before = allArticles.length;
       const articles = await this.scrapeSource(source);
       console.log(`[NewsScraper] ${source.name}: ${articles.length} articles`);
       allArticles.push(...articles);
+      if (allArticles.length === before) continue; // no need to pace after a failed source
       await new Promise((r) => setTimeout(r, source.rateLimitMs));
     }
-
     this.saveNews(allArticles);
     return allArticles;
-  }
-
-  async scrapeSourceById(sourceId: string): Promise<ScrapedArticle[]> {
-    const source = NEWS_SOURCES.find((s) => s.id === sourceId);
-    if (!source) throw new Error(`Source ${sourceId} not found`);
-    return this.scrapeSource(source);
   }
 
   getSources(): NewsSource[] {
