@@ -29,6 +29,16 @@ import {
 } from './server/predictionParser';
 import type { ParsedPrediction, PredictionRecord, ActualScore } from './server/predictionParser';
 import { getVapidPublicKey, addSubscription, removeSubscription, sendWebPush } from './server/webPush';
+import { channelsStore } from './server/channelsStore';
+import {
+  runPublishPipeline,
+  getPipelineStatus,
+  startPipelineScheduler,
+  stopPipelineScheduler,
+  processPublishQueue,
+  initPipeline,
+} from './server/agentPipeline';
+import { getNewsScraper, startScheduledScraping, stopScheduledScraping } from './server/newsScraper';
 import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
@@ -1351,6 +1361,118 @@ app.delete('/api/ai/agents/:id', (req, res) => {
       return res.status(400).json({ error: 'لا يمكن حذف الوكلاء الأساسيين في النظام.' });
     }
     res.json({ success: true, message: 'تم حذف الوكيل بنجاح.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========================================================
+// Smart Publishing Pipeline (agents: collect → analyze → classify → generate → image → publish)
+// ========================================================
+
+// Pipeline status (public read — shows scheduler + queue health)
+app.get('/api/ai/pipeline/status', (req, res) => {
+  try {
+    res.json({ success: true, ...getPipelineStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Run the full pipeline NOW (session-protected)
+app.post('/api/admin/pipeline/run', async (req, res) => {
+  try {
+    const trigger = req.body?.trigger === 'live' ? 'live' : 'manual';
+    const report = await runPublishPipeline(trigger as any);
+    res.json({ success: true, report });
+  } catch (err: any) {
+    res.status(409).json({ error: err.message });
+  }
+});
+
+// Retry queued/failed channel sends (session-protected)
+app.post('/api/admin/pipeline/queue/retry', async (req, res) => {
+  try {
+    const result = await processPublishQueue();
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Scrape news sources now (session-protected)
+app.post('/api/admin/pipeline/scrape', async (req, res) => {
+  try {
+    const articles = await getNewsScraper().scrapeAll();
+    res.json({ success: true, scraped: articles.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Scheduler control (session-protected)
+app.post('/api/admin/pipeline/scheduler', (req, res) => {
+  try {
+    const { enabled, intervalMinutes } = req.body || {};
+    if (enabled === false) {
+      stopPipelineScheduler();
+      stopScheduledScraping();
+    } else {
+      const mins = Math.max(5, Math.min(120, parseInt(String(intervalMinutes), 10) || 20));
+      startPipelineScheduler(mins);
+      startScheduledScraping(mins);
+    }
+    res.json({ success: true, schedulerActive: getPipelineStatus().schedulerActive });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------- Channels (managed inside VEX — replaces python bot_channels.csv) -----------------
+
+app.get('/api/admin/channels', (req, res) => {
+  try {
+    res.json({ success: true, channels: channelsStore.getAll(), publisher: { ...channelsStore.getPublisher(), bot_token: channelsStore.getPublisher().bot_token ? '***' : '' } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/channels', (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.chat_id) return res.status(400).json({ error: 'chat_id مطلوب' });
+    const saved = channelsStore.upsert(body);
+    res.json({ success: true, channel: saved });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/channels/:chatId', (req, res) => {
+  try {
+    const ok = channelsStore.remove(req.params.chatId);
+    res.json({ success: ok, message: ok ? 'تم حذف القناة' : 'القناة غير موجودة' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Publisher bot (2nd bot — added as admin to channels; verifies token via getMe)
+app.post('/api/admin/publisher-bot', async (req, res) => {
+  try {
+    const token = String(req.body?.bot_token || '').trim();
+    if (!token || token.includes('*')) return res.status(400).json({ error: 'bot_token مطلوب' });
+    const testRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const info: any = await testRes.json();
+    if (!info.ok) return res.status(400).json({ error: `توكن غير صالح: ${info.description || 'unknown'}` });
+    const saved = channelsStore.setPublisher({
+      bot_token: token,
+      bot_username: info.result.username,
+      bot_name: info.result.first_name,
+      bot_id: String(info.result.id),
+    });
+    res.json({ success: true, publisher: { username: saved.bot_username, name: saved.bot_name } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -4018,6 +4140,18 @@ function startDockerNotificationWorker() {
   // Auto-settle pending predictions from ESPN finished matches (every 5 min)
   setTimeout(pollFinishedMatchResults, 60 * 1000);
   setInterval(pollFinishedMatchResults, 5 * 60 * 1000);
+
+  // Smart publishing pipeline: agents collect → analyze → classify → generate → publish.
+  // Starts 2 min after boot, then every 20 min; queue retries ride along each run.
+  initPipeline({ emit: (event, payload) => io.emit(event, payload) });
+  setTimeout(() => {
+    try {
+      startPipelineScheduler(20);
+      startScheduledScraping(20);
+    } catch (err) {
+      console.error('[Pipeline] scheduler start failed:', err);
+    }
+  }, 2 * 60 * 1000);
 
   setInterval(() => {
     try {

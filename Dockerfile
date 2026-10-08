@@ -20,6 +20,10 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
+# System chromium for the news scraper / image fetcher (playwright-core drives it)
+RUN apk add --no-cache chromium
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+
 # Copy package files
 COPY package*.json ./
 

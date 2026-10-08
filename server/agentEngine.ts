@@ -1,6 +1,110 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { storage } from './storage';
 
+// =========================================================================
+// OpenRouter Client (OpenAI-compatible API)
+// =========================================================================
+export class OpenRouterClient {
+  private apiKey: string;
+  private baseUrl: string = 'https://openrouter.ai/api/v1';
+
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || '';
+  }
+
+  isAvailable(): boolean {
+    return !!this.apiKey;
+  }
+
+  async generateContent(model: string, prompt: string, systemInstruction?: string, temperature: number = 0.7): Promise<string | null> {
+    if (!this.isAvailable()) return null;
+
+    try {
+      const messages = [];
+      if (systemInstruction) {
+        messages.push({ role: 'system', content: systemInstruction });
+      }
+      messages.push({ role: 'user', content: prompt });
+
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+          'HTTP-Referer': 'https://vex.deals',
+          'X-Title': 'VEX Deals Agent Engine',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          max_tokens: 4000,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('[OpenRouter] API error:', response.status, error);
+        return null;
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content?.trim() || null;
+    } catch (err: any) {
+      console.error('[OpenRouter] Request failed:', err.message);
+      return null;
+    }
+  }
+
+  async generateContentStream(model: string, prompt: string, systemInstruction?: string, temperature: number = 0.7): Promise<AsyncGenerator<string>> {
+    // For future streaming support
+    const content = await this.generateContent(model, prompt, systemInstruction, temperature);
+    async function* gen() { if (content) yield content; }
+    return gen();
+  }
+}
+
+// =========================================================================
+// AI Provider Factory - supports both Gemini and OpenRouter
+// =========================================================================
+export type AIProvider = 'gemini' | 'openrouter';
+
+export function getAIProvider(provider?: AIProvider): 'gemini' | 'openrouter' {
+  if (provider) return provider;
+  // Default to OpenRouter if key available, else Gemini
+  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
+  return 'gemini';
+}
+
+export function createAIClient(provider?: AIProvider) {
+  const selected = getAIProvider(provider);
+  if (selected === 'openrouter') {
+    return new OpenRouterClient();
+  }
+  // Fallback to Gemini
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-vex-agents' } },
+  });
+}
+
+/** Map internal (Gemini-style) model ids to valid OpenRouter model ids. */
+export function toOpenRouterModel(model?: string): string {
+  if (model && model.includes('/')) return model; // already vendor-prefixed
+  const map: Record<string, string> = {
+    'gemini-3.8-flash': 'google/gemini-2.5-flash',
+    'gemini-3.5-flash': 'google/gemini-2.0-flash-001',
+    'gemini-2.5-flash': 'google/gemini-2.5-flash',
+    'gemini-2.0-flash': 'google/gemini-2.0-flash-001',
+    'gemini-2.5-pro': 'google/gemini-2.5-pro',
+  };
+  if (model && map[model]) return map[model];
+  if (model && model.startsWith('gemini')) return 'google/gemini-2.5-flash';
+  return model || 'openai/gpt-4o-mini';
+}
+
 export interface AiAgentConfig {
   id: string;
   name: string;
@@ -404,17 +508,134 @@ export function calculateNotificationTiming(): SmartNotificationTimingReport {
 
 // Unified Agent Engine
 export class AgentEngine {
-  private getClient(): GoogleGenAI | null {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) return null;
-    return new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-vex-agents',
-        },
-      },
-    });
+  private lastGroundingMetadata: any = null;
+
+  private getClient(provider?: 'gemini' | 'openrouter'): GoogleGenAI | OpenRouterClient | null {
+    const selected = getAIProvider(provider);
+    return createAIClient(selected);
+  }
+
+  public async generateContent(
+    prompt: string,
+    options: {
+      systemInstruction?: string;
+      temperature?: number;
+      model?: string;
+      responseMimeType?: string;
+      tools?: any[];
+      provider?: 'gemini' | 'openrouter';
+    } = {}
+  ): Promise<string | null> {
+    const { systemInstruction, temperature = 0.7, model, responseMimeType, tools, provider } = options;
+    const client = this.getClient(provider);
+
+    if (!client) return null;
+
+    // Check if using OpenRouter
+    if (client instanceof OpenRouterClient) {
+      const orModel = toOpenRouterModel(model);
+      return client.generateContent(orModel, prompt, systemInstruction, temperature);
+    }
+
+    // Google GenAI path
+    const genai = client as GoogleGenAI;
+    const configObj: any = {
+      systemInstruction,
+      temperature,
+    };
+    if (responseMimeType) configObj.responseMimeType = responseMimeType;
+    if (tools && tools.length > 0) configObj.tools = tools;
+
+    try {
+      const response = await genai.models.generateContent({
+        model: model || 'gemini-3.8-flash',
+        contents: prompt,
+        config: configObj,
+      });
+      return response.text || null;
+    } catch (err: any) {
+      console.error('[AgentEngine] Gemini generateContent failed:', err.message);
+      return null;
+    }
+  }
+
+  private async generateMultimodalContent(
+    prompt: string,
+    attachments: any[],
+    options: {
+      systemInstruction?: string;
+      temperature?: number;
+      model?: string;
+      enableGoogleSearch?: boolean;
+      provider?: 'gemini' | 'openrouter';
+    } = {}
+  ): Promise<string | null> {
+    const { systemInstruction, temperature = 0.7, model, enableGoogleSearch, provider } = options;
+    const client = this.getClient(provider);
+
+    if (!client) return null;
+
+    // OpenRouter doesn't support multimodal the same way, fallback to text-only
+    if (client instanceof OpenRouterClient) {
+      const orModel = toOpenRouterModel(model);
+      let fullPrompt = prompt;
+      if (attachments && attachments.length > 0) {
+        fullPrompt += '\n\n[مرفقات مرفقة - سيتم معالجتها كنص]';
+        for (const att of attachments) {
+          if (att.type === 'document' && att.data) {
+            try {
+              const text = Buffer.from(att.data.split('base64,')[1] || att.data, 'base64').toString('utf-8');
+              fullPrompt += `\n[مستند: ${att.name}]:\n${text.slice(0, 2000)}`;
+            } catch {}
+          }
+        }
+      }
+      return client.generateContent(orModel, fullPrompt, systemInstruction, temperature);
+    }
+
+    // Google GenAI path with multimodal support
+    const genai = client as GoogleGenAI;
+    const configObj: any = {
+      systemInstruction,
+      temperature,
+    };
+    if (enableGoogleSearch) configObj.tools = [{ googleSearch: {} }];
+
+    const contentParts: any[] = [];
+    if (attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        if (att.data) {
+          let cleanBase64 = att.data;
+          if (cleanBase64.includes('base64,')) cleanBase64 = cleanBase64.split('base64,')[1];
+          if (att.type === 'document' && (att.mimeType?.startsWith('text/') || att.mimeType?.includes('json') || att.mimeType?.includes('csv'))) {
+            try {
+              const textContent = Buffer.from(cleanBase64, 'base64').toString('utf-8');
+              contentParts.push({ text: `[محتوى المستند: ${att.name || 'document'}]:\n${textContent}` });
+            } catch {
+              contentParts.push({ inlineData: { mimeType: att.mimeType || 'text/plain', data: cleanBase64 } });
+            }
+          } else {
+            contentParts.push({
+              inlineData: { mimeType: att.mimeType || (att.type === 'video' ? 'video/mp4' : 'image/jpeg'), data: cleanBase64 },
+            });
+          }
+        }
+      }
+    }
+    contentParts.push({ text: prompt });
+
+    try {
+      const response = await genai.models.generateContent({
+        model: model || 'gemini-3.8-flash',
+        contents: contentParts,
+        config: configObj,
+      });
+      this.lastGroundingMetadata = response.candidates?.[0]?.groundingMetadata || null;
+      return response.text || null;
+    } catch (err: any) {
+      console.error('[AgentEngine] Gemini multimodal failed:', err.message);
+      return null;
+    }
   }
 
   public getAgents(): AiAgentConfig[] {
@@ -1211,14 +1432,6 @@ ${contextBlock}
 `;
 
       const shouldUseSearch = enableGoogleSearch && agent.capabilities.liveSearch;
-      const configObj: any = {
-        systemInstruction: fullSystemPrompt,
-        temperature: agent.temperature || 0.3,
-      };
-
-      if (shouldUseSearch) {
-        configObj.tools = [{ googleSearch: {} }];
-      }
 
       // Build Multimodal Content parts
       const contentParts: any[] = [];
@@ -1257,13 +1470,12 @@ ${contextBlock}
 
       contentParts.push({ text: message });
 
-      const response = await client.models.generateContent({
+      let replyText = await this.generateMultimodalContent(message, attachments || [], {
+        systemInstruction: fullSystemPrompt,
+        temperature: agent.temperature || 0.3,
         model: 'gemini-3.8-flash',
-        contents: contentParts,
-        config: configObj,
-      });
-
-      let replyText = response.text || 'تم فحص ومعالجة الأمر بنجاح.';
+        enableGoogleSearch: shouldUseSearch,
+      }) || 'تم فحص ومعالجة الأمر بنجاح.';
 
       // Parse and execute JSON admin action blocks if present
       const actionRegex = /```json:admin_action\s*([\s\S]*?)\s*```/i;
@@ -1334,7 +1546,7 @@ ${contextBlock}
       }
 
       // Extract grounding metadata if available
-      const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+      const groundingMetadata = this.lastGroundingMetadata;
       const groundingCitations: Array<{ title: string; url: string }> = [];
       const searchQueries: string[] = [];
 
@@ -1427,18 +1639,17 @@ ${primeMatch.teams} (${primeMatch.league})
 أرجع نصاً بصيغة JSON:
 {"title": "...", "message": "..."}`;
 
-        const res = await client.models.generateContent({
+        const res = await this.generateContent(prompt, {
           model: 'gemini-3.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            tools: [{ googleSearch: {} }],
-          },
+          responseMimeType: 'application/json',
+          tools: [{ googleSearch: {} }],
         });
 
-        const parsed = JSON.parse(res.text || '{}');
-        if (parsed.title) title = parsed.title;
-        if (parsed.message) messageBody = parsed.message;
+        if (res) {
+          const parsed = JSON.parse(res);
+          if (parsed.title) title = parsed.title;
+          if (parsed.message) messageBody = parsed.message;
+        }
       } catch (err) {
         console.warn('[AgentEngine] Fallback notification generation used');
       }
@@ -1588,22 +1799,21 @@ ${primeMatch.teams} (${primeMatch.league})
   "marketingAngle": "..."
 }`;
 
-        const res = await client.models.generateContent({
+        const res = await this.generateContent(prompt, {
           model: 'gemini-3.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.4,
-            tools: [{ googleSearch: {} }],
-          },
+          responseMimeType: 'application/json',
+          temperature: 0.4,
+          tools: [{ googleSearch: {} }],
         });
 
-        const parsed = JSON.parse(res.text || '{}');
-        if (parsed.title && parsed.title.trim()) generatedTitle = parsed.title.trim();
-        if (parsed.message && parsed.message.trim()) generatedMessage = parsed.message.trim();
-        if (parsed.category) category = parsed.category;
-        if (parsed.urgency === 'urgent') urgency = 'urgent';
-        if (parsed.marketingAngle) marketingAngle = parsed.marketingAngle;
+        if (res) {
+          const parsed = JSON.parse(res);
+          if (parsed.title && parsed.title.trim()) generatedTitle = parsed.title.trim();
+          if (parsed.message && parsed.message.trim()) generatedMessage = parsed.message.trim();
+          if (parsed.category) category = parsed.category;
+          if (parsed.urgency === 'urgent') urgency = 'urgent';
+          if (parsed.marketingAngle) marketingAngle = parsed.marketingAngle;
+        }
       } catch (err) {
         console.warn('[AgentEngine] Failed to generate AI notification content, using polished template:', err);
       }
@@ -1760,25 +1970,24 @@ ${params.baseMessage ? `- نص الرسالة الأساسية المقترحة:
   "cohort_ru_cis": { "title": "...", "message": "...", "marketingAngle": "..." }
 }`;
 
-        const res = await client.models.generateContent({
+        const res = await this.generateContent(prompt, {
           model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.3,
-          },
+          responseMimeType: 'application/json',
+          temperature: 0.3,
         });
 
-        const parsed = JSON.parse(res.text || '{}');
-        Object.keys(defaultTemplates).forEach((key) => {
-          if (parsed[key] && parsed[key].title && parsed[key].message) {
-            generatedResults[key] = {
-              title: parsed[key].title.trim(),
-              message: parsed[key].message.trim(),
+        if (res) {
+          const parsed = JSON.parse(res);
+          Object.keys(defaultTemplates).forEach((key) => {
+            if (parsed[key] && parsed[key].title && parsed[key].message) {
+              generatedResults[key] = {
+                title: parsed[key].title.trim(),
+                message: parsed[key].message.trim(),
               marketingAngle: parsed[key].marketingAngle || defaultTemplates[key].marketingAngle,
             };
           }
         });
+        }
       } catch (err) {
         console.warn('[AgentEngine] Failed to generate Gemini multi-language campaign, using refined templates:', err);
       }
@@ -2178,25 +2387,23 @@ ${params.baseMessage ? `- الرسالة المبدئية: ${params.baseMessage}
   ]
 }`;
 
-        const res = await client.models.generateContent({
+        const res = await this.generateContent(prompt, {
           model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.35,
-          },
+          responseMimeType: 'application/json',
+          temperature: 0.35,
         });
 
-        const parsed = JSON.parse(res.text || '{}');
-        if (parsed.variantA && parsed.variantB) {
-          variantA = {
-            ...variantA,
-            ...parsed.variantA,
-            id: 'A',
-            sampleSent: 0,
-            clicks: 0,
-            ctr: 0,
-          };
+        if (res) {
+          const parsed = JSON.parse(res);
+          if (parsed.variantA && parsed.variantB) {
+            variantA = {
+              ...variantA,
+              ...parsed.variantA,
+              id: 'A',
+              sampleSent: 0,
+              clicks: 0,
+              ctr: 0,
+            };
           variantB = {
             ...variantB,
             ...parsed.variantB,
@@ -2213,6 +2420,7 @@ ${params.baseMessage ? `- الرسالة المبدئية: ${params.baseMessage}
               ...r,
             }));
           }
+        }
         }
       } catch (geminiErr) {
         console.warn('[AgentEngine] Gemini A/B generation encountered an issue, using expert presets:', geminiErr);
