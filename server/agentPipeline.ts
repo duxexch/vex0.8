@@ -463,6 +463,10 @@ function saveQueue(q: PublishQueueItem[]): void {
 }
 
 async function sendTelegram(chatId: string, text: string, parseMode: string, imagePath?: string | null): Promise<{ ok: boolean; error?: string }> {
+  if (process.env.DRY_RUN === '1') {
+    console.log(`[Publisher][DRY_RUN] → ${chatId}: ${text.slice(0, 120).replace(/\n/g, ' ⏎ ')}`);
+    return { ok: true };
+  }
   const pub = channelsStore.getPublisher();
   const token = pub.bot_token || process.env.TELEGRAM_BOT_TOKEN || '';
   if (!token) return { ok: false, error: 'no publisher bot token configured' };
@@ -554,7 +558,7 @@ async function publisherAgent(posts: GeneratedPost[], items: AnalyzedItem[], rep
     const item = items.find((i) => post.text.includes(i.title.slice(0, 25))) || items[0];
     const result = await sendTelegram(post.chat_id, post.text, post.parse_mode, post.image);
     if (result.ok) {
-      channelsStore.recordPost(post.chat_id);
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(post.chat_id);
       published++;
       report.stages.push({ stage: 'publish', ok: true, fallback: false, detail: `→ ${post.channelTitle}` });
       emitFn?.('pipeline_post', { channel: post.channelTitle, title: item?.title || '' });
@@ -584,6 +588,9 @@ async function publisherAgent(posts: GeneratedPost[], items: AnalyzedItem[], rep
   // Web post: one per unique item (first 5)
   let webCount = 0;
   const seen = new Set<string>();
+  if (process.env.DRY_RUN === '1') {
+    report.stages.push({ stage: 'publish', ok: true, fallback: false, detail: 'DRY_RUN: web publish skipped' });
+  }
   for (const post of posts) {
     const item = items.find((i) => post.text.includes(i.title.slice(0, 25)));
     if (!item || seen.has(item.id)) continue;
@@ -611,7 +618,7 @@ export async function processPublishQueue(): Promise<{ sent: number; failed: num
     }
     const res = await sendTelegram(item.chat_id, item.text, item.parse_mode, item.image);
     if (res.ok) {
-      channelsStore.recordPost(item.chat_id);
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(item.chat_id);
       sent++;
       await new Promise((r) => setTimeout(r, 3000));
     } else {
