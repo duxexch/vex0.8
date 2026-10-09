@@ -2,14 +2,17 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { storage } from './storage';
 
 // =========================================================================
-// OpenRouter Client (OpenAI-compatible API)
+// OpenAI-compatible Client (OpenRouter / DeepSeek / any OpenAI-style API)
 // =========================================================================
 export class OpenRouterClient {
   private apiKey: string;
-  private baseUrl: string = 'https://openrouter.ai/api/v1';
+  private baseUrl: string;
+  readonly kind: 'openrouter' | 'deepseek';
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseUrl?: string) {
     this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || '';
+    this.baseUrl = (baseUrl || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
+    this.kind = this.baseUrl.includes('deepseek') ? 'deepseek' : 'openrouter';
   }
 
   isAvailable(): boolean {
@@ -44,14 +47,14 @@ export class OpenRouterClient {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('[OpenRouter] API error:', response.status, error);
+        console.error(`[${this.kind}] API error:`, response.status, error);
         return null;
       }
 
       const data = await response.json();
       return data.choices?.[0]?.message?.content?.trim() || null;
     } catch (err: any) {
-      console.error('[OpenRouter] Request failed:', err.message);
+      console.error(`[${this.kind}] Request failed:`, err.message);
       return null;
     }
   }
@@ -65,21 +68,38 @@ export class OpenRouterClient {
 }
 
 // =========================================================================
-// AI Provider Factory - supports both Gemini and OpenRouter
+// AI Provider Factory - supports Gemini, OpenRouter and DeepSeek
 // =========================================================================
-export type AIProvider = 'gemini' | 'openrouter';
+export type AIProvider = 'gemini' | 'openrouter' | 'deepseek';
 
-export function getAIProvider(provider?: AIProvider): 'gemini' | 'openrouter' {
+export function getAIProvider(provider?: AIProvider): AIProvider {
   if (provider) return provider;
-  // Default to OpenRouter if key available, else Gemini
+  // Default priority: OpenRouter → DeepSeek → Gemini
   if (process.env.OPENROUTER_API_KEY) return 'openrouter';
+  if (process.env.DEEPSEEK_API_KEY) return 'deepseek';
   return 'gemini';
+}
+
+/** Which provider keys are actually configured (skips placeholder values). */
+export function availableProviders(): AIProvider[] {
+  const out: AIProvider[] = [];
+  if (isValidKey(process.env.OPENROUTER_API_KEY)) out.push('openrouter');
+  if (isValidKey(process.env.DEEPSEEK_API_KEY)) out.push('deepseek');
+  if (isValidKey(process.env.GEMINI_API_KEY)) out.push('gemini');
+  return out;
+}
+
+function isValidKey(key?: string): boolean {
+  return !!key && key.length > 10 && !key.startsWith('your_');
 }
 
 export function createAIClient(provider?: AIProvider) {
   const selected = getAIProvider(provider);
   if (selected === 'openrouter') {
     return new OpenRouterClient();
+  }
+  if (selected === 'deepseek') {
+    return new OpenRouterClient(process.env.DEEPSEEK_API_KEY, 'https://api.deepseek.com/v1');
   }
   // Fallback to Gemini
   const key = process.env.GEMINI_API_KEY;
@@ -90,8 +110,12 @@ export function createAIClient(provider?: AIProvider) {
   });
 }
 
-/** Map internal (Gemini-style) model ids to valid OpenRouter model ids. */
-export function toOpenRouterModel(model?: string): string {
+/** Map internal (Gemini-style) model ids to valid ids for the target provider. */
+export function toOpenRouterModel(model?: string, kind: 'openrouter' | 'deepseek' = 'openrouter'): string {
+  if (kind === 'deepseek') {
+    if (model && model.startsWith('deepseek/')) return model.replace('deepseek/', '');
+    return model && model.startsWith('deepseek-') ? model : 'deepseek-chat';
+  }
   if (model && model.includes('/')) return model; // already vendor-prefixed
   const map: Record<string, string> = {
     'gemini-3.8-flash': 'google/gemini-2.5-flash',
@@ -510,7 +534,7 @@ export function calculateNotificationTiming(): SmartNotificationTimingReport {
 export class AgentEngine {
   private lastGroundingMetadata: any = null;
 
-  private getClient(provider?: 'gemini' | 'openrouter'): GoogleGenAI | OpenRouterClient | null {
+  private getClient(provider?: AIProvider): GoogleGenAI | OpenRouterClient | null {
     const selected = getAIProvider(provider);
     return createAIClient(selected);
   }
@@ -523,7 +547,7 @@ export class AgentEngine {
       model?: string;
       responseMimeType?: string;
       tools?: any[];
-      provider?: 'gemini' | 'openrouter';
+      provider?: AIProvider;
     } = {}
   ): Promise<string | null> {
     const { systemInstruction, temperature = 0.7, model, responseMimeType, tools, provider } = options;
@@ -531,9 +555,9 @@ export class AgentEngine {
 
     if (!client) return null;
 
-    // Check if using OpenRouter
+    // Check if using an OpenAI-compatible client (OpenRouter / DeepSeek)
     if (client instanceof OpenRouterClient) {
-      const orModel = toOpenRouterModel(model);
+      const orModel = toOpenRouterModel(model, client.kind);
       return client.generateContent(orModel, prompt, systemInstruction, temperature);
     }
 
@@ -567,7 +591,7 @@ export class AgentEngine {
       temperature?: number;
       model?: string;
       enableGoogleSearch?: boolean;
-      provider?: 'gemini' | 'openrouter';
+      provider?: AIProvider;
     } = {}
   ): Promise<string | null> {
     const { systemInstruction, temperature = 0.7, model, enableGoogleSearch, provider } = options;
@@ -575,9 +599,9 @@ export class AgentEngine {
 
     if (!client) return null;
 
-    // OpenRouter doesn't support multimodal the same way, fallback to text-only
+    // OpenAI-compatible clients don't support Gemini multimodal the same way → text-only
     if (client instanceof OpenRouterClient) {
-      const orModel = toOpenRouterModel(model);
+      const orModel = toOpenRouterModel(model, client.kind);
       let fullPrompt = prompt;
       if (attachments && attachments.length > 0) {
         fullPrompt += '\n\n[مرفقات مرفقة - سيتم معالجتها كنص]';

@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import { channelsStore, ChannelProfile } from './channelsStore';
 import { getNewsScraper, ScrapedArticle } from './newsScraper';
 import { fetchPostImage } from './imageFetcher';
-import { agentEngine } from './agentEngine';
+import { agentEngine, availableProviders, AIProvider } from './agentEngine';
 import { storage } from './storage';
 
 // =========================================================================
@@ -108,14 +108,27 @@ function writeJson(file: string, data: any): void {
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-/** One LLM call with automatic provider failover (openrouter ⇄ gemini) then null. */
+/** Providers that failed this run — skipped until the next run resets health. */
+let deadProviders = new Set<AIProvider>();
+
+export function resetLLMHealth(): void {
+  deadProviders.clear();
+}
+
+/**
+ * LLM call with full provider failover: OpenRouter → DeepSeek → Gemini.
+ * A provider that errors once is skipped for the rest of the run (circuit breaker),
+ * so we never burn time re-calling a key without credits.
+ */
 async function llm(prompt: string, systemInstruction: string, temperature = 0.6): Promise<string | null> {
-  const primary = await agentEngine.generateContent(prompt, { systemInstruction, temperature });
-  if (primary && primary.trim()) return primary;
-  // Failover: swap provider for the retry
-  const alt = (process.env.OPENROUTER_API_KEY ? 'gemini' : 'openrouter') as 'gemini' | 'openrouter';
-  console.warn('[Pipeline] primary LLM failed — retrying with provider:', alt);
-  return agentEngine.generateContent(prompt, { systemInstruction, temperature, provider: alt });
+  const chain = availableProviders().filter((p) => !deadProviders.has(p));
+  for (const provider of chain) {
+    const res = await agentEngine.generateContent(prompt, { systemInstruction, temperature, provider });
+    if (res && res.trim()) return res;
+    deadProviders.add(provider);
+    console.warn(`[Pipeline] LLM provider failed → circuit-open: ${provider} (remaining: ${chain.filter((p) => !deadProviders.has(p)).join(',') || 'none'})`);
+  }
+  return null;
 }
 
 function stripHtml(v: string): string {
@@ -660,6 +673,7 @@ export async function processPublishQueue(): Promise<{ sent: number; failed: num
 export async function runPublishPipeline(trigger: 'manual' | 'schedule' | 'live' = 'manual'): Promise<PipelineRunReport> {
   if (pipelineRunning) throw new Error('pipeline already running');
   pipelineRunning = true;
+  resetLLMHealth(); // give every configured AI provider a fresh chance this run
   const report: PipelineRunReport = {
     startedAt: new Date().toISOString(),
     finishedAt: '',
