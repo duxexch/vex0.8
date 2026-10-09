@@ -20,6 +20,8 @@ export interface ScheduledPost {
   kind: 'forecast' | 'promo' | 'live' | 'news';
   /** epoch ms when this post should go out */
   sendAt: number;
+  /** epoch ms after which the post is pointless (e.g. fixture kickoff) — cancelled, not sent */
+  expiresAt?: number;
   /** extra daily slots beyond daily_cap this post may use (0 = strict cap) */
   overflow?: number;
   status: 'pending' | 'sent' | 'failed' | 'cancelled';
@@ -34,7 +36,7 @@ const QUEUE_PATH = path.join(process.cwd(), 'data', 'scheduled_posts.json');
 const MIN_CHANNEL_GAP_MS = 90 * 1000; // min spacing between posts to ONE channel
 const GLOBAL_GAP_MS = 4 * 1000;       // min spacing between ANY two sends
 const MAX_ATTEMPTS = 4;               // send failures before giving up
-const MAX_DEFERRALS = 48;             // cap/quiet deferrals before giving up
+const MAX_DEFERRALS = 120;            // cap/quiet deferrals before giving up (~30h at 15min)
 const PRUNE_AFTER_MS = 48 * 3600 * 1000;
 
 let timer: NodeJS.Timeout | null = null;
@@ -69,6 +71,7 @@ export function schedulePost(p: {
   parse_mode?: 'HTML' | 'Markdown';
   kind: ScheduledPost['kind'];
   sendAt: number;
+  expiresAt?: number;
   overflow?: number;
 }): ScheduledPost {
   const items = load();
@@ -80,6 +83,7 @@ export function schedulePost(p: {
     parse_mode: p.parse_mode || 'HTML',
     kind: p.kind,
     sendAt: p.sendAt,
+    expiresAt: p.expiresAt,
     overflow: p.overflow ?? 0,
     status: 'pending',
     attempts: 0,
@@ -115,6 +119,13 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
 
   for (const item of pending) {
     if (Date.now() - lastGlobalSendAt < GLOBAL_GAP_MS) break; // continue next tick
+
+    if (item.expiresAt && Date.now() > item.expiresAt) {
+      item.status = 'cancelled';
+      item.lastError = 'expired (event kickoff passed)';
+      changed = true;
+      continue;
+    }
 
     const ch = channelsStore.get(item.chat_id);
     if (!ch || !ch.active) {

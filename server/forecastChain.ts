@@ -86,9 +86,9 @@ const LOOKAHEAD_MS = 36 * 3600 * 1000; // predict matches kicking off within 36h
 const FORM_DAYS = 14; // results index depth
 const STATE_MAX_ENTRIES = 500;
 /** Extra daily telegram slots beyond the channel cap reserved for predictions
- *  (news eats the base cap within minutes after UTC midnight; +14 guarantees
- *  a full day's prediction slate still reaches the channels). */
-const FORECAST_TG_OVERFLOW = 14;
+ *  (news consumes the base cap within minutes after UTC midnight; +20 shares a
+ *  single daily pool with live/promo so all agent content still flows). */
+const FORECAST_TG_OVERFLOW = 20;
 
 let schedulerTimer: NodeJS.Timeout | null = null;
 let running = false;
@@ -456,7 +456,7 @@ function predictionTargets(): ChannelProfile[] {
     );
 }
 
-function schedulePrediction(text: string, sendAt: number): number {
+function schedulePrediction(text: string, sendAt: number, expiresAt?: number): number {
   const targets = predictionTargets();
   for (const ch of targets) {
     const body =
@@ -470,6 +470,7 @@ function schedulePrediction(text: string, sendAt: number): number {
       parse_mode: 'HTML',
       kind: 'forecast',
       sendAt,
+      expiresAt,
       overflow: FORECAST_TG_OVERFLOW,
     });
   }
@@ -495,7 +496,7 @@ async function backfillTelegram(state: { entries: Record<string, any> }, report:
     }
     const post = storage.getSitePosts().find((p: any) => p && p.id === entry.postId);
     if (!post || !post.text) continue;
-    const queued = schedulePrediction(post.text, Date.now() + 90 * 1000 + done * 45 * 1000);
+    const queued = schedulePrediction(post.text, Date.now() + 90 * 1000 + done * 45 * 1000, ms);
     if (queued > 0) {
       entry.tgSent = true;
       done++;
@@ -586,8 +587,14 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
         if (postId) report.sitePosts++;
 
         // Hand every target channel a scheduled slot (spread ~6 min per fixture)
-        // — the dispatcher enforces caps/quiet/gaps at send time.
-        const queued = schedulePrediction(text, Date.now() + 2 * 60 * 1000 + fixtureIdx * 6 * 60 * 1000);
+        // — the dispatcher enforces caps/quiet/gaps at send time, and the item
+        // cancels itself if the fixture kicks off before delivery.
+        const kickMs = kickoffMs(f);
+        const queued = schedulePrediction(
+          text,
+          Date.now() + 2 * 60 * 1000 + fixtureIdx * 6 * 60 * 1000,
+          kickMs ?? Date.now() + LOOKAHEAD_MS
+        );
         fixtureIdx++;
         report.tgQueued += queued;
 

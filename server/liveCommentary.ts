@@ -32,7 +32,7 @@ const TRACKER_PATH = path.join(process.cwd(), 'data', 'live_tracker.json');
 const POLL_MS = 100 * 1000;
 const EVENT_COOLDOWN_MS = 30 * 1000;
 const MAX_POSTS_PER_POLL = 6;
-const LIVE_OVERFLOW = 4; // extra daily telegram slots for time-sensitive live posts
+const LIVE_OVERFLOW = 20; // shared daily pool with forecast/promo (cap + 20)
 const MAX_TRACK_AGE_MS = 3 * 24 * 3600 * 1000;
 
 let timer: NodeJS.Timeout | null = null;

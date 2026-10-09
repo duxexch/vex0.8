@@ -139,7 +139,7 @@ export async function runPromoPass(): Promise<{ planned: number; skipped: number
         parse_mode: ch.format === 'html' ? 'HTML' : 'Markdown',
         kind: 'promo',
         sendAt: Math.max(slotMs, now + 30 * 1000),
-        overflow: 0,
+        overflow: 20, // shared daily pool with forecast/live (cap + 20)
       });
       state.planned.push(key);
       planned++;
