@@ -393,7 +393,7 @@ async function classifierAgent(items: AnalyzedItem[]): Promise<{ pairs: Array<{ 
   for (const item of items.slice(0, 20)) {
     let matches: ChannelMatch[];
     try {
-      const chList = channels.map((c) => `${c.chat_id}|${c.category}|${c.title}|topics:${c.topics.join(',')}`).join('\n');
+      const chList = channels.map((c) => `${c.chat_id}|${c.category}|${c.title}|topics:${c.topics.join(',')}|${c.betting_related !== false ? 'مراهنة' : 'أخبار-عادية'}`).join('\n');
       const raw = await llm(
         `المحتوى:\nعنوان: ${item.title}\nملخص: ${item.summary}\nالمواضيع: ${item.topics.join(', ')}\n\nالقنوات المتاحة:\n${chList}\n\nأعد JSON فقط: {"chat_ids":["..."]} (اختر فقط القنوات المناسبة تماماً لموضوع المحتوى ومجالها)`,
         'أنت مصنف قنوات. ترجع JSON فقط.',
@@ -423,21 +423,26 @@ async function classifierAgent(items: AnalyzedItem[]): Promise<{ pairs: Array<{ 
 // ---------------------------------------------------------------------------
 
 function templatePost(item: AnalyzedItem, ch: ChannelProfile): string {
+  const betting = ch.betting_related !== false;
   const emoji = ch.brand.emoji === 'rich' ? '⚽ ' : ch.brand.emoji === 'minimal' ? '' : '';
   let text = `${emoji}${item.title}\n\n${stripHtml(item.summary)}`;
   if (item.sourceUrl) text += `\n\nالمصدر: ${item.source}`;
-  if (ch.brand.signature) text += `\n\n${ch.brand.signature}`;
+  if (betting && ch.brand.signature) text += `\n\n${ch.brand.signature}`;
   return text.slice(0, 3800);
 }
 
 async function generateForChannel(item: AnalyzedItem, ch: ChannelProfile): Promise<{ text: string; usedLlm: boolean }> {
   const isLive = item.topics.includes('live');
+  const betting = ch.betting_related !== false;
   const systemPrompt = `أنت كاتب منشورات قنوات تيليجرام رياضية.
 القناة: ${ch.title} (نوعها: ${ch.category}، مواضيعها: ${ch.topics.join(', ')})
 الهوية التجارية: براند "${ch.brand.company || 'VEX'}" دومين "${ch.brand.domain || 'vex.deals'}" توقيع "${ch.brand.signature || 'none'}"
 أسلوب الإيموجي: ${ch.brand.emoji}
 الصيغة: ${ch.format} (إن كان html استخدم تنسيق بسيط <b>/<i>/<a>)
-اكتب منشور مناسب لهذه القناة فقط — بنفس مجالها وطابعها، عربي م naturally، من 2 إلى 6 أسطر + المصدر.
+${betting
+    ? 'القناة مرتبطة بالمراهنة الرياضية: مسموح — وحتى الأفضل — ذكر التوقعات والاحتمالات والأوليات وأسلوب حثّ المتابعة على زيارة الموقع.'
+    : 'القناة ليست لها علاقة بالمراهنة (أخبار رياضية عادية): اكتب خبراً رياضياً محايداً ومصفيى تماماً — ممنوع ذكر المراهنة أو الرهانات أو التوقعات أو الأحتماليات أو أوليات أو العروض أو الكاش باك أو أي دعوة للمراهنة.'}
+اكتب منشور مناسب لهذه القناة فقط — بنفس مجالها وطابعها، عربي naturally، من 2 إلى 6 أسطر + المصدر.
 ${isLive ? 'المنشور مباشر — أضف شغف وإلحاح ومنشن للنتيجة الحالية.' : ''}
 لا تخترع نتائج أو معلومات غير موجودة في النص. ارجع المنشور فقط.`;
 
@@ -451,7 +456,7 @@ ${isLive ? 'المنشور مباشر — أضف شغف وإلحاح ومنشن 
       let text = raw.trim().replace(/^```[\w]*\n?|```$/g, '');
       const safe = sanitizeTelegramHtml(text);
       text = ch.format === 'html' ? safe : safe.replace(/<\/?(?:b|strong|i|em|u|ins|s|strike|del|a|code|pre|blockquote)\b[^>]*>/gi, '');
-      if (ch.brand.signature && !text.includes(ch.brand.signature)) text += `\n\n${ch.brand.signature}`;
+      if (betting && ch.brand.signature && !text.includes(ch.brand.signature)) text += `\n\n${ch.brand.signature}`;
       return { text: text.slice(0, 3900), usedLlm: true };
     }
   } catch (err: any) {
@@ -516,7 +521,7 @@ function saveQueue(q: PublishQueueItem[]): void {
   writeJson(PUBLISH_QUEUE_PATH, q);
 }
 
-async function sendTelegram(chatId: string, text: string, parseMode: string, imagePath?: string | null): Promise<{ ok: boolean; error?: string }> {
+export async function sendTelegram(chatId: string, text: string, parseMode: string, imagePath?: string | null): Promise<{ ok: boolean; error?: string }> {
   if (process.env.DRY_RUN === '1') {
     console.log(`[Publisher][DRY_RUN] → ${chatId}: ${text.slice(0, 120).replace(/\n/g, ' ⏎ ')}`);
     return { ok: true };
@@ -575,9 +580,10 @@ async function sendTelegram(chatId: string, text: string, parseMode: string, ima
 export async function publishToCategory(
   category: ChannelProfile['category'],
   buildText: (ch: ChannelProfile) => string,
-  opts?: { max?: number; overflow?: number }
+  opts?: { max?: number; overflow?: number; filter?: (ch: ChannelProfile) => boolean }
 ): Promise<{ sent: number; failed: number; channels: string[] }> {
-  const all = channelsStore.getPublishable(new Date(), { overflow: opts?.overflow }).filter((c) => c.category === category);
+  let all = channelsStore.getPublishable(new Date(), { overflow: opts?.overflow }).filter((c) => c.category === category);
+  if (opts?.filter) all = all.filter(opts.filter);
   const targets = opts?.max && opts.max > 0 ? all.slice(0, opts.max) : all;
   let sent = 0;
   let failed = 0;

@@ -29,6 +29,15 @@ export interface ChannelProfile {
     /** Emoji style: 'rich' | 'minimal' | 'none' */
     emoji: 'rich' | 'minimal' | 'none';
   };
+  /**
+   * Is this channel about sports betting? true → predictions/odds/CTA posts are OK.
+   * false → the channel is a normal news channel: agents must post plain news
+   * (no betting language, no odds, no betting signatures). Set by the onboarding
+   * agent (LLM classification) when the bot is added as admin.
+   */
+  betting_related?: boolean;
+  /** Free-text classification summary produced by the onboarding agent */
+  analysis?: string;
   lang: 'ar' | 'en' | 'auto';
   active: boolean;
   ai_enabled: boolean;
@@ -143,6 +152,8 @@ export const channelsStore = {
       topics: channel.topics || ['football'],
       format: channel.format || 'html',
       brand: channel.brand || { domain: '', company: '', signature: '', emoji: 'rich' },
+      betting_related: channel.betting_related !== undefined ? channel.betting_related : channel.category !== 'payments' && channel.category !== 'support',
+      analysis: channel.analysis,
       lang: channel.lang || 'ar',
       active: channel.active !== false,
       ai_enabled: channel.ai_enabled !== false,

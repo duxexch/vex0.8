@@ -10,7 +10,8 @@ import {
 import { storage } from './storage';
 import { CURATED_TEAMS, eloWinProb } from './teamRatings';
 import { buildCompactTitle, ParsedPrediction, PredictionRecord } from './predictionParser';
-import { publishToCategory } from './agentPipeline';
+import { channelsStore, ChannelProfile } from './channelsStore';
+import { schedulePost } from './postScheduler';
 import { sendWebPush } from './webPush';
 
 // =========================================================================
@@ -66,6 +67,8 @@ export interface ForecastReport {
   llmUsed: number;
   sitePosts: number;
   tgSent: number;
+  /** posts handed to the scheduler (queued for time-spread delivery) */
+  tgQueued: number;
   tgFailed: number;
   skippedExisting: number;
   held: boolean;
@@ -434,6 +437,45 @@ function publishSitePost(
 // already consumed by the news pipeline), retry it on the next run while the
 // fixture is still upcoming. Max 3 backfills per run.
 
+/**
+ * Predictions target betting-related football channels only — normal-news
+ * channels (betting_related === false) receive plain news instead of picks.
+ * We hand posts to the scheduler (time-spread + caps/quiet/gaps enforced at
+ * dispatch time) rather than blasting immediately.
+ */
+function predictionTargets(): ChannelProfile[] {
+  return channelsStore
+    .getAll()
+    .filter(
+      (c) =>
+        c.active &&
+        c.category === 'sports' &&
+        c.betting_related !== false &&
+        (c.topics.length === 0 ||
+          c.topics.some((t) => t === 'football' || t === 'all' || t === 'live' || t === 'news' || t === 'general'))
+    );
+}
+
+function schedulePrediction(text: string, sendAt: number): number {
+  const targets = predictionTargets();
+  for (const ch of targets) {
+    const body =
+      ch.brand.signature && !text.includes(ch.brand.signature)
+        ? `${text}\n\n${ch.brand.signature}`
+        : text;
+    schedulePost({
+      chat_id: ch.chat_id,
+      channelTitle: ch.title,
+      text: body,
+      parse_mode: 'HTML',
+      kind: 'forecast',
+      sendAt,
+      overflow: FORECAST_TG_OVERFLOW,
+    });
+  }
+  return targets.length;
+}
+
 async function backfillTelegram(state: { entries: Record<string, any> }, report: ForecastReport): Promise<void> {
   if (process.env.DRY_RUN === '1') return;
   const file = readJson<{ fixtures?: Fixture[] }>(FIXTURES_PATH, {});
@@ -453,17 +495,12 @@ async function backfillTelegram(state: { entries: Record<string, any> }, report:
     }
     const post = storage.getSitePosts().find((p: any) => p && p.id === entry.postId);
     if (!post || !post.text) continue;
-    const tg = await publishToCategory(
-      'sports',
-      (ch) => (ch.brand.signature && !post.text.includes(ch.brand.signature) ? `${post.text}\n\n${ch.brand.signature}` : post.text),
-      { overflow: FORECAST_TG_OVERFLOW }
-    );
-    if (tg.sent > 0) {
+    const queued = schedulePrediction(post.text, Date.now() + 90 * 1000 + done * 45 * 1000);
+    if (queued > 0) {
       entry.tgSent = true;
       done++;
-      report.tgSent += tg.sent;
-      report.tgFailed += tg.failed;
-      console.log(`[Forecast] ↻ backfilled telegram for ${slug} → ${tg.sent} channel(s)`);
+      report.tgQueued += queued;
+      console.log(`[Forecast] ↻ rescheduled telegram for ${slug} → ${queued} channel(s)`);
     }
   }
 }
@@ -480,6 +517,7 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
     llmUsed: 0,
     sitePosts: 0,
     tgSent: 0,
+    tgQueued: 0,
     tgFailed: 0,
     skippedExisting: 0,
     held: false,
@@ -525,6 +563,7 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
 
     console.log(`[Forecast] analyzing ${fixtures.length} upcoming fixture(s)…`);
     const index = await fetchResultsIndex();
+    let fixtureIdx = 0;
 
     for (const f of fixtures) {
       try {
@@ -546,13 +585,11 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
         const postId = publishSitePost(f, homeName, awayName, a, text);
         if (postId) report.sitePosts++;
 
-        const tg = await publishToCategory(
-          'sports',
-          (ch) => (ch.brand.signature && !text.includes(ch.brand.signature) ? `${text}\n\n${ch.brand.signature}` : text),
-          { overflow: FORECAST_TG_OVERFLOW }
-        );
-        report.tgSent += tg.sent;
-        report.tgFailed += tg.failed;
+        // Hand every target channel a scheduled slot (spread ~6 min per fixture)
+        // — the dispatcher enforces caps/quiet/gaps at send time.
+        const queued = schedulePrediction(text, Date.now() + 2 * 60 * 1000 + fixtureIdx * 6 * 60 * 1000);
+        fixtureIdx++;
+        report.tgQueued += queued;
 
         state.entries[f.slug] = {
           postId,
@@ -562,7 +599,7 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
           pAway: a.pAway,
           predictedScore: a.predictedScore,
           usedLlm: a.usedLlm,
-          tgSent: tg.sent > 0,
+          tgSent: queued > 0,
         };
         // prune old entries
         const keys = Object.keys(state.entries);
@@ -571,7 +608,7 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
         }
         writeJson(STATE_PATH, state);
 
-        console.log(`[Forecast] ✓ ${homeName} × ${awayName}: ${a.pHome}/${a.pDraw}/${a.pAway} ${a.predictedScore} (llm=${a.usedLlm}) site=${postId ? 'yes' : 'no'} tg=${tg.sent}`);
+        console.log(`[Forecast] ✓ ${homeName} × ${awayName}: ${a.pHome}/${a.pDraw}/${a.pAway} ${a.predictedScore} (llm=${a.usedLlm}) site=${postId ? 'yes' : 'no'} queued=${queued}`);
       } catch (err: any) {
         report.errors.push(`${f.slug}: ${err.message}`);
         console.warn('[Forecast] fixture failed:', f.slug, err.message);
@@ -582,7 +619,7 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
     report.finishedAt = new Date().toISOString();
     lastReport = report;
     console.log(
-      `[Forecast] run done (${trigger}): ${report.fixturesAnalyzed}/${report.fixturesFound} analyzed, ${report.llmUsed} llm, site=${report.sitePosts}, tg=${report.tgSent} sent${report.tgFailed ? `, ${report.tgFailed} queued` : ''}${report.held ? ', HELD' : ''}`
+      `[Forecast] run done (${trigger}): ${report.fixturesAnalyzed}/${report.fixturesFound} analyzed, ${report.llmUsed} llm, site=${report.sitePosts}, tg=${report.tgQueued} scheduled${report.tgFailed ? `, ${report.tgFailed} failed` : ''}${report.held ? ', HELD' : ''}`
     );
   }
   return report;

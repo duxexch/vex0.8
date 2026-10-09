@@ -47,6 +47,10 @@ import {
   startForecastScheduler,
 } from './server/forecastChain';
 import { generateWithFailover, extractJsonObject } from './server/agentEngine';
+import { startPostScheduler, getSchedulerStatus } from './server/postScheduler';
+import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel } from './server/channelOnboard';
+import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
+import { startPromoScheduler, getPromoStatus, runPromoPass } from './server/promoPosts';
 import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
@@ -1170,6 +1174,50 @@ app.get('/api/predictions/series', (_req, res) => {
 // Forecast chain status (public — scheduler health)
 app.get('/api/forecast/status', (_req, res) => {
   res.json({ success: true, ...getForecastStatus() });
+});
+
+// Scheduled posts dispatcher status (public — health of the publish schedule)
+app.get('/api/scheduler/status', (_req, res) => {
+  res.json({ success: true, ...getSchedulerStatus() });
+});
+
+// Live commentary follower status (public)
+app.get('/api/live/status', (_req, res) => {
+  res.json({ success: true, ...getLiveStatus() });
+});
+
+// Daily promo planner status (public)
+app.get('/api/promo/status', (_req, res) => {
+  res.json({ success: true, ...getPromoStatus() });
+});
+
+// Re-run the onboarding agent's classification for one channel (admin)
+app.post('/api/admin/channels/reclassify', async (req, res) => {
+  try {
+    const chatId = String(req.body?.chat_id || '').trim();
+    if (!chatId) {
+      res.status(400).json({ error: 'chat_id required' });
+      return;
+    }
+    const profile = await reclassifyChannel(chatId);
+    if (!profile) {
+      res.status(404).json({ error: 'channel not found' });
+      return;
+    }
+    res.json({ success: true, channel: profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Trigger a promo planning pass manually (admin)
+app.post('/api/admin/promo/run', async (_req, res) => {
+  try {
+    const result = await runPromoPass();
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Manual trigger for the forecast chain (admin)
@@ -3261,6 +3309,17 @@ function isLoopbackOrPrivateIp(ip: string): boolean {
 }
 
 async function handleTelegramUpdate(update: any) {
+  // Bot membership changes (added/removed as channel admin) → onboarding agent
+  // classifies the channel and saves it for publishing.
+  if (update.my_chat_member) {
+    try {
+      await handleBotMembershipUpdate(update);
+    } catch (err: any) {
+      console.error('[Onboard] membership handling failed:', err.message);
+    }
+    return;
+  }
+
   const message = update.message;
   if (!message || !message.chat) return;
 
@@ -4188,7 +4247,7 @@ function startDockerNotificationWorker() {
   }, 2 * 60 * 1000);
 
   // Forecast chain: upcoming fixtures → team history (ESPN last-5) → LLM analysis
-  // → site prediction posts + telegram sports channels. First run 90s after boot
+  // → site prediction posts + scheduled telegram slots. First run 90s after boot
   // (daily fixture ingest runs at 4s), then every 3 hours.
   initForecastChain({ emit: (event, payload) => io.emit(event, payload) });
   setTimeout(() => {
@@ -4199,6 +4258,38 @@ function startDockerNotificationWorker() {
       console.error('[Forecast] scheduler start failed:', err);
     }
   }, 90 * 1000);
+
+  // Scheduled-post dispatcher: delivers forecast/promo/live queue entries with
+  // per-channel caps, quiet hours, anti-spam gaps and retries.
+  setTimeout(() => {
+    try {
+      startPostScheduler(60);
+    } catch (err) {
+      console.error('[Scheduler] start failed:', err);
+    }
+  }, 15 * 1000);
+
+  // Channel onboarding agent: my_chat_member updates classify new channels.
+  initChannelOnboard({ emit: (event, payload) => io.emit(event, payload) });
+
+  // Live commentary follower: goals/halftime/final → commentator posts per channel.
+  initLiveCommentary({ emit: (event, payload) => io.emit(event, payload) });
+  setTimeout(() => {
+    try {
+      startLiveCommentary(120);
+    } catch (err) {
+      console.error('[Live] start failed:', err);
+    }
+  }, 45 * 1000);
+
+  // Daily promo/filler posts: planned per channel at 10:00 & 17:00 UTC.
+  setTimeout(() => {
+    try {
+      startPromoScheduler(60);
+    } catch (err) {
+      console.error('[Promo] start failed:', err);
+    }
+  }, 3 * 60 * 1000);
 
   setInterval(() => {
     try {
