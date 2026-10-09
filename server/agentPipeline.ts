@@ -247,8 +247,9 @@ async function collectorAgent(): Promise<{ items: RawItem[]; fallback: boolean; 
   const news = await collectNewsItems();               // then scraped news
   const captured = collectCapturedItems();             // then browser captures
   // Priority: live > captured > news; within news newest first. Cap per run.
+  // Limit live to 5/run so one flood of live matches can't fill the whole batch.
   news.sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1));
-  const items = [...live, ...captured, ...news].slice(0, 12);
+  const items = [...live.slice(0, 5), ...captured, ...news].slice(0, 12);
   const ok = items.length > 0;
   return {
     items,
@@ -726,7 +727,7 @@ export async function runPublishPipeline(trigger: 'manual' | 'schedule' | 'live'
         stage: 'publish',
         ok: false,
         fallback: true,
-        detail: 'HELD: no working LLM provider (template-only posts) — charge OpenRouter key to enable publishing',
+        detail: 'HELD: no working LLM provider (template-only posts) — add/charge an AI key (OpenRouter / OpenAI / DeepSeek / Gemini) to enable publishing',
       });
       return finish(report);
     }

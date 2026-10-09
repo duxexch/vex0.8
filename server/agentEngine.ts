@@ -7,12 +7,16 @@ import { storage } from './storage';
 export class OpenRouterClient {
   private apiKey: string;
   private baseUrl: string;
-  readonly kind: 'openrouter' | 'deepseek';
+  readonly kind: 'openrouter' | 'deepseek' | 'openai';
 
   constructor(apiKey?: string, baseUrl?: string) {
     this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || '';
     this.baseUrl = (baseUrl || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
-    this.kind = this.baseUrl.includes('deepseek') ? 'deepseek' : 'openrouter';
+    this.kind = this.baseUrl.includes('deepseek')
+      ? 'deepseek'
+      : this.baseUrl.includes('openai.com')
+        ? 'openai'
+        : 'openrouter';
   }
 
   isAvailable(): boolean {
@@ -68,22 +72,24 @@ export class OpenRouterClient {
 }
 
 // =========================================================================
-// AI Provider Factory - supports Gemini, OpenRouter and DeepSeek
+// AI Provider Factory - supports Gemini, OpenRouter, OpenAI and DeepSeek
 // =========================================================================
-export type AIProvider = 'gemini' | 'openrouter' | 'deepseek';
+export type AIProvider = 'gemini' | 'openrouter' | 'openai' | 'deepseek';
 
 export function getAIProvider(provider?: AIProvider): AIProvider {
   if (provider) return provider;
-  // Default priority: OpenRouter → DeepSeek → Gemini
-  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
-  if (process.env.DEEPSEEK_API_KEY) return 'deepseek';
+  // Default priority: OpenRouter → OpenAI → DeepSeek → Gemini
+  if (isValidKey(process.env.OPENROUTER_API_KEY)) return 'openrouter';
+  if (isValidKey(process.env.OPENAI_API_KEY)) return 'openai';
+  if (isValidKey(process.env.DEEPSEEK_API_KEY)) return 'deepseek';
   return 'gemini';
 }
 
-/** Which provider keys are actually configured (skips placeholder values). */
+/** Which provider keys are actually configured (skips placeholder values), in failover order. */
 export function availableProviders(): AIProvider[] {
   const out: AIProvider[] = [];
   if (isValidKey(process.env.OPENROUTER_API_KEY)) out.push('openrouter');
+  if (isValidKey(process.env.OPENAI_API_KEY)) out.push('openai');
   if (isValidKey(process.env.DEEPSEEK_API_KEY)) out.push('deepseek');
   if (isValidKey(process.env.GEMINI_API_KEY)) out.push('gemini');
   return out;
@@ -98,6 +104,9 @@ export function createAIClient(provider?: AIProvider) {
   if (selected === 'openrouter') {
     return new OpenRouterClient();
   }
+  if (selected === 'openai') {
+    return new OpenRouterClient(process.env.OPENAI_API_KEY, 'https://api.openai.com/v1');
+  }
   if (selected === 'deepseek') {
     return new OpenRouterClient(process.env.DEEPSEEK_API_KEY, 'https://api.deepseek.com/v1');
   }
@@ -111,10 +120,14 @@ export function createAIClient(provider?: AIProvider) {
 }
 
 /** Map internal (Gemini-style) model ids to valid ids for the target provider. */
-export function toOpenRouterModel(model?: string, kind: 'openrouter' | 'deepseek' = 'openrouter'): string {
+export function toOpenRouterModel(model?: string, kind: 'openrouter' | 'deepseek' | 'openai' = 'openrouter'): string {
   if (kind === 'deepseek') {
     if (model && model.startsWith('deepseek/')) return model.replace('deepseek/', '');
     return model && model.startsWith('deepseek-') ? model : 'deepseek-chat';
+  }
+  if (kind === 'openai') {
+    if (model && (model.startsWith('gpt-') || model.startsWith('o1') || model.startsWith('o3'))) return model;
+    return 'gpt-4o-mini';
   }
   if (model && model.includes('/')) return model; // already vendor-prefixed
   const map: Record<string, string> = {
