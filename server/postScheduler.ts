@@ -118,7 +118,12 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
   const today = new Date().toISOString().slice(0, 10);
 
   for (const item of pending) {
-    if (Date.now() - lastGlobalSendAt < GLOBAL_GAP_MS) break; // continue next tick
+    // Respect the global anti-spam gap but keep working (live posts must not
+    // wait a whole tick per channel — sleep out the remainder instead).
+    const sinceGlobal = Date.now() - lastGlobalSendAt;
+    if (sinceGlobal < GLOBAL_GAP_MS) {
+      await new Promise((r) => setTimeout(r, GLOBAL_GAP_MS - sinceGlobal + 50));
+    }
 
     if (item.expiresAt && Date.now() > item.expiresAt) {
       item.status = 'cancelled';
