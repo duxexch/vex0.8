@@ -135,6 +135,24 @@ function stripHtml(v: string): string {
   return v.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** Tags Telegram's HTML parse_mode actually accepts. */
+const TG_ALLOWED_TAGS = new Set(['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'a', 'code', 'pre', 'blockquote']);
+
+/**
+ * Make LLM HTML safe for Telegram HTML parse_mode:
+ * block tags/br → newlines, unsupported tags unwrapped, truncated tags removed.
+ * Prevents "can't parse entities: Unsupported start tag <p>/<br>" send failures.
+ */
+function sanitizeTelegramHtml(raw: string): string {
+  let t = raw.replace(/\r/g, '');
+  t = t.replace(/<\s*(br|hr)\s*\/?\s*>/gi, '\n');
+  t = t.replace(/<\s*\/?\s*(p|div|h[1-6]|ul|ol|li|section|article|table|thead|tbody|tr|td|th|figure|figcaption)\b[^>]*>/gi, '\n');
+  t = t.replace(/<\/?([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*>/g, (m, tag) => (TG_ALLOWED_TAGS.has(String(tag).toLowerCase()) ? m : ''));
+  t = t.replace(/<[^>]*$/, ''); // drop tag truncated by length slicing
+  t = t.replace(/\n{3,}/g, '\n\n');
+  return t.trim();
+}
+
 // ---------------------------------------------------------------------------
 // Stage 1 — CollectorAgent (news scraper + ESPN live ticker + browser captures)
 // ---------------------------------------------------------------------------
@@ -431,6 +449,8 @@ ${isLive ? 'المنشور مباشر — أضف شغف وإلحاح ومنشن 
     );
     if (raw && raw.trim().length > 20) {
       let text = raw.trim().replace(/^```[\w]*\n?|```$/g, '');
+      const safe = sanitizeTelegramHtml(text);
+      text = ch.format === 'html' ? safe : safe.replace(/<\/?(?:b|strong|i|em|u|ins|s|strike|del|a|code|pre|blockquote)\b[^>]*>/gi, '');
       if (ch.brand.signature && !text.includes(ch.brand.signature)) text += `\n\n${ch.brand.signature}`;
       return { text: text.slice(0, 3900), usedLlm: true };
     }
@@ -507,9 +527,10 @@ async function sendTelegram(chatId: string, text: string, parseMode: string, ima
 
   try {
     if (imagePath && fs.existsSync(imagePath)) {
+      const caption = sanitizeTelegramHtml(text).slice(0, 1024);
       const form = new FormData();
       form.append('chat_id', chatId);
-      form.append('caption', text.slice(0, 1024));
+      form.append('caption', caption.replace(/<[^>]*$/, ''));
       form.append('parse_mode', parseMode);
       form.append('photo', new Blob([fs.readFileSync(imagePath)], { type: 'image/jpeg' }), path.basename(imagePath));
       const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
