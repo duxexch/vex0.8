@@ -142,6 +142,46 @@ export function toOpenRouterModel(model?: string, kind: 'openrouter' | 'deepseek
   return model || 'openai/gpt-4o-mini';
 }
 
+// =========================================================================
+// Shared LLM failover chain — used by background agent jobs (forecast chain,
+// match analysis, etc.). A provider that errors once is circuit-opened until
+// resetChainHealth() (call at the start of each job run).
+// =========================================================================
+let chainDead = new Set<AIProvider>();
+
+export function resetChainHealth(): void {
+  chainDead.clear();
+}
+
+export async function generateWithFailover(
+  prompt: string,
+  systemInstruction?: string,
+  temperature: number = 0.6
+): Promise<string | null> {
+  for (const provider of availableProviders()) {
+    if (chainDead.has(provider)) continue;
+    const res = await agentEngine.generateContent(prompt, { systemInstruction, temperature, provider });
+    if (res && res.trim()) return res;
+    chainDead.add(provider);
+    console.warn(`[AI-Chain] provider failed → circuit-open: ${provider}`);
+  }
+  return null;
+}
+
+/** Robust JSON extraction from LLM text (fences, prose, truncation tolerant). */
+export function extractJsonObject<T = any>(raw: string | null | undefined): T | null {
+  if (!raw) return null;
+  const t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  const s = t.indexOf('{');
+  const e = t.lastIndexOf('}');
+  if (s === -1 || e <= s) return null;
+  try {
+    return JSON.parse(t.slice(s, e + 1)) as T;
+  } catch {
+    return null;
+  }
+}
+
 export interface AiAgentConfig {
   id: string;
   name: string;

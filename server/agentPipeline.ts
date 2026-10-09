@@ -565,6 +565,55 @@ async function sendTelegram(chatId: string, text: string, parseMode: string, ima
   }
 }
 
+/**
+ * Publish one message to every publishable channel of a category (e.g. 'sports').
+ * Respects daily caps + quiet hours (getPublishable), records usage, 4s anti-spam
+ * gap between sends, failures land in the retry queue. DRY_RUN logs only.
+ * Used by the forecast chain (server/forecastChain.ts) so predictions and news
+ * share the same caps/queue/bot.
+ */
+export async function publishToCategory(
+  category: ChannelProfile['category'],
+  buildText: (ch: ChannelProfile) => string,
+  opts?: { max?: number }
+): Promise<{ sent: number; failed: number; channels: string[] }> {
+  const all = channelsStore.getPublishable().filter((c) => c.category === category);
+  const targets = opts?.max && opts.max > 0 ? all.slice(0, opts.max) : all;
+  let sent = 0;
+  let failed = 0;
+  const channels: string[] = [];
+  for (const ch of targets) {
+    const text = buildText(ch);
+    const parseMode: 'HTML' | 'Markdown' = ch.format === 'markdown' ? 'Markdown' : 'HTML';
+    const result = await sendTelegram(ch.chat_id, text, parseMode);
+    if (result.ok) {
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(ch.chat_id);
+      sent++;
+      channels.push(ch.title);
+      await new Promise((r) => setTimeout(r, 4000));
+    } else {
+      failed++;
+      const q = loadQueue();
+      q.push({
+        id: `Q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        chat_id: ch.chat_id,
+        channelTitle: ch.title,
+        text,
+        parse_mode: parseMode,
+        image: null,
+        itemTitle: channels[channels.length - 1] || 'forecast',
+        attempts: 1,
+        lastAttempt: new Date().toISOString(),
+        lastError: result.error,
+        createdAt: new Date().toISOString(),
+      });
+      saveQueue(q);
+      console.warn(`[Forecast→TG] queued for retry → ${ch.title}: ${result.error}`);
+    }
+  }
+  return { sent, failed, channels };
+}
+
 function publishWeb(item: AnalyzedItem, text: string, image?: string | null): boolean {
   try {
     const plain = stripHtml(text);

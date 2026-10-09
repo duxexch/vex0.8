@@ -139,6 +139,15 @@ export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
   const pendingCount = predictions.filter((p) => p.prediction!.status === 'pending').length;
   const settledList = predictions.filter((p) => p.prediction!.status === 'settled');
   const verdictCount = (v: 'hit' | 'miss' | 'draw') => settledList.filter((p) => p.prediction!.verdict === v).length;
+  // سلسلة التوقعات — accuracy over decided predictions + last-5 sequence
+  const decidedCount = verdictCount('hit') + verdictCount('miss');
+  const accuracyPct = decidedCount > 0 ? Math.round((verdictCount('hit') / decidedCount) * 100) : null;
+  const last5Sequence = settledList
+    .slice()
+    .sort((a, b) => String(b.prediction!.settledAt || b.createdAt || '').localeCompare(String(a.prediction!.settledAt || a.createdAt || '')))
+    .slice(0, 5)
+    .map((p) => (p.prediction!.verdict === 'hit' ? '✅' : p.prediction!.verdict === 'miss' ? '❌' : '➖'))
+    .join('');
   const formatTime = (iso: string) => {
     try {
       return new Date(iso).toLocaleString(isAr ? 'ar-EG' : 'en-GB', {
@@ -1103,6 +1112,16 @@ END:VCALENDAR`;
             <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
               ➖ {isAr ? 'تعادل' : 'Draw'}: {verdictCount('draw')}
             </span>
+            {accuracyPct !== null && (
+              <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
+                🎯 {isAr ? 'دقة السلسلة' : 'Series accuracy'}: {accuracyPct}%
+              </span>
+            )}
+            {last5Sequence && (
+              <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 font-mono">
+                {isAr ? 'آخر5:' : 'Last 5:'} {last5Sequence}
+              </span>
+            )}
           </div>
 
           {predictions.length === 0 ? (

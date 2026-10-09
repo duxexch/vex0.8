@@ -39,6 +39,14 @@ import {
   initPipeline,
 } from './server/agentPipeline';
 import { getNewsScraper, startScheduledScraping, stopScheduledScraping } from './server/newsScraper';
+import { CURATED_TEAMS } from './server/teamRatings';
+import {
+  initForecastChain,
+  runForecastOnce,
+  getForecastStatus,
+  startForecastScheduler,
+} from './server/forecastChain';
+import { generateWithFailover, extractJsonObject } from './server/agentEngine';
 import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
@@ -1118,6 +1126,72 @@ app.post('/api/predictions/:postId/result', (req, res) => {
   }
 });
 
+// =========================================================================
+// Forecast chain — سلسلة توقعات المباريات القادمة
+// =========================================================================
+
+// Series stats (سلسلة التوقعات): hit-rate across settled predictions.
+app.get('/api/predictions/series', (_req, res) => {
+  try {
+    const preds = storage.getSitePosts().filter((p: any) => p && p.prediction);
+    const settled = preds.filter((p: any) => p.prediction.status === 'settled');
+    const pending = preds.filter((p: any) => p.prediction.status === 'pending');
+    const hits = settled.filter((p: any) => p.prediction.verdict === 'hit').length;
+    const misses = settled.filter((p: any) => p.prediction.verdict === 'miss').length;
+    const draws = settled.filter((p: any) => p.prediction.verdict === 'draw').length;
+    const decided = hits + misses;
+    const last5 = settled
+      .slice()
+      .sort((a: any, b: any) => String(b.prediction.settledAt || '').localeCompare(String(a.prediction.settledAt || '')))
+      .slice(0, 5)
+      .map((p: any) => ({
+        match: `${p.prediction.homeTeam} × ${p.prediction.awayTeam}`,
+        predicted: p.prediction.predictedScore,
+        actual: p.prediction.actualScore || '',
+        verdict: p.prediction.verdict,
+        settledAt: p.prediction.settledAt,
+      }));
+    res.json({
+      total: preds.length,
+      pending: pending.length,
+      settled: settled.length,
+      hits,
+      misses,
+      draws,
+      accuracy: decided > 0 ? Math.round((hits / decided) * 100) : null,
+      last5,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Forecast chain status (public — scheduler health)
+app.get('/api/forecast/status', (_req, res) => {
+  res.json({ success: true, ...getForecastStatus() });
+});
+
+// Manual trigger for the forecast chain (admin)
+app.post('/api/admin/forecast/run', async (req, res) => {
+  try {
+    const dry = req.body?.dryRun === true || process.env.DRY_RUN === '1';
+    const prev = process.env.DRY_RUN;
+    if (dry) process.env.DRY_RUN = '1';
+    try {
+      const report = await runForecastOnce('manual');
+      res.json({ success: true, dryRun: Boolean(dry), report });
+    } finally {
+      if (dry) {
+        if (prev === undefined) delete process.env.DRY_RUN;
+        else process.env.DRY_RUN = prev;
+      }
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Web Push subscriptions (public endpoints — VAPID key is public by design)
 app.get('/api/push/vapid-public-key', (_req, res) => {
   const key = getVapidPublicKey();
@@ -1164,70 +1238,30 @@ app.post('/api/ai/analyze-match', async (req, res) => {
     odds: odds || { home: 2.1, draw: 3.4, away: 3.2 },
   };
 
-  const client = getGeminiClient();
-
-  if (client) {
-    try {
-      const prompt = `أنت محلل رياضي تكتيكي ووكيل ذكاء اصطناعي محترف لمنصة VEX Deals الرياضية.
+  // LLM via the shared failover chain (OpenRouter → OpenAI → DeepSeek → Gemini).
+  // The old Gemini-only client was dead (placeholder key) — heuristic model below
+  // still guarantees a response if every provider fails.
+  try {
+    const prompt = `أنت محلل رياضي تكتيكي ووكيل ذكاء اصطناعي محترف لمنصة VEX Deals الرياضية.
 قم بتحليل المباراة التالية بعمق وموضوعية:
 المباراة: ${match.homeTeam} ضد ${match.awayTeam}
 البطولة: ${match.league}
 الاحتمالات (Odds): فوز المضيف (${match.odds.home})، التعادل (${match.odds.draw})، فوز الضيف (${match.odds.away}).
 
-المطلوب: إرجاع كائن JSON منظم وفق الخصائص التالية باللغة العربية:
+أرجع JSON فقط بدون أي نص آخر، بالعربية، وفق الخصائص:
 1. predictedScore: النتيجة المتوقعة كنص (مثال: "2 - 1")
-2. winProbabilities: كائن يحتوي على نسب مئوية مجموعها 100: home (رقم), draw (رقم), away (رقم)
-3. confidenceScore: رقم بين 50 و 95 يمثل نسبة الثقة في التحليل
-4. tacticalSummary: فقرة تحليلية دقيقة وموجزة (سياق الهجوم والدفاع، الحالة البدنية، الغيابات، الأسلوب التكتيكي)
-5. keyFactors: مصفوفة من 3 إلى 4 نقاط مفتاحية ترجح كفة التحليل
-6. recommendedPick: التوقع الاستراتيجي الأنسب (مثال: "فوز أصحاب الأرض مع تسجيل كلا الفريقين")
-7. riskLevel: إحدى القيم: "low" أو "moderate" أو "high"
-8. disclaimer: تنبيه لعب مسؤول قانوني قصير ومحترف (+18 للتحليل الرياضي فقط)`;
+2. winProbabilities: كائن نسبه مجموعها 100: home (رقم), draw (رقم), away (رقم)
+3. confidenceScore: رقم بين 50 و 95
+4. tacticalSummary: فقرة تحليلية دقيقة وموجزة
+5. keyFactors: مصفوفة3-4 نقاط مفتاحية
+6. recommendedPick: التوقع الاستراتيجي الأنسب
+7. riskLevel: "low" أو "moderate" أو "high"
+8. disclaimer: تنبيه لعب مسؤول قصير (+18 للتحليل الرياضي فقط)`;
 
-      const response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              predictedScore: { type: Type.STRING },
-              winProbabilities: {
-                type: Type.OBJECT,
-                properties: {
-                  home: { type: Type.NUMBER },
-                  draw: { type: Type.NUMBER },
-                  away: { type: Type.NUMBER },
-                },
-                required: ['home', 'draw', 'away'],
-              },
-              confidenceScore: { type: Type.NUMBER },
-              tacticalSummary: { type: Type.STRING },
-              keyFactors: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-              recommendedPick: { type: Type.STRING },
-              riskLevel: { type: Type.STRING },
-              disclaimer: { type: Type.STRING },
-            },
-            required: [
-              'predictedScore',
-              'winProbabilities',
-              'confidenceScore',
-              'tacticalSummary',
-              'keyFactors',
-              'recommendedPick',
-              'riskLevel',
-              'disclaimer',
-            ],
-          },
-        },
-      });
-
-      const parsedResult = JSON.parse(response.text || '{}');
-
+    const raw = await generateWithFailover(prompt, 'تعود دائماً بـ JSON صالح فقط — بدون markdown أو شرح.', 0.4);
+    const parsedResult = extractJsonObject<any>(raw);
+    const wp = parsedResult?.winProbabilities;
+    if (parsedResult && wp && Number.isFinite(Number(wp.home)) && parsedResult.predictedScore) {
       return res.json({
         success: true,
         matchId: match.id,
@@ -1235,12 +1269,12 @@ app.post('/api/ai/analyze-match', async (req, res) => {
           ...parsedResult,
           matchId: match.id,
           generatedAt: new Date().toISOString(),
-          poweredBy: 'Gemini 3.8 Flash AI Engine',
+          poweredBy: 'VEX AI Chain (OpenRouter / OpenAI / DeepSeek / Gemini)',
         },
       });
-    } catch (err: any) {
-      console.error('Gemini API Error, using heuristic tactical model:', err);
     }
+  } catch (err: any) {
+    console.error('[AnalyzeMatch] LLM chain error, using heuristic tactical model:', err);
   }
 
   // Resilient High-Caliber Heuristic Engine (Ensures 100% reliable UX)
@@ -4153,6 +4187,19 @@ function startDockerNotificationWorker() {
     }
   }, 2 * 60 * 1000);
 
+  // Forecast chain: upcoming fixtures → team history (ESPN last-5) → LLM analysis
+  // → site prediction posts + telegram sports channels. First run 90s after boot
+  // (daily fixture ingest runs at 4s), then every 3 hours.
+  initForecastChain({ emit: (event, payload) => io.emit(event, payload) });
+  setTimeout(() => {
+    try {
+      void runForecastOnce('schedule');
+      startForecastScheduler(3);
+    } catch (err) {
+      console.error('[Forecast] scheduler start failed:', err);
+    }
+  }, 90 * 1000);
+
   setInterval(() => {
     try {
       // 1. Process due scheduled non-urgent notifications
@@ -5557,73 +5604,8 @@ ${socialMeta(domainUrl, escAttr(`${guide.title} | ${profile.brand}`), escAttr(gu
 
 
     // ==================== PREDICTION PAGES (Daily fresh content for crawlers) ====================
-    const TEAMS: Record<string, { name: string; rating: number; league: string }> = {
-      ars: { name: 'Arsenal', rating: 1980, league: 'Premier League' },
-      liv: { name: 'Liverpool', rating: 1995, league: 'Premier League' },
-      mci: { name: 'Manchester City', rating: 2010, league: 'Premier League' },
-      che: { name: 'Chelsea', rating: 1900, league: 'Premier League' },
-      mun: { name: 'Manchester United', rating: 1850, league: 'Premier League' },
-      tot: { name: 'Tottenham', rating: 1870, league: 'Premier League' },
-      rma: { name: 'Real Madrid', rating: 2020, league: 'La Liga' },
-      fcb: { name: 'Barcelona', rating: 1990, league: 'La Liga' },
-      atm: { name: 'Atletico Madrid', rating: 1920, league: 'La Liga' },
-      sev: { name: 'Sevilla', rating: 1820, league: 'La Liga' },
-      int: { name: 'Inter Milan', rating: 1960, league: 'Serie A' },
-      juv: { name: 'Juventus', rating: 1900, league: 'Serie A' },
-      mil: { name: 'AC Milan', rating: 1890, league: 'Serie A' },
-      nap: { name: 'Napoli', rating: 1930, league: 'Serie A' },
-      bay: { name: 'Bayern Munich', rating: 2005, league: 'Bundesliga' },
-      bvb: { name: 'Borussia Dortmund', rating: 1900, league: 'Bundesliga' },
-      rbl: { name: 'RB Leipzig', rating: 1870, league: 'Bundesliga' },
-      lev: { name: 'Bayer Leverkusen', rating: 1930, league: 'Bundesliga' },
-      psg: { name: 'Paris Saint-Germain', rating: 1975, league: 'Ligue 1' },
-      mrs: { name: 'Marseille', rating: 1850, league: 'Ligue 1' },
-      lil: { name: 'Lille', rating: 1830, league: 'Ligue 1' },
-      mon: { name: 'Monaco', rating: 1860, league: 'Ligue 1' },
-      ahl: { name: 'Al Ahly', rating: 1880, league: 'Egyptian Premier League' },
-      zam: { name: 'Zamalek', rating: 1820, league: 'Egyptian Premier League' },
-      pyr: { name: 'Pyramids FC', rating: 1790, league: 'Egyptian Premier League' },
-      sma: { name: 'Smouha', rating: 1700, league: 'Egyptian Premier League' },
-      hil: { name: 'Al Hilal', rating: 1950, league: 'Saudi Pro League' },
-      nss: { name: 'Al Nassr', rating: 1910, league: 'Saudi Pro League' },
-      itt: { name: 'Al Ittihad', rating: 1870, league: 'Saudi Pro League' },
-      ahs: { name: 'Al Ahli', rating: 1885, league: 'Saudi Pro League' },
-      ajx: { name: 'Ajax', rating: 1750, league: 'Eredivisie' },
-      psv: { name: 'PSV', rating: 1770, league: 'Eredivisie' },
-      fey: { name: 'Feyenoord', rating: 1730, league: 'Eredivisie' },
-      azl: { name: 'AZ Alkmaar', rating: 1690, league: 'Eredivisie' },
-      ben: { name: 'Benfica', rating: 1840, league: 'Primeira Liga' },
-      por: { name: 'Porto', rating: 1830, league: 'Primeira Liga' },
-      spo: { name: 'Sporting CP', rating: 1820, league: 'Primeira Liga' },
-      brg: { name: 'Braga', rating: 1740, league: 'Primeira Liga' },
-      gal: { name: 'Galatasaray', rating: 1790, league: 'Turkish Super Lig' },
-      fen: { name: 'Fenerbahce', rating: 1780, league: 'Turkish Super Lig' },
-      bes: { name: 'Besiktas', rating: 1720, league: 'Turkish Super Lig' },
-      tra: { name: 'Trabzonspor', rating: 1690, league: 'Turkish Super Lig' },
-      fla: { name: 'Flamengo', rating: 1850, league: 'Brasileiro Serie A' },
-      pal: { name: 'Palmeiras', rating: 1860, league: 'Brasileiro Serie A' },
-      cor: { name: 'Corinthians', rating: 1760, league: 'Brasileiro Serie A' },
-      flu: { name: 'Fluminense', rating: 1750, league: 'Brasileiro Serie A' },
-      new: { name: 'Newcastle United', rating: 1840, league: 'Premier League' },
-      avl: { name: 'Aston Villa', rating: 1810, league: 'Premier League' },
-      whu: { name: 'West Ham United', rating: 1770, league: 'Premier League' },
-      bha: { name: 'Brighton', rating: 1760, league: 'Premier League' },
-      wol: { name: 'Wolves', rating: 1700, league: 'Premier League' },
-      nfo: { name: 'Nottingham Forest', rating: 1740, league: 'Premier League' },
-      bet: { name: 'Real Betis', rating: 1780, league: 'La Liga' },
-      vil: { name: 'Villarreal', rating: 1810, league: 'La Liga' },
-      ath: { name: 'Athletic Club', rating: 1800, league: 'La Liga' },
-      rso: { name: 'Real Sociedad', rating: 1790, league: 'La Liga' },
-      val: { name: 'Valencia', rating: 1760, league: 'La Liga' },
-      rom: { name: 'Roma', rating: 1870, league: 'Serie A' },
-      laz: { name: 'Lazio', rating: 1850, league: 'Serie A' },
-      ata: { name: 'Atalanta', rating: 1880, league: 'Serie A' },
-      fio: { name: 'Fiorentina', rating: 1800, league: 'Serie A' },
-      sgf: { name: 'Eintracht Frankfurt', rating: 1800, league: 'Bundesliga' },
-      stu: { name: 'VfB Stuttgart', rating: 1790, league: 'Bundesliga' },
-      lyo: { name: 'Lyon', rating: 1790, league: 'Ligue 1' },
-      nic: { name: 'Nice', rating: 1760, league: 'Ligue 1' },
-    };
+    // Curated ratings live in server/teamRatings.ts (shared with the forecast chain).
+    const TEAMS: Record<string, { name: string; rating: number; league: string }> = { ...CURATED_TEAMS };
 
     const LEAGUE_TEAMS: Record<string, string[]> = {
       'Premier League': ['ars', 'liv', 'mci', 'che', 'mun', 'tot'],
