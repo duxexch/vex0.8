@@ -82,8 +82,10 @@ const MAX_FIXTURES_PER_RUN = 6;
 const LOOKAHEAD_MS = 36 * 3600 * 1000; // predict matches kicking off within 36h
 const FORM_DAYS = 14; // results index depth
 const STATE_MAX_ENTRIES = 500;
-/** Extra daily telegram slots beyond the channel cap reserved for predictions. */
-const FORECAST_TG_OVERFLOW = 6;
+/** Extra daily telegram slots beyond the channel cap reserved for predictions
+ *  (news eats the base cap within minutes after UTC midnight; +14 guarantees
+ *  a full day's prediction slate still reaches the channels). */
+const FORECAST_TG_OVERFLOW = 14;
 
 let schedulerTimer: NodeJS.Timeout | null = null;
 let running = false;
