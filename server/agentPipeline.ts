@@ -575,9 +575,9 @@ async function sendTelegram(chatId: string, text: string, parseMode: string, ima
 export async function publishToCategory(
   category: ChannelProfile['category'],
   buildText: (ch: ChannelProfile) => string,
-  opts?: { max?: number }
+  opts?: { max?: number; overflow?: number }
 ): Promise<{ sent: number; failed: number; channels: string[] }> {
-  const all = channelsStore.getPublishable().filter((c) => c.category === category);
+  const all = channelsStore.getPublishable(new Date(), { overflow: opts?.overflow }).filter((c) => c.category === category);
   const targets = opts?.max && opts.max > 0 ? all.slice(0, opts.max) : all;
   let sent = 0;
   let failed = 0;

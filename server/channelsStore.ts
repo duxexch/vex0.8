@@ -102,15 +102,20 @@ export const channelsStore = {
     return load().channels.find((c) => c.chat_id === chatId);
   },
 
-  /** Active channels that should receive posts right now (cap + quiet hours respected) */
-  getPublishable(now: Date = new Date()): ChannelProfile[] {
+  /**
+   * Active channels that should receive posts right now (cap + quiet hours respected).
+   * opts.overflow: extra posts/day allowed beyond daily_cap — used by the forecast
+   * chain so time-sensitive predictions aren't starved by the news pipeline.
+   */
+  getPublishable(now: Date = new Date(), opts?: { overflow?: number }): ChannelProfile[] {
     const today = todayUTC();
     const hour = now.getUTCHours();
+    const overflow = opts?.overflow ?? 0;
     return load().channels.filter((c) => {
       if (!c.active) return false;
       if (c.category === 'users' || c.category === 'support') return false;
       if (c.daily_reset !== today) return true; // reset pending — cap not consumed yet
-      if (c.daily_used >= c.daily_cap) return false;
+      if (c.daily_used >= c.daily_cap + overflow) return false;
       if (c.quiet_start != null && c.quiet_end != null) {
         const qs = c.quiet_start, qe = c.quiet_end;
         const inQuiet = qs < qe ? hour >= qs && hour < qe : hour >= qs || hour < qe;

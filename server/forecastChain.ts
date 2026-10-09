@@ -82,6 +82,8 @@ const MAX_FIXTURES_PER_RUN = 6;
 const LOOKAHEAD_MS = 36 * 3600 * 1000; // predict matches kicking off within 36h
 const FORM_DAYS = 14; // results index depth
 const STATE_MAX_ENTRIES = 500;
+/** Extra daily telegram slots beyond the channel cap reserved for predictions. */
+const FORECAST_TG_OVERFLOW = 6;
 
 let schedulerTimer: NodeJS.Timeout | null = null;
 let running = false;
@@ -425,6 +427,45 @@ function publishSitePost(
   }
 }
 
+// ---------------------------------------------------------------- backfill
+// If a prediction was created but its telegram send was skipped (daily cap
+// already consumed by the news pipeline), retry it on the next run while the
+// fixture is still upcoming. Max 3 backfills per run.
+
+async function backfillTelegram(state: { entries: Record<string, any> }, report: ForecastReport): Promise<void> {
+  if (process.env.DRY_RUN === '1') return;
+  const file = readJson<{ fixtures?: Fixture[] }>(FIXTURES_PATH, {});
+  let done = 0;
+  for (const [slug, entry] of Object.entries(state.entries)) {
+    if (done >= 3) break;
+    if (!entry || entry.tgSent) continue;
+    if (!entry.postId) {
+      entry.tgSent = true;
+      continue;
+    }
+    const fixture = (file.fixtures || []).find((f) => f && f.slug === slug);
+    const ms = fixture ? kickoffMs(fixture) : null;
+    if (!fixture || ms == null || ms < Date.now()) {
+      entry.tgSent = true; // kickoff passed (or fixture gone) — nothing to send
+      continue;
+    }
+    const post = storage.getSitePosts().find((p: any) => p && p.id === entry.postId);
+    if (!post || !post.text) continue;
+    const tg = await publishToCategory(
+      'sports',
+      (ch) => (ch.brand.signature && !post.text.includes(ch.brand.signature) ? `${post.text}\n\n${ch.brand.signature}` : post.text),
+      { overflow: FORECAST_TG_OVERFLOW }
+    );
+    if (tg.sent > 0) {
+      entry.tgSent = true;
+      done++;
+      report.tgSent += tg.sent;
+      report.tgFailed += tg.failed;
+      console.log(`[Forecast] ↻ backfilled telegram for ${slug} → ${tg.sent} channel(s)`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- run
 
 export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule'): Promise<ForecastReport> {
@@ -468,6 +509,13 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
       console.warn('[Forecast]', error);
       return report;
     }
+
+    // Retry any prediction whose telegram send was skipped (e.g. daily cap hit).
+    // Runs even when there are no new fixtures so backfill always progresses.
+    const state = readJson<{ entries: Record<string, any> }>(STATE_PATH, { entries: {} });
+    await backfillTelegram(state, report);
+    writeJson(STATE_PATH, state);
+
     if (fixtures.length === 0) {
       console.log('[Forecast] no new upcoming fixtures in 36h window');
       return report;
@@ -475,7 +523,6 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
 
     console.log(`[Forecast] analyzing ${fixtures.length} upcoming fixture(s)…`);
     const index = await fetchResultsIndex();
-    const state = readJson<{ entries: Record<string, any> }>(STATE_PATH, { entries: {} });
 
     for (const f of fixtures) {
       try {
@@ -497,8 +544,10 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
         const postId = publishSitePost(f, homeName, awayName, a, text);
         if (postId) report.sitePosts++;
 
-        const tg = await publishToCategory('sports', (ch) =>
-          ch.brand.signature && !text.includes(ch.brand.signature) ? `${text}\n\n${ch.brand.signature}` : text
+        const tg = await publishToCategory(
+          'sports',
+          (ch) => (ch.brand.signature && !text.includes(ch.brand.signature) ? `${text}\n\n${ch.brand.signature}` : text),
+          { overflow: FORECAST_TG_OVERFLOW }
         );
         report.tgSent += tg.sent;
         report.tgFailed += tg.failed;
@@ -511,6 +560,7 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
           pAway: a.pAway,
           predictedScore: a.predictedScore,
           usedLlm: a.usedLlm,
+          tgSent: tg.sent > 0,
         };
         // prune old entries
         const keys = Object.keys(state.entries);
