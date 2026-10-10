@@ -36,7 +36,7 @@ import {
   Wallet as UserWallet 
 } from '../types';
 import { lotteryService } from '../services/lotteryService';
-import { promptLotteryInstall, isStandaloneMode, restoreMainManifest } from '../services/lotteryInstall';
+import { isStandaloneMode } from '../services/lotteryInstall';
 import { requirePhoneLink } from '../utils/requireLink';
 import { LotteryPrizeCards } from './lottery/LotteryPrizeCards';
 import { LotteryWinningsHistory } from './lottery/LotteryWinningsHistory';
@@ -49,7 +49,7 @@ interface LotteryTabProps {
   userPhone?: string;
   onRefreshWallets?: () => void;
   onCopyToast?: (msg: string) => void;
-  onRequestInstallHelp?: () => void;
+  onInstallPwa?: () => void | Promise<void>;
 }
 
 export const LotteryTab: React.FC<LotteryTabProps> = ({
@@ -59,7 +59,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
   userPhone,
   onRefreshWallets,
   onCopyToast,
-  onRequestInstallHelp,
+  onInstallPwa,
 }) => {
   const isAr = lang === 'ar';
 
@@ -71,11 +71,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
   useEffect(() => {
     const onInstalled = () => setInstallState('installed');
     window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('appinstalled', onInstalled);
-      // Leaving the lottery section — restore the main site manifest
-      restoreMainManifest();
-    };
+    return () => window.removeEventListener('appinstalled', onInstalled);
   }, []);
 
   const handleDownloadApp = async () => {
@@ -86,19 +82,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
     if (installState === 'working') return;
     setInstallState('working');
     try {
-      const result = await promptLotteryInstall();
-      if (result === 'already' || result === 'accepted') {
-        setInstallState('installed');
-        onCopyToast?.(isAr ? 'تم تثبيت تطبيق اليانصيب ✅' : 'Lottery app installed ✅');
-      } else if (result === 'ios') {
-        onRequestInstallHelp?.();
-      } else if (result === 'manual') {
-        onCopyToast?.(
-          isAr
-            ? 'افتح قائمة المتصفح ثم اختر "إضافة إلى الشاشة الرئيسية"'
-            : 'Open the browser menu and pick "Add to Home Screen"'
-        );
-      }
+      await onInstallPwa?.();
     } finally {
       setInstallState((s) => (s === 'working' ? 'idle' : s));
     }

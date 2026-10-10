@@ -1,33 +1,34 @@
 {
   "id": "https://vex.deals/",
-  "name": "VEX Deals - Cashback & Compensation",
-  "short_name": "VEX Deals",
-  "description": "منصة VEX Deals (vex.deals) لإدارة حسابات المراهنات، تعويض الخسائر، فك تجميد الأرصدة والتحويلات الآمنة",
-  "start_url": "/",
+  "name": "VEX Lottery — اليانصيب الرسمي",
+  "short_name": "VEX Lottery",
+  "description": "تطبيق VEX Lottery الرسمي — جائزة تراكمية، تنبيهات فورية قبل السحب، وسحبات موثوقة. تثبيت مباشر من المتصفح بدون متجر.",
+  "lang": "ar",
+  "start_url": "/lottery",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#f8fafc",
-  "theme_color": "#f8fafc",
+  "orientation": "any",
+  "background_color": "#05070d",
+  "theme_color": "#0b1120",
   "icons": [
     {
-      "src": "/icon-192.svg",
+      "src": "/lottery-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.svg",
+      "src": "/lottery-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.svg",
+      "src": "/lottery-maskable-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ],
-  "categories": ["finance", "utilities"]
+  "categories": ["entertainment", "games"]
 }

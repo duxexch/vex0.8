@@ -13,7 +13,7 @@ export const IosInstallModal: React.FC<IosInstallModalProps> = ({ isOpen, onClos
 
   const content = {
     ar: {
-      title: 'تثبيت تطبيق VEX Deals على آيفون (iOS)',
+      title: 'تثبيت تطبيق VEX Lottery على آيفون (iOS)',
       subtitle: 'لا تدعم متصفحات آبل التثبيت التلقائي مثل أندرويد. باتباع هذه الخطوات البسيطة، يمكنك تثبيت التطبيق على شاشتك الرئيسية بنقرة واحدة:',
       step1: 'افتح هذا الرابط حصرياً في متصفح **سفاري (Safari)**.',
       step2: 'اضغط على زر **مشاركة (Share)** الموجود في شريط الأدوات السفلي أو العلوي.',
@@ -22,7 +22,7 @@ export const IosInstallModal: React.FC<IosInstallModalProps> = ({ isOpen, onClos
       gotIt: 'فهمت، شكراً لك',
     },
     en: {
-      title: 'Install VEX Deals on iPhone & iPad',
+      title: 'Install VEX Lottery on iPhone & iPad',
       subtitle: 'Apple does not support automatic app installation prompts. Follow these quick steps to add the app to your Home Screen:',
       step1: 'Open this website in the **Safari** browser.',
       step2: 'Tap the **Share** button in Safari’s bottom or top toolbar.',
@@ -31,7 +31,7 @@ export const IosInstallModal: React.FC<IosInstallModalProps> = ({ isOpen, onClos
       gotIt: 'Got it, Thanks',
     },
     es: {
-      title: 'Instalar VEX Deals en iPhone',
+      title: 'Instalar VEX Lottery en iPhone',
       subtitle: 'Apple no admite notificaciones de instalación automática. Sigue estos sencillos pasos:',
       step1: 'Abre este sitio en el navegador **Safari**.',
       step2: 'Toca el botón **Compartir** en la barra de herramientas de Safari.',
@@ -40,7 +40,7 @@ export const IosInstallModal: React.FC<IosInstallModalProps> = ({ isOpen, onClos
       gotIt: 'Entendido',
     },
     ru: {
-      title: 'Установка VEX Deals на iPhone',
+      title: 'Установка VEX Lottery на iPhone',
       subtitle: 'Apple не поддерживает автоматическую установку приложений. Выполните следующие действия:',
       step1: 'Откройте этот сайт в браузере **Safari**.',
       step2: 'Нажмите кнопку **Поделиться** на панели инструментов Safari.',
