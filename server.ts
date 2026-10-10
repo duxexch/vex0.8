@@ -605,56 +605,44 @@ app.post('/api/payment-methods', (req, res) => {
   res.json({ success: true, paymentMethods: branding.paymentMethods });
 });
 
-// Dynamic Web App Manifest Endpoint
+// Dynamic Web App Manifest Endpoint — site-wide identity is the installable
+// VEX Lottery app (owner decision: every install path yields VEX Lottery,
+// opening straight at /lottery; the rest of the platform stays navigable).
 const getDynamicManifest = () => {
-  const appName = currentBranding.appName || 'VEX Deals';
-  const shortName = appName.split(' ')[0];
-  const description = currentBranding.tagline || 'منصة الولاء والتعويضات والتحليلات الرياضية الذكية';
-  const themeColor = currentBranding.themeColor || '#f8fafc';
-  const bgColor = currentBranding.backgroundColor || '#f8fafc';
-
-  let iconSrc192 = '/icon-192.svg';
-  let iconSrc512 = '/icon-512.svg';
-
-  if (currentBranding.iconType === 'upload' && currentBranding.uploadedIconData) {
-    iconSrc192 = currentBranding.uploadedIconData;
-    iconSrc512 = currentBranding.uploadedIconData;
-  } else if (currentBranding.iconType === 'custom' && currentBranding.customIconUrl) {
-    iconSrc192 = currentBranding.customIconUrl;
-    iconSrc512 = currentBranding.customIconUrl;
-  }
-
   return {
-    name: appName,
-    short_name: shortName,
-    description: description,
-    start_url: '/',
+    id: 'https://vex.deals/',
+    name: 'VEX Lottery — اليانصيب الرسمي',
+    short_name: 'VEX Lottery',
+    description:
+      'تطبيق VEX Lottery الرسمي — جائزة تراكمية، تنبيهات فورية قبل السحب، وسحبات موثوقة. تثبيت مباشر من المتصفح بدون متجر.',
+    lang: 'ar',
+    start_url: '/lottery',
     scope: '/',
     display: 'standalone',
-    orientation: 'portrait',
-    background_color: bgColor,
-    theme_color: themeColor,
+    orientation: 'any',
+    background_color: '#05070d',
+    theme_color: '#0b1120',
     icons: [
       {
-        src: iconSrc192,
+        src: '/lottery-192.png',
         sizes: '192x192',
-        type: iconSrc192.startsWith('data:image/svg') || iconSrc192.endsWith('.svg') ? 'image/svg+xml' : 'image/png',
+        type: 'image/png',
         purpose: 'any',
       },
       {
-        src: iconSrc512,
+        src: '/lottery-512.png',
         sizes: '512x512',
-        type: iconSrc512.startsWith('data:image/svg') || iconSrc512.endsWith('.svg') ? 'image/svg+xml' : 'image/png',
+        type: 'image/png',
         purpose: 'any',
       },
       {
-        src: iconSrc512,
+        src: '/lottery-maskable-512.png',
         sizes: '512x512',
-        type: iconSrc512.startsWith('data:image/svg') || iconSrc512.endsWith('.svg') ? 'image/svg+xml' : 'image/png',
+        type: 'image/png',
         purpose: 'maskable',
       },
     ],
-    categories: ['finance', 'utilities', 'sports'],
+    categories: ['entertainment', 'games'],
   };
 };
 
