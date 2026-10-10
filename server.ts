@@ -48,6 +48,7 @@ import {
 } from './server/forecastChain';
 import { generateWithFailover, extractJsonObject } from './server/agentEngine';
 import { startPostScheduler, getSchedulerStatus } from './server/postScheduler';
+import { getSentryStatus } from './server/postSentry';
 import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel } from './server/channelOnboard';
 import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
 import { startPromoScheduler, getPromoStatus, runPromoPass } from './server/promoPosts';
@@ -503,6 +504,7 @@ app.get('/api/geo', (req, res) => {
     countryName: info.countryName || 'Egypt',
     countryFlag: info.countryFlag || '🇪🇬',
     currency: info.currency || 'EGP',
+    appLang: info.appLang || 'ar',
     suggestedDomain: info.suggestedDomain || 'vex.deals',
     confidence: info.confidence || 'low',
     source: info.source || 'fallback',
@@ -786,25 +788,57 @@ function settlePredictionByPostId(postId: string, actual: ActualScore, source: s
 
   const verdictLine =
     verdict === 'hit' ? '🎯 توقعنا تحقق!' : verdict === 'miss' ? '❌ لم يتحقق التوقع' : '➖ تعادل';
+  const verdictEn = verdict === 'hit' ? '🎯 Our prediction hit!' : verdict === 'miss' ? '❌ Prediction missed' : '➖ Draw';
+  const verdictEs = verdict === 'hit' ? '🎯 ¡Nuestro pronóstico acertó!' : verdict === 'miss' ? '❌ Pronóstico fallido' : '➖ Empate';
+  const verdictRu = verdict === 'hit' ? '🎯 Наш прогноз совпал!' : verdict === 'miss' ? '❌ Прогноз не совпал' : '➖ Ничья';
+  const notifTitle = `✅ ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`;
+  const scoreStr = `${actual.home}-${actual.away}`;
   const notif = {
     id: `NOTIF-PREDRESULT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    title: `✅ ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`,
+    title: notifTitle,
     message: lang === 'en'
       ? `Predicted ${pred.predictedScore} — final ${actual.home}-${actual.away}`
       : `${suffix.split('\n').filter(Boolean).slice(-1)[0] || verdictLine}`,
     category: 'ai_prediction' as const,
     timestamp: new Date().toISOString(),
     read: false,
+    // Localized per user's chosen language (NotificationCenterModal prefers these)
+    translations: {
+      ar: {
+        title: notifTitle,
+        message: `${verdictLine} — توقعنا ${pred.predictedScore}، النتيجة ${scoreStr}`,
+      },
+      en: {
+        title: notifTitle,
+        message: `${verdictEn} — predicted ${pred.predictedScore}, final ${scoreStr}`,
+      },
+      es: {
+        title: notifTitle,
+        message: `${verdictEs} — predijimos ${pred.predictedScore}, final ${scoreStr}`,
+      },
+      ru: {
+        title: notifTitle,
+        message: `${verdictRu} — прогноз ${pred.predictedScore}, финал ${scoreStr}`,
+      },
+    },
     data: { postId, targetTab: 'ai-sports', actionUrl: '/#ai-sports', source: 'prediction_settlement' },
   };
-  storage.addNotification(notif);
-  io.emit('notification', notif);
-  void sendWebPush({
-    title: notif.title,
-    body: lang === 'en' ? notif.message : `${verdictLine} ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`,
-    url: '/#ai-sports',
-    tag: `pred-${postId}`,
-  });
+  const savedNotif = storage.addNotification(notif);
+  if (savedNotif) {
+    io.emit('notification', notif);
+    void sendWebPush({
+      title: notif.title,
+      body: lang === 'en' ? notif.message : `${verdictLine} ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`,
+      url: '/#ai-sports',
+      tag: `pred-${postId}`,
+      translations: {
+        ar: { body: `${verdictLine} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
+        en: { body: `${verdictEn} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
+        es: { body: `${verdictEs} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
+        ru: { body: `${verdictRu} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
+      },
+    });
+  }
   console.log(`🏁 [Predictions] Settled ${postId}: ${pred.homeTeam} ${actual.home}-${actual.away} ${pred.awayTeam} (${verdict}, via ${source})`);
   return post;
 }
@@ -1048,22 +1082,26 @@ app.post('/api/site-posts', async (req, res) => {
         ...(prediction ? { prediction: true, pctSource: prediction.pctSource } : {}),
       },
     };
-    storage.addNotification(notif);
-    io.emit('notification', notif);
+    const savedNotif = storage.addNotification(notif);
+    if (savedNotif) {
+      io.emit('notification', notif);
+      if (prediction) {
+        void sendWebPush({
+          title: post.title,
+          body: excerpt,
+          url: '/#ai-sports',
+          tag: `pred-${post.id}`,
+        });
+      }
+    }
     if (prediction) {
       io.emit('site_post_updated', { postId: post.id, post });
-      void sendWebPush({
-        title: post.title,
-        body: excerpt,
-        url: '/#ai-sports',
-        tag: `pred-${post.id}`,
-      });
     }
 
     console.log(
-      `📰 [SitePosts] Published ${post.id} (${post.company || 'VEX'})${prediction ? ` [prediction ${prediction.pctSource}]` : ''} -> notification ${notif.id}`
+      `📰 [SitePosts] Published ${post.id} (${post.company || 'VEX'})${prediction ? ` [prediction ${prediction.pctSource}]` : ''} -> notification ${savedNotif ? notif.id : 'deduped'}`
     );
-    return res.json({ ok: true, post, notification: notif });
+    return res.json({ ok: true, post, notification: savedNotif ? notif : null });
   } catch (err: any) {
     console.error('[SitePosts] Ingest error:', err);
     return res.status(500).json({ error: err.message });
@@ -1191,6 +1229,11 @@ app.get('/api/promo/status', (_req, res) => {
   res.json({ success: true, ...getPromoStatus() });
 });
 
+// بوابة الرقيب — post sentry gate status (targeting corrections, last 24h)
+app.get('/api/sentry/status', (_req, res) => {
+  res.json({ success: true, ...getSentryStatus() });
+});
+
 // Re-run the onboarding agent's classification for one channel (admin)
 app.post('/api/admin/channels/reclassify', async (req, res) => {
   try {
@@ -1253,6 +1296,7 @@ app.post('/api/push/subscribe', (req, res) => {
     const ok = addSubscription({
       endpoint: body.endpoint,
       keys: { p256dh: body.keys?.p256dh, auth: body.keys?.auth },
+      lang: typeof body.lang === 'string' && /^(ar|en|es|ru|fr|de|tr|pt)$/.test(body.lang) ? body.lang : undefined,
     });
     if (!ok) return res.status(400).json({ error: 'Invalid subscription' });
     res.json({ ok: true });
@@ -4046,9 +4090,10 @@ function dispatchLotteryOneHourNotification(drawState: ServerLotteryState, isMan
     },
   };
 
-  storage.addNotification(newNotif);
-  io.emit('notification', newNotif);
-  console.log(`🎟️ [Lottery Engine] Dispatched 1-Hour Pre-Draw Push Notification for ${drawState.activeDrawId}`);
+  if (storage.addNotification(newNotif)) {
+    io.emit('notification', newNotif);
+    console.log(`🎟️ [Lottery Engine] Dispatched 1-Hour Pre-Draw Push Notification for ${drawState.activeDrawId}`);
+  }
   return newNotif;
 }
 
@@ -4088,30 +4133,39 @@ function dispatchLotteryThirtyMinTierNotification(
   };
 
   const tierInfo = tierNames[tierId] || tierNames.tier1_jackpot;
+  // Combined call (comma-joined ids) → one notification instead of a 5-burst
+  const tierIds = String(tierId).split(',').map((s) => s.trim()).filter(Boolean);
+  const tierLabel = tierIds.length > 1
+    ? {
+        ar: `كل مستويات الجائزة (${tierIds.length} مستويات)`,
+        en: `All Prize Tiers (${tierIds.length} tiers)`,
+        highlight: tierNames[tierIds[0]]?.highlight || tierInfo.highlight,
+      }
+    : tierInfo;
 
   const newNotif = {
     id: notifId,
-    title: `🔔 تنبيه السحب: 30 دقيقة متبقية لبدء سحب [${tierInfo.ar}]`,
-    message: `تنبيه سحب مخصص عبر Firebase Cloud Messaging (FCM): باقي 30 دقيقة فقط على انطلاق ${drawState.titleAr}. الجائزة المرتقبة: ${tierInfo.highlight}! ثبت تذكرتك الآن قبل إغلاق القفل التشفيري.`,
+    title: `🔔 تنبيه السحب: 30 دقيقة متبقية لبدء سحب [${tierLabel.ar}]`,
+    message: `تنبيه سحب مخصص عبر Firebase Cloud Messaging (FCM): باقي 30 دقيقة فقط على انطلاق ${drawState.titleAr}. الجائزة المرتقبة: ${tierLabel.highlight}! ثبت تذكرتك الآن قبل إغلاق القفل التشفيري.`,
     category: 'lottery',
     timestamp: new Date().toISOString(),
     read: false,
     translations: {
       ar: {
-        title: `🔔 تنبيه السحب: 30 دقيقة متبقية لبدء سحب [${tierInfo.ar}]`,
-        message: `تنبيه سحب مخصص عبر Firebase Cloud Messaging (FCM): باقي 30 دقيقة فقط على انطلاق ${drawState.titleAr}. الجائزة المرتقبة: ${tierInfo.highlight}! ثبت تذكرتك الآن قبل إغلاق القفل التشفيري.`,
+        title: `🔔 تنبيه السحب: 30 دقيقة متبقية لبدء سحب [${tierLabel.ar}]`,
+        message: `تنبيه سحب مخصص عبر Firebase Cloud Messaging (FCM): باقي 30 دقيقة فقط على انطلاق ${drawState.titleAr}. الجائزة المرتقبة: ${tierLabel.highlight}! ثبت تذكرتك الآن قبل إغلاق القفل التشفيري.`,
       },
       en: {
-        title: `🔔 Draw Alert: 30 Mins Until [${tierInfo.en}] Starts`,
-        message: `Customized Draw Alert via Firebase Cloud Messaging (FCM): Only 30 minutes left before ${drawState.titleEn} locks in. Target prize: ${tierInfo.highlight}! Lock in your lucky numbers now.`,
+        title: `🔔 Draw Alert: 30 Mins Until [${tierLabel.en}] Starts`,
+        message: `Customized Draw Alert via Firebase Cloud Messaging (FCM): Only 30 minutes left before ${drawState.titleEn} locks in. Target prize: ${tierLabel.highlight}! Lock in your lucky numbers now.`,
       },
       ru: {
-        title: `🔔 Оповещение: 30 минут до розыгрыша [${tierInfo.en}]`,
-        message: `Осталось всего 30 минут до начала тиража ${drawState.titleEn}. Приз: ${tierInfo.highlight}!`,
+        title: `🔔 Оповещение: 30 минут до розыгрыша [${tierLabel.en}]`,
+        message: `Осталось всего 30 минут до начала тиража ${drawState.titleEn}. Приз: ${tierLabel.highlight}!`,
       },
       es: {
-        title: `🔔 Alerta de Sorteo: 30 minutos para [${tierInfo.en}]`,
-        message: `Solo quedan 30 minutos antes del sorteo ${drawState.titleEn}. Premio: ${tierInfo.highlight}!`,
+        title: `🔔 Alerta de Sorteo: 30 minutos para [${tierLabel.en}]`,
+        message: `Solo quedan 30 minutos antes del sorteo ${drawState.titleEn}. Premio: ${tierLabel.highlight}!`,
       },
     },
     data: {
@@ -4126,9 +4180,10 @@ function dispatchLotteryThirtyMinTierNotification(
     },
   };
 
-  storage.addNotification(newNotif);
-  io.emit('notification', newNotif);
-  console.log(`🎟️ [Lottery Engine] Dispatched 30-Minute Tier Push Alert (${tierId}) for ${drawState.activeDrawId}`);
+  if (storage.addNotification(newNotif)) {
+    io.emit('notification', newNotif);
+    console.log(`🎟️ [Lottery Engine] Dispatched 30-Minute Tier Push Alert (${tierId}) for ${drawState.activeDrawId}`);
+  }
   return newNotif;
 }
 
@@ -4146,14 +4201,16 @@ function checkAndDispatchLotteryReminders() {
     dispatchLotteryOneHourNotification(serverLotteryState);
   }
 
-  // 2. If time left is 30 minutes or less: trigger 30-min per-tier draw alert
+  // 2. If time left is 30 minutes or less: ONE combined 30-min tier alert
+  // (previously fired one notification per subscribed tier = 5-burst spam)
   if (diffMinutes > 0 && diffMinutes <= 30 && !serverLotteryState.thirtyMinReminderSent) {
     serverLotteryState.thirtyMinReminderSent = true;
-    Object.keys(serverLotteryState.tierAlertSubscriptions).forEach((tId) => {
-      if (serverLotteryState.tierAlertSubscriptions[tId]) {
-        dispatchLotteryThirtyMinTierNotification(serverLotteryState, tId);
-      }
-    });
+    const activeTiers = Object.keys(serverLotteryState.tierAlertSubscriptions).filter(
+      (tId) => serverLotteryState.tierAlertSubscriptions[tId]
+    );
+    if (activeTiers.length > 0) {
+      dispatchLotteryThirtyMinTierNotification(serverLotteryState, activeTiers.join(','));
+    }
   }
 }
 

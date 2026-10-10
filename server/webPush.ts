@@ -61,10 +61,14 @@ export function addSubscription(sub: any): boolean {
   if (!sub || typeof sub.endpoint !== 'string' || !sub.endpoint.startsWith('http')) return false;
   if (!sub.keys || typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') return false;
   const list = readSubs().filter((s) => s?.endpoint !== sub.endpoint);
+  const existing = readSubs().find((s) => s?.endpoint === sub.endpoint);
   list.push({
     endpoint: sub.endpoint,
     keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
-    createdAt: new Date().toISOString(),
+    // Preferred language (from the client's chosen app language) — used to
+    // localize push payloads per subscriber.
+    lang: typeof sub.lang === 'string' && sub.lang ? sub.lang : existing?.lang,
+    createdAt: existing?.createdAt || new Date().toISOString(),
   });
   writeSubs(list);
   return true;
@@ -83,21 +87,29 @@ export async function sendWebPush(payload: {
   body: string;
   url?: string;
   tag?: string;
+  /** Per-language variants — delivered according to each subscriber's stored lang */
+  translations?: Record<string, { title?: string; body?: string }>;
 }): Promise<number> {
   if (!ensureConfigured()) return 0;
   const subs = readSubs();
   if (subs.length === 0) return 0;
-  const message = JSON.stringify({
-    title: payload.title,
-    body: payload.body,
-    url: payload.url || '/#ai-sports',
-    tag: payload.tag || 'site-post',
-  });
   let sent = 0;
   const stale: string[] = [];
   await Promise.all(
     subs.map(async (sub) => {
       try {
+        // Pick the subscriber's language (base code too: es-419 → es), fall back to default
+        const raw = String(sub.lang || '').toLowerCase();
+        const variant =
+          (raw && payload.translations?.[raw]) ||
+          (raw && payload.translations?.[raw.split('-')[0]]) ||
+          undefined;
+        const message = JSON.stringify({
+          title: variant?.title || payload.title,
+          body: variant?.body || payload.body,
+          url: payload.url || '/#ai-sports',
+          tag: payload.tag || 'site-post',
+        });
         await webpush.sendNotification(
           sub,
           message,

@@ -128,7 +128,10 @@ export default function App() {
         const geo = await res.json();
         if (cancelled || !geo) return;
 
-        if (!langChosen && geo.locale) {
+        if (!langChosen && geo.appLang) {
+          // Server-side geo → closest supported language for this country
+          setLang((prev) => (prev === geo.appLang ? prev : geo.appLang));
+        } else if (!langChosen && geo.locale) {
           const iso = String(geo.countryIso || '').toUpperCase();
           let nextLang: Language = 'en';
           if (String(geo.locale).startsWith('ar') || ['EG', 'SA', 'AE', 'QA', 'KW', 'BH', 'OM', 'IQ', 'JO', 'LB', 'PS', 'YE', 'SD', 'SY'].includes(iso)) {
@@ -490,9 +493,15 @@ export default function App() {
     }
   }, []);
 
-  // Toggle Language
+  // Toggle Language — re-sync web-push so future notifications arrive in the new language
+  const syncPushLang = () => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      void ensureWebPushSubscription();
+    }
+  };
   const handleToggleLang = () => {
     setLang((prev) => (prev === 'ar' ? 'en' : 'ar'));
+    syncPushLang();
   };
 
   // Toggle Theme: No-op (Light mode enforced)
@@ -622,7 +631,7 @@ export default function App() {
         onOpenNotifications={() => setNotifCenterOpen(true)}
         onOpenResponsibleGaming={() => setResponsibleGamingOpen(true)}
         onToggleTheme={handleToggleTheme}
-        onSelectLang={(newLang) => setLang(newLang)}
+        onSelectLang={(newLang) => { setLang(newLang); syncPushLang(); }}
         onOpenPhoneModal={() => setPhoneModalOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenSecurityAnalysis={() => setSecurityAnalysisOpen(true)}

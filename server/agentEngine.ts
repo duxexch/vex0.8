@@ -2700,8 +2700,9 @@ ${params.baseMessage ? `- الرسالة المبدئية: ${params.baseMessage}
               urgency: item.urgency,
             },
           };
-          storage.addNotification(notif);
-          dispatched.push(notif);
+          if (storage.addNotification(notif)) {
+            dispatched.push(notif);
+          }
         }
       }
     });

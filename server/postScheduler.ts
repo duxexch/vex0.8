@@ -172,7 +172,11 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
     const result = await sendTelegram(item.chat_id, item.text, item.parse_mode);
     lastGlobalSendAt = Date.now();
     if (result.ok) {
-      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(item.chat_id);
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(result.sentTo ?? item.chat_id);
+      if (result.sentTo && result.sentTo !== item.chat_id) {
+        item.channelTitle = channelsStore.get(result.sentTo)?.title || item.channelTitle;
+        item.chat_id = result.sentTo;
+      }
       item.status = 'sent';
       item.sentAt = new Date().toISOString();
       sent++;

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { channelsStore, ChannelProfile } from './channelsStore';
+import { sentryGate } from './postSentry';
 import { getNewsScraper, ScrapedArticle } from './newsScraper';
 import { fetchPostImage } from './imageFetcher';
 import { agentEngine, availableProviders, AIProvider } from './agentEngine';
@@ -521,10 +522,22 @@ function saveQueue(q: PublishQueueItem[]): void {
   writeJson(PUBLISH_QUEUE_PATH, q);
 }
 
-export async function sendTelegram(chatId: string, text: string, parseMode: string, imagePath?: string | null): Promise<{ ok: boolean; error?: string }> {
+export async function sendTelegram(chatId: string, text: string, parseMode: string, imagePath?: string | null): Promise<{ ok: boolean; error?: string; sentTo?: string }> {
+  // 🛡 بوابة الرقيب — verify targeting (lang/category/audience) and reroute if needed.
+  let targetChatId = chatId;
+  let targetText = text;
+  try {
+    const gate = sentryGate(chatId, text);
+    targetChatId = gate.chatId;
+    targetText = gate.text;
+  } catch {
+    /* never block a send on the gate */
+  }
+  chatId = targetChatId;
+  text = targetText;
   if (process.env.DRY_RUN === '1') {
     console.log(`[Publisher][DRY_RUN] → ${chatId}: ${text.slice(0, 120).replace(/\n/g, ' ⏎ ')}`);
-    return { ok: true };
+    return { ok: true, sentTo: chatId };
   }
   const pub = channelsStore.getPublisher();
   const token = pub.bot_token || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -540,7 +553,7 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
       form.append('photo', new Blob([fs.readFileSync(imagePath)], { type: 'image/jpeg' }), path.basename(imagePath));
       const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
       const data: any = await res.json();
-      if (data.ok) return { ok: true };
+      if (data.ok) return { ok: true, sentTo: chatId };
       // photo rejected (e.g. too long caption / bad parse) → retry as plain text message
       console.warn('[Publisher] sendPhoto failed, retrying as text:', data.description);
     }
@@ -551,7 +564,7 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
       signal: AbortSignal.timeout(30000),
     });
     const data: any = await res.json();
-    if (data.ok) return { ok: true };
+    if (data.ok) return { ok: true, sentTo: chatId };
     // parse_mode rejected → last resort: plain text
     if (String(data.description || '').toLowerCase().includes('parse')) {
       const res2 = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -561,7 +574,7 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
         signal: AbortSignal.timeout(30000),
       });
       const data2: any = await res2.json();
-      if (data2.ok) return { ok: true };
+      if (data2.ok) return { ok: true, sentTo: chatId };
       return { ok: false, error: data2.description || 'send failed' };
     }
     return { ok: false, error: data.description || 'send failed' };
@@ -593,7 +606,7 @@ export async function publishToCategory(
     const parseMode: 'HTML' | 'Markdown' = ch.format === 'markdown' ? 'Markdown' : 'HTML';
     const result = await sendTelegram(ch.chat_id, text, parseMode);
     if (result.ok) {
-      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(ch.chat_id);
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(result.sentTo ?? ch.chat_id);
       sent++;
       channels.push(ch.title);
       await new Promise((r) => setTimeout(r, 4000));
@@ -668,7 +681,7 @@ async function publisherAgent(posts: GeneratedPost[], items: AnalyzedItem[], rep
     const item = items.find((i) => post.text.includes(i.title.slice(0, 25))) || items[0];
     const result = await sendTelegram(post.chat_id, post.text, post.parse_mode, post.image);
     if (result.ok) {
-      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(post.chat_id);
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(result.sentTo ?? post.chat_id);
       published++;
       report.stages.push({ stage: 'publish', ok: true, fallback: false, detail: `→ ${post.channelTitle}` });
       emitFn?.('pipeline_post', { channel: post.channelTitle, title: item?.title || '' });
@@ -728,7 +741,7 @@ export async function processPublishQueue(): Promise<{ sent: number; failed: num
     }
     const res = await sendTelegram(item.chat_id, item.text, item.parse_mode, item.image);
     if (res.ok) {
-      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(item.chat_id);
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(res.sentTo ?? item.chat_id);
       sent++;
       await new Promise((r) => setTimeout(r, 3000));
     } else {

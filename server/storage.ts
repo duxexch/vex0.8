@@ -17,6 +17,14 @@ import { DEFAULT_COMPENSATION_EMAIL_TEMPLATES } from '../src/data/compensationEm
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 
+// --- Notification dedupe / rate limits (see addNotification) ---
+const NOTIF_CAPPED_CATEGORIES = new Set(['ai_prediction', 'sports_news', 'lottery']);
+const NOTIF_EXACT_WINDOW_MS = 30 * 60 * 1000; // identical title+message within 30 min → drop
+const NOTIF_TITLE_WINDOW_MS = 60 * 60 * 1000; // same title within 60 min → drop
+const NOTIF_TITLE_DAILY_MAX = 4;              // same title per 24h → drop after 4
+const NOTIF_HOURLY_MAX = 15;                  // capped categories combined, per hour
+const NOTIF_MAX_LIST = 500;                   // stored history cap (was unbounded)
+
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -182,17 +190,55 @@ export const storage = {
   },
 
   // 6. Notifications
+  // Dedupe + rate limits for high-volume categories: the settlement poller and
+  // the site-post relay can otherwise emit the SAME event dozens of times (a
+  // 67-duplicate Dortmund settlement burst was observed in one hour). Security
+  // and compensation notices bypass every limit below.
   getNotifications(): any[] {
     return readJsonFile<any[]>('notifications.json', DEFAULT_NOTIFICATIONS);
   },
   saveNotifications(notifs: any[]): void {
     writeJsonFile('notifications.json', notifs);
   },
-  addNotification(notif: any): any {
-    const list = this.getNotifications();
-    list.unshift(notif);
-    this.saveNotifications(list);
-    return notif;
+  addNotification(notif: any): any | null {
+    try {
+      const list = this.getNotifications();
+      const cat = String(notif?.category || '');
+      if (NOTIF_CAPPED_CATEGORIES.has(cat)) {
+        const now = Date.now();
+        const norm = (v: any) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const title = norm(notif.title);
+        const body = title + '|' + norm(notif.message);
+        let sameTitle = 0;
+        for (const n of list) {
+          if (String(n?.category || '') !== cat) continue;
+          const ts = Date.parse(n?.timestamp || '') || 0;
+          if (!ts || now - ts > 24 * 3600 * 1000) continue;
+          if (norm(n?.title) !== title) continue;
+          sameTitle++;
+          // identical event within 30 min → drop
+          if (body === title + '|' + norm(n?.message) && now - ts < NOTIF_EXACT_WINDOW_MS) return null;
+          // same event title within 60 min → drop (score variants of one match)
+          if (now - ts < NOTIF_TITLE_WINDOW_MS) return null;
+        }
+        if (sameTitle >= NOTIF_TITLE_DAILY_MAX) return null;
+        // hourly ceiling across capped categories
+        let hourly = 0;
+        for (const n of list) {
+          if (!NOTIF_CAPPED_CATEGORIES.has(String(n?.category || ''))) continue;
+          const ts = Date.parse(n?.timestamp || '') || 0;
+          if (ts && now - ts < 3600 * 1000) hourly++;
+        }
+        if (hourly >= NOTIF_HOURLY_MAX) return null;
+      }
+      list.unshift(notif);
+      if (list.length > NOTIF_MAX_LIST) list.length = NOTIF_MAX_LIST;
+      this.saveNotifications(list);
+      return notif;
+    } catch (err) {
+      console.error('[Notifications] addNotification failed:', err);
+      return notif;
+    }
   },
 
   // 6b. Site Posts (cross-published from Telegram channels to the website)

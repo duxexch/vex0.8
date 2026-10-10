@@ -6,6 +6,9 @@ import { Request, Response, NextFunction } from 'express';
 
 export type Locale = 'ar_eg' | 'ar_gulf' | 'en';
 
+/** App runtime language (must match src/types.ts Language) */
+export type AppLang = 'ar' | 'en' | 'es' | 'ru';
+
 export interface GeoLocaleInfo {
   locale: Locale;
   countryCode: string;
@@ -14,6 +17,8 @@ export interface GeoLocaleInfo {
   countryFlag: string;
   suggestedDomain: string;
   currency: string;
+  /** Closest supported app language for this visitor (geo-aware) */
+  appLang: AppLang;
   confidence: 'high' | 'medium' | 'low';
   source: 'accept-language' | 'geoip' | 'fallback';
 }
@@ -37,6 +42,46 @@ export function currencyForCountry(iso: string | undefined): string {
 // Gulf countries
 const GULF_COUNTRIES = new Set(['SA', 'AE', 'QA', 'KW', 'BH', 'OM', 'YE']);
 const EGYPT_CODES = new Set(['EG']);
+
+// ------------------------------------------------------------------
+// Country → closest SUPPORTED app language (native if available,
+// otherwise the nearest language to the country/region).
+// ------------------------------------------------------------------
+const AR_LANG_COUNTRIES = new Set([
+  'EG', 'SA', 'AE', 'QA', 'KW', 'BH', 'OM', 'YE', 'IQ', 'JO', 'LB', 'PS',
+  'SY', 'SD', 'LY', 'TN', 'DZ', 'MA', 'MR', 'EH',
+]);
+const RU_LANG_COUNTRIES = new Set([
+  'RU', 'BY', 'KZ', 'AM', 'AZ', 'KG', 'TJ', 'TM', 'UZ', 'UA', 'MD', 'GE',
+]);
+const ES_LANG_COUNTRIES = new Set([
+  // Spanish-speaking world + Portuguese (nearest supported = Spanish)
+  'ES', 'MX', 'GT', 'HN', 'SV', 'NI', 'CR', 'PA', 'CO', 'VE', 'EC', 'PE',
+  'BO', 'CL', 'AR', 'PY', 'UY', 'CU', 'DO', 'PR', 'GQ', 'BR', 'PT',
+]);
+
+export function appLangForCountry(iso: string | undefined | null): AppLang {
+  const code = String(iso || '').toUpperCase();
+  if (!code || code === 'GLOBAL') return 'en';
+  if (AR_LANG_COUNTRIES.has(code)) return 'ar';
+  if (RU_LANG_COUNTRIES.has(code)) return 'ru';
+  if (ES_LANG_COUNTRIES.has(code)) return 'es';
+  return 'en';
+}
+
+/** Accept-Language header → supported app language (used when GeoIP is unavailable). */
+export function appLangFromAcceptLanguage(header: string | undefined): AppLang {
+  if (!header) return 'en';
+  const langs = header.split(',').map((l) => l.split(';')[0].trim().toLowerCase());
+  for (const l of langs) {
+    const p = l.split('-')[0];
+    if (p === 'ar') return 'ar';
+    if (p === 'es') return 'es';
+    if (p === 'ru') return 'ru';
+    if (p === 'en') return 'en';
+  }
+  return 'en';
+}
 
 // Language code mapping
 const LANG_MAP: Record<string, Locale> = {
@@ -176,6 +221,7 @@ export async function geoLocaleMiddleware(req: Request, res: Response, next: Nex
         countryFlag: geoData.flag || 'https://flagsapi.com/' + countryCode + '/flat/32.png',
         suggestedDomain: getSuggestedDomainByCode(countryCode),
         currency: currencyForCountry(countryCode),
+        appLang: appLangForCountry(countryCode),
         confidence: 'high',
         source: 'geoip',
         ip,
@@ -212,6 +258,7 @@ export async function geoLocaleMiddleware(req: Request, res: Response, next: Nex
         countryFlag,
         suggestedDomain: getSuggestedDomainByCode(countryCode),
         currency: currencyForCountry(countryCode),
+        appLang: locale === 'ar_eg' || locale === 'ar_gulf' ? 'ar' : appLangFromAcceptLanguage(acceptLang),
         confidence,
         source: 'accept-language',
         ip: req.ip,
@@ -231,6 +278,7 @@ export async function geoLocaleMiddleware(req: Request, res: Response, next: Nex
       countryFlag: '🇪🇬',
       suggestedDomain: 'vex.deals',
       currency: 'EGP',
+      appLang: 'ar',
       confidence: 'low',
       source: 'fallback',
       ip: '',

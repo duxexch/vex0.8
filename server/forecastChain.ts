@@ -405,6 +405,7 @@ function publishSitePost(
     };
     storage.addSitePost(post);
 
+    const pickLine = `predicted ${pred.predictedScore}`;
     const notif = {
       id: `NOTIF-FORECAST-${Date.now()}`,
       title: post.title,
@@ -412,6 +413,13 @@ function publishSitePost(
       category: 'ai_prediction' as const,
       timestamp: post.createdAt,
       read: false,
+      // Localized per the viewer's chosen language (ar keeps the full analysis excerpt)
+      translations: {
+        ar: { title: post.title, message: post.excerpt },
+        en: { title: post.title, message: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — ${pickLine}. Open the post for the full tactical analysis.` },
+        es: { title: post.title, message: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — marcador previsto ${pred.predictedScore}. Abre la publicación para el análisis completo.` },
+        ru: { title: post.title, message: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — прогноз счёта ${pred.predictedScore}. Откройте пост для полного анализа.` },
+      },
       data: {
         postId: id,
         targetTab: 'ai-sports',
@@ -421,10 +429,22 @@ function publishSitePost(
         pctSource: pred.pctSource,
       },
     };
-    storage.addNotification(notif);
-    emitFn?.('notification', notif);
+    const savedNotif = storage.addNotification(notif);
+    if (savedNotif) {
+      emitFn?.('notification', notif);
+      void sendWebPush({
+        title: post.title,
+        body: post.excerpt,
+        url: '/#ai-sports',
+        tag: `pred-${id}`,
+        translations: {
+          en: { body: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — ${pickLine}` },
+          es: { body: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — marcador previsto ${pred.predictedScore}` },
+          ru: { body: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — прогноз счёта ${pred.predictedScore}` },
+        },
+      }).catch(() => {});
+    }
     emitFn?.('site_post_updated', { postId: id, post });
-    void sendWebPush({ title: post.title, body: post.excerpt, url: '/#ai-sports', tag: `pred-${id}` }).catch(() => {});
     return id;
   } catch (err: any) {
     console.warn('[Forecast] site post failed:', err.message);

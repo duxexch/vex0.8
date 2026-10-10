@@ -43,7 +43,11 @@ export async function ensureWebPushSubscription(): Promise<boolean> {
     const sync = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription.toJSON()),
+      body: JSON.stringify({
+        ...subscription.toJSON(),
+        // Preferred language so push payloads arrive localized
+        lang: localStorage.getItem('vex_lang') || 'ar',
+      }),
     });
     return sync.ok;
   } catch (err) {
