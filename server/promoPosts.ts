@@ -19,11 +19,48 @@ const STAGGER_MS = 45 * 1000;
 const PLAN_WINDOW_MS = 6 * 3600 * 1000;  // plan a slot only while it is within 6h ahead
 const MISSED_WINDOW_MS = 45 * 60 * 1000; // skip a slot that passed more than 45min ago
 
-let timer: NodeJS.Timeout | null = null;
+// -------------------------------------------------------------------------
+// App-download promo pass — daily (13:00 UTC) posts promoting the installable
+// VEX Lottery PWA. Prepared texts (no LLM), rotated per channel+day so the
+// feed doesn't repeat itself. Betting channels get the lottery-app angle,
+// news channels get a neutral app angle (no gambling mentions by policy).
+// -------------------------------------------------------------------------
+const APP_STATE_PATH = path.join(process.cwd(), 'data', 'app_promo_state.json');
+const APP_SLOT_UTC = 13;
+const APP_LINK = 'https://vex.deals/lottery';
+const APP_LINK_NEUTRAL = 'https://vex.deals';
+
+const APP_PROMOS_BETTING: string[] = [
+  `🎰 تحمّل تطبيق VEX Lottery الرسمي — جائزة اليانصيب على شاشتك الرئيسية!
+📲 تثبيت في ثوانٍ من المتصفح مباشرة (أندرويد وآيفون) — بدون متجر وموثوق من جوجل ✅
+🔔 تنبيهات فورية قبل إغلاق السحب + متابعة أرقامك لحظة بلحظة.
+🔗 ${APP_LINK}`,
+  `🏆 جائزة تراكمية تكبر كل يوم — والتطبيق يوصلك أول بأول!
+✅ حمّل تطبيق اليانصيب الرسمي VEX Lottery: تثبيت بنقرة واحدة، متوافق مع كل مقاسات الهواتف، وسحبات موثوقة 100%.
+📲 ${APP_LINK}`,
+  `⚡ خلاك تفوّت سحب قبل كده؟ تطبيق VEX Lottery هيذكّرك دايمًا 🔔
+تنبيه قبل إغلاق التذاكر بساعة + متابعة الجائزة وتذاكرك من أي مكان.
+ثبّته مجاناً في ثوانٍ 👇
+📲 ${APP_LINK}`,
+];
+
+const APP_PROMOS_NEUTRAL: string[] = [
+  `📲 حمّل تطبيق VEX الرسمي على شاشتك الرئيسية!
+نتائج وتنبيهات رياضية فورية، تثبيت في ثوانٍ من المتصفح بدون متجر — وموثوق من جوجل ✅
+🔗 ${APP_LINK_NEUTRAL}`,
+  `⚽ نتائج المباريات وتنبيهاتك الرياضية في تطبيق واحد خفيف 📲
+ثبّته من المتصفح بنقرة واحدة — بدون تنزيل متجر، ويشتغل على كل مقاسات الهاتف.
+🔗 ${APP_LINK_NEUTRAL}`,
+];
 
 interface PromoState {
   date: string;
   planned: string[]; // `${chat_id}|${slotHour}`
+}
+
+interface AppPromoState {
+  date: string;
+  planned: string[];
 }
 
 function readState(): PromoState {
@@ -42,6 +79,25 @@ function writeState(s: PromoState): void {
   fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
   fs.writeFileSync(STATE_PATH, JSON.stringify(s, null, 2), 'utf-8');
 }
+
+function readAppState(): AppPromoState {
+  try {
+    if (fs.existsSync(APP_STATE_PATH)) {
+      const s = JSON.parse(fs.readFileSync(APP_STATE_PATH, 'utf-8'));
+      if (s && typeof s.date === 'string' && Array.isArray(s.planned)) return s;
+    }
+  } catch (err: any) {
+    console.warn('[PromoApp] state load failed:', err.message);
+  }
+  return { date: '', planned: [] };
+}
+
+function writeAppState(s: AppPromoState): void {
+  fs.mkdirSync(path.dirname(APP_STATE_PATH), { recursive: true });
+  fs.writeFileSync(APP_STATE_PATH, JSON.stringify(s, null, 2), 'utf-8');
+}
+
+let timer: NodeJS.Timeout | null = null;
 
 const PROMO_SYSTEM = `أنت كاتب إعلانات قنوات تيليجرام. ترجع المنشور فقط — بدون markdown وبدون شرح.
 - 2 إلى 5 أسطر، عربي مشوق، إيموجي مناسب لأسلوب القناة.
@@ -95,7 +151,12 @@ function templatePromo(ch: ChannelProfile, betting: boolean, domain: string): st
 }
 
 /** Plan + enqueue today's promo posts (idempotent — one per channel+slot/day). */
-export async function runPromoPass(): Promise<{ planned: number; skipped: number }> {
+export async function runPromoPass(): Promise<{
+  planned: number;
+  skipped: number;
+  appPlanned?: number;
+  appSkipped?: number;
+}> {
   const state = readState();
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
@@ -148,6 +209,78 @@ export async function runPromoPass(): Promise<{ planned: number; skipped: number
   }
 
   writeState(state);
+
+  // Chain the app-download promo pass (same cadence trigger, own state file)
+  let appPlanned = 0;
+  let appSkipped = 0;
+  try {
+    const app = await runAppPromoPass();
+    appPlanned = app.planned;
+    appSkipped = app.skipped;
+  } catch (err: any) {
+    console.warn('[PromoApp] pass error:', err.message);
+  }
+
+  return { planned, skipped, appPlanned, appSkipped };
+}
+
+/** Plan + enqueue today's lottery-app promo (one per channel per day, 13:00 UTC). */
+export async function runAppPromoPass(): Promise<{ planned: number; skipped: number }> {
+  const state = readAppState();
+  const now = Date.now();
+  const nowD = new Date(now);
+  const today = nowD.toISOString().slice(0, 10);
+  if (state.date !== today) {
+    state.date = today;
+    state.planned = [];
+  }
+
+  const channels = channelsStore
+    .getAll()
+    .filter((c) => c.active && c.category !== 'users' && c.category !== 'support');
+  let planned = 0;
+  let skipped = 0;
+  const dayOfYear = Math.floor(
+    (now - Date.UTC(nowD.getUTCFullYear(), 0, 1)) / 86400000
+  );
+  const slotMs = Date.UTC(
+    nowD.getUTCFullYear(),
+    nowD.getUTCMonth(),
+    nowD.getUTCDate(),
+    APP_SLOT_UTC,
+    0,
+    0
+  );
+
+  channels.forEach((ch, i) => {
+    const key = `${ch.chat_id}|${APP_SLOT_UTC}`;
+    if (state.planned.includes(key)) return;
+    if (slotMs < now - MISSED_WINDOW_MS) {
+      state.planned.push(key); // missed today — don't flood late
+      skipped++;
+      return;
+    }
+    const betting = ch.betting_related !== false;
+    const variants = betting ? APP_PROMOS_BETTING : APP_PROMOS_NEUTRAL;
+    let text = variants[(dayOfYear + i) % variants.length];
+    if (betting && ch.brand.signature && !text.includes(ch.brand.signature)) {
+      text += `\n\n${ch.brand.signature}`;
+    }
+    schedulePost({
+      chat_id: ch.chat_id,
+      channelTitle: ch.title,
+      text,
+      parse_mode: ch.format === 'html' ? 'HTML' : 'Markdown',
+      kind: 'promo',
+      sendAt: Math.max(slotMs + i * STAGGER_MS, now + 30 * 1000),
+      overflow: 20,
+    });
+    state.planned.push(key);
+    planned++;
+    console.log(`[PromoApp] planned app promo ${APP_SLOT_UTC}:00 UTC → ${ch.title}`);
+  });
+
+  writeAppState(state);
   return { planned, skipped };
 }
 
@@ -172,10 +305,18 @@ export function stopPromoScheduler(): void {
 
 export function getPromoStatus(): any {
   const state = readState();
+  const appState = readAppState();
   return {
     active: timer != null,
     date: state.date,
     plannedToday: state.planned.length,
     slots: SLOTS_UTC,
+    appPromo: {
+      date: appState.date,
+      plannedToday: appState.planned.length,
+      slot: APP_SLOT_UTC,
+      link: APP_LINK,
+      variants: { betting: APP_PROMOS_BETTING.length, neutral: APP_PROMOS_NEUTRAL.length },
+    },
   };
 }

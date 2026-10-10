@@ -786,6 +786,7 @@ export default function App() {
                 wallets={wallets}
                 onRefreshWallets={loadData}
                 onCopyToast={showToast}
+                onRequestInstallHelp={() => setIosInstallModalOpen(true)}
               />
             )}
           </motion.div>

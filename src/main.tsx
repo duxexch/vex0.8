@@ -170,3 +170,11 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+// Register the service worker early so the page meets PWA installability
+// criteria (install prompt / "Add to Home Screen") even before push permission.
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => {});
+  });
+}
+

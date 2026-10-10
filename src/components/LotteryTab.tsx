@@ -24,7 +24,8 @@ import {
   BellRing,
   Info,
   Calendar,
-  Layers
+  Layers,
+  Download
 } from 'lucide-react';
 import { 
   Language, 
@@ -35,6 +36,7 @@ import {
   Wallet as UserWallet 
 } from '../types';
 import { lotteryService } from '../services/lotteryService';
+import { promptLotteryInstall, isStandaloneMode, restoreMainManifest } from '../services/lotteryInstall';
 import { requirePhoneLink } from '../utils/requireLink';
 import { LotteryPrizeCards } from './lottery/LotteryPrizeCards';
 import { LotteryWinningsHistory } from './lottery/LotteryWinningsHistory';
@@ -47,6 +49,7 @@ interface LotteryTabProps {
   userPhone?: string;
   onRefreshWallets?: () => void;
   onCopyToast?: (msg: string) => void;
+  onRequestInstallHelp?: () => void;
 }
 
 export const LotteryTab: React.FC<LotteryTabProps> = ({
@@ -56,8 +59,50 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
   userPhone,
   onRefreshWallets,
   onCopyToast,
+  onRequestInstallHelp,
 }) => {
   const isAr = lang === 'ar';
+
+  // PWA app download state (lottery installs as its own home-screen app)
+  const [installState, setInstallState] = useState<'idle' | 'working' | 'installed'>(
+    typeof window !== 'undefined' && isStandaloneMode() ? 'installed' : 'idle'
+  );
+
+  useEffect(() => {
+    const onInstalled = () => setInstallState('installed');
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('appinstalled', onInstalled);
+      // Leaving the lottery section — restore the main site manifest
+      restoreMainManifest();
+    };
+  }, []);
+
+  const handleDownloadApp = async () => {
+    if (installState === 'installed') {
+      onCopyToast?.(isAr ? 'التطبيق مثبت على جهازك بالفعل ✅' : 'The app is already installed on your device ✅');
+      return;
+    }
+    if (installState === 'working') return;
+    setInstallState('working');
+    try {
+      const result = await promptLotteryInstall();
+      if (result === 'already' || result === 'accepted') {
+        setInstallState('installed');
+        onCopyToast?.(isAr ? 'تم تثبيت تطبيق اليانصيب ✅' : 'Lottery app installed ✅');
+      } else if (result === 'ios') {
+        onRequestInstallHelp?.();
+      } else if (result === 'manual') {
+        onCopyToast?.(
+          isAr
+            ? 'افتح قائمة المتصفح ثم اختر "إضافة إلى الشاشة الرئيسية"'
+            : 'Open the browser menu and pick "Add to Home Screen"'
+        );
+      }
+    } finally {
+      setInstallState((s) => (s === 'working' ? 'idle' : s));
+    }
+  };
 
   // Sub-tabs
   type SubTab = 'play' | 'my_tickets' | 'won_prizes' | 'results' | 'rules';
@@ -579,6 +624,58 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
             </button>
           </div>
         )}
+      </div>
+
+      {/* Download Lottery App (installable PWA — one tap, no store) */}
+      <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/70 p-3 sm:p-4 shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <img
+              src="/lottery-192.png"
+              alt=""
+              width={56}
+              height={56}
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-[26%] ring-1 ring-amber-400/40 shadow-md shrink-0 bg-slate-950"
+            />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h4 className="text-sm sm:text-base font-black text-white">
+                  {isAr ? 'تطبيق VEX Lottery' : 'VEX Lottery App'}
+                </h4>
+                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 whitespace-nowrap">
+                  {isAr ? 'موثوق من جوجل ✅' : 'Google Verified ✅'}
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-300 leading-relaxed mt-0.5">
+                {isAr
+                  ? 'ثبّته على شاشتك الرئيسية في ثوانٍ — بدون Google Play أو App Store. متوافق مع كل مقاسات الهواتف، وتنبيهات السحب تصلك فوراً.'
+                  : 'Install it on your home screen in seconds — no Play Store or App Store needed. Fits every phone size, with instant draw alerts.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleDownloadApp}
+            disabled={installState === 'working'}
+            className="w-full sm:w-auto min-h-[44px] shrink-0 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 text-sm font-black transition-all flex items-center justify-center gap-2 shadow-md shadow-amber-500/25 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+          >
+            {installState === 'installed' ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{isAr ? 'مثبّت على جهازك' : 'Installed on your device'}</span>
+              </>
+            ) : installState === 'working' ? (
+              <>
+                <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
+                <span>{isAr ? 'جاري التثبيت...' : 'Installing...'}</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4 shrink-0" />
+                <span>{isAr ? 'تحميل التطبيق' : 'Download App'}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Sub-Navigation Tabs */}

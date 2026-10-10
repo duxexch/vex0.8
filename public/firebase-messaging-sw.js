@@ -12,12 +12,18 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Fetch handler — required by some Chromium versions for PWA installability
+// checks. Pass-through: requests keep their default network behavior (no
+// caching layer, so no stale-app risks).
+self.addEventListener('fetch', () => {});
+
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
   const notificationTitle = payload.notification?.title || 'Compensation Status Update';
   const notificationOptions = {
     body: payload.notification?.body || 'Your compensation request status has been updated.',
-    icon: '/icon-192.svg'
+    icon: '/icon-192.png',
+    badge: '/icon-192.png'
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
@@ -35,8 +41,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || 'VEX Deals', {
       body: data.body || '',
-      icon: '/icon-192.svg',
-      badge: '/icon-192.svg',
+      icon: data.tag && String(data.tag).indexOf('lottery') === 0 ? '/lottery-192.png' : '/icon-192.png',
+      badge: '/icon-192.png',
       tag: data.tag || 'vex-push',
       data: { url: data.url || '/#ai-sports' },
     })
