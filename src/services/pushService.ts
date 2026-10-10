@@ -32,7 +32,22 @@ export async function ensureWebPushSubscription(): Promise<boolean> {
     const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
     await navigator.serviceWorker.ready;
 
+    function bufToB64url(buf: ArrayBuffer | null): string {
+      if (!buf) return '';
+      const bytes = new Uint8Array(buf);
+      let s = '';
+      for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
     let subscription = await registration.pushManager.getSubscription();
+    // Heal mismatched subscriptions: Firebase's getToken() may have created the
+    // subscription under ITS OWN VAPID key — the server would then get 403 on
+    // every send ("VAPID credentials do not correspond"). Re-subscribe with ours.
+    if (subscription && bufToB64url(subscription.options.applicationServerKey) !== publicKey) {
+      await subscription.unsubscribe();
+      subscription = null;
+    }
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,

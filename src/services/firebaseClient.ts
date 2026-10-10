@@ -71,8 +71,21 @@ export async function requestFCMToken(): Promise<string | null> {
       return null;
     }
     const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    // Use OUR VAPID key so Firebase doesn't overwrite the subscription with a
+    // key the self-hosted web-push sender can't sign for (403 on every send).
+    let vapidKey: string | undefined;
+    try {
+      const r = await fetch('/api/push/vapid-public-key');
+      if (r.ok) {
+        const j = await r.json();
+        if (typeof j?.publicKey === 'string' && j.publicKey.length >= 40) vapidKey = j.publicKey;
+      }
+    } catch {
+      /* fall back to Firebase's default key */
+    }
     const token = await getToken(messaging, {
       serviceWorkerRegistration: registration,
+      ...(vapidKey ? { vapidKey } : {}),
     });
     return token;
   } catch (error) {

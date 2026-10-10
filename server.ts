@@ -2586,8 +2586,18 @@ app.post('/api/notifications/broadcast', (req, res) => {
     data: data || {},
   };
 
-  storage.addNotification(notif);
-  io.emit('notification', notif);
+  const saved = storage.addNotification(notif);
+  if (saved) {
+    io.emit('notification', notif);
+    // Admin broadcasts must also reach closed apps — push to every subscriber
+    void sendWebPush({
+      title: notif.title,
+      body: notif.message,
+      url: notif.data?.actionUrl || '/',
+      tag: 'broadcast',
+      translations: notif.data?.translations,
+    }).catch(() => {});
+  }
 
   res.json({
     success: true,
@@ -4092,6 +4102,13 @@ function dispatchLotteryOneHourNotification(drawState: ServerLotteryState, isMan
 
   if (storage.addNotification(newNotif)) {
     io.emit('notification', newNotif);
+    void sendWebPush({
+      title: newNotif.title,
+      body: newNotif.message,
+      url: newNotif.data.actionUrl || '/#lottery',
+      tag: `lottery-1hr-${drawState.activeDrawId}`,
+      translations: newNotif.translations,
+    }).catch(() => {});
     console.log(`🎟️ [Lottery Engine] Dispatched 1-Hour Pre-Draw Push Notification for ${drawState.activeDrawId}`);
   }
   return newNotif;
@@ -4182,6 +4199,13 @@ function dispatchLotteryThirtyMinTierNotification(
 
   if (storage.addNotification(newNotif)) {
     io.emit('notification', newNotif);
+    void sendWebPush({
+      title: newNotif.title,
+      body: newNotif.message,
+      url: newNotif.data.actionUrl || '/#lottery',
+      tag: `lottery-30min-${tierId}`,
+      translations: newNotif.translations,
+    }).catch(() => {});
     console.log(`🎟️ [Lottery Engine] Dispatched 30-Minute Tier Push Alert (${tierId}) for ${drawState.activeDrawId}`);
   }
   return newNotif;

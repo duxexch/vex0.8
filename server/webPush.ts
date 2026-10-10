@@ -95,6 +95,7 @@ export async function sendWebPush(payload: {
   if (subs.length === 0) return 0;
   let sent = 0;
   const stale: string[] = [];
+  let firstError = '';
   await Promise.all(
     subs.map(async (sub) => {
       try {
@@ -118,7 +119,17 @@ export async function sendWebPush(payload: {
         sent++;
       } catch (err: any) {
         const status = err?.statusCode;
-        if (status === 404 || status === 410) stale.push(sub.endpoint);
+        const bodyText = String(err?.body || err?.message || '');
+        if (status === 404 || status === 410) {
+          stale.push(sub.endpoint);
+        } else if (status === 403 && bodyText.includes('do not correspond')) {
+          // Subscription was created under a different VAPID key (legacy
+          // Firebase getToken overwrite) — unsalvageable, drop it; the client
+          // re-subscribes with the correct key on its next visit.
+          stale.push(sub.endpoint);
+        } else if (!firstError) {
+          firstError = `status=${status} ${bodyText.slice(0, 160)}`;
+        }
         // 429/5xx: keep subscription, drop message
       }
     })
@@ -128,7 +139,8 @@ export async function sendWebPush(payload: {
   }
   console.log(
     `[Push] "${payload.tag || '-'}" delivered ${sent}/${subs.length}` +
-      (stale.length ? ` (removed ${stale.length} stale)` : '')
+      (stale.length ? ` (removed ${stale.length} stale)` : '') +
+      (sent < subs.length && firstError ? ` firstError: ${firstError}` : '')
   );
   return sent;
 }
