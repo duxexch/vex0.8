@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { channelsStore, ChannelProfile } from './channelsStore';
 import { sendTelegram } from './agentPipeline';
+import { previewReroute } from './postSentry';
 
 // =========================================================================
 // Post Scheduler — time-spread publishing per channel.
@@ -150,7 +151,10 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
       continue;
     }
 
-    const ch = channelsStore.get(item.chat_id);
+    // Resolve the channel that will ACTUALLY receive this post (the sentry may
+    // re-route mis-targeted content) — caps/pace/gap must follow the receiver.
+    const targetId = previewReroute(item.chat_id, item.text);
+    const ch = channelsStore.get(targetId);
     if (!ch || !ch.active) {
       item.status = 'cancelled';
       item.lastError = !ch ? 'channel not found' : 'channel inactive';
@@ -201,7 +205,7 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
       }
       // Per-hour smoothing on top of the share (bounds burst size within an hour).
       const hourlyCap = Math.max(1, Math.ceil(effCap / 24));
-      const doneThisHour = hourlySent[item.chat_id] || 0;
+      const doneThisHour = hourlySent[targetId] || 0;
       if (doneThisHour >= hourlyCap) {
         defer(jitter(8 * 60 * 1000, 6 * 60 * 1000), `hourly pace ${doneThisHour}/${hourlyCap}`);
         continue;

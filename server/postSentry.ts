@@ -241,6 +241,23 @@ export function sentryGate(chatId: string, text: string): SentryResult {
   }
 }
 
+/**
+ * Lightweight preview for the dispatcher: which channel will actually receive
+ * this post after targeting review? No logging, no side effects.
+ */
+export function previewReroute(chatId: string, text: string): string {
+  try {
+    const ch = channelsStore.get(chatId);
+    if (!ch) return chatId;
+    const verdict = reviewText(text);
+    if (fitIssues(ch, verdict).length === 0) return chatId;
+    const alt = pickAlternative(chatId, verdict);
+    return alt ? alt.chat_id : chatId;
+  } catch {
+    return chatId;
+  }
+}
+
 export function getSentryStatus(): any {
   const log = readLog();
   const last24h = log.filter((e) => Date.now() - Date.parse(e?.ts || '') < 24 * 3600 * 1000);
