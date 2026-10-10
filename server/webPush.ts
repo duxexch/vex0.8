@@ -126,5 +126,9 @@ export async function sendWebPush(payload: {
   if (stale.length > 0) {
     writeSubs(readSubs().filter((s) => !stale.includes(s?.endpoint)));
   }
+  console.log(
+    `[Push] "${payload.tag || '-'}" delivered ${sent}/${subs.length}` +
+      (stale.length ? ` (removed ${stale.length} stale)` : '')
+  );
   return sent;
 }

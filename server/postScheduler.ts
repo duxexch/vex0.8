@@ -108,14 +108,32 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
   const now = Date.now();
   const pending = items
     .filter((i) => i.status === 'pending' && i.sendAt <= now)
-    .sort((a, b) => a.sendAt - b.sendAt);
+    .sort((a, b) => {
+      // Urgency: posts that expire soon (fixture kickoff) jump the queue so
+      // pacing can never starve a time-sensitive forecast.
+      const ua = a.expiresAt && a.expiresAt - now < 90 * 60 * 1000 ? 0 : 1;
+      const ub = b.expiresAt && b.expiresAt - now < 90 * 60 * 1000 ? 0 : 1;
+      if (ua !== ub) return ua - ub;
+      return a.sendAt - b.sendAt;
+    });
   if (pending.length === 0) return { sent: 0, deferred: 0, failed: 0 };
+
+  // Per-channel hourly usage (this queue's own sends in the last 60 min).
+  const hourAgo = now - 60 * 60 * 1000;
+  const hourlySent: Record<string, number> = {};
+  for (const i of items) {
+    if (i.status === 'sent' && i.sentAt && Date.parse(i.sentAt) > hourAgo) {
+      const key = i.chat_id;
+      hourlySent[key] = (hourlySent[key] || 0) + 1;
+    }
+  }
 
   let sent = 0;
   let deferred = 0;
   let failed = 0;
   let changed = false;
   const today = new Date().toISOString().slice(0, 10);
+  const jitter = (base: number, spread: number) => base + Math.floor(Math.random() * spread);
 
   for (const item of pending) {
     // Respect the global anti-spam gap but keep working (live posts must not
@@ -156,14 +174,40 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
     };
 
     if (inQuiet(ch, new Date())) {
-      defer(10 * 60 * 1000, 'quiet hours');
+      defer(jitter(10 * 60 * 1000, 3 * 60 * 1000), 'quiet hours');
       continue;
     }
+    const effCap = ch.daily_cap + (item.overflow || 0);
     const used = ch.daily_reset === today ? ch.daily_used : 0;
-    if (used >= ch.daily_cap + (item.overflow || 0)) {
-      defer(15 * 60 * 1000, `daily cap ${used}/${ch.daily_cap + (item.overflow || 0)}`);
+    if (used >= effCap) {
+      defer(jitter(15 * 60 * 1000, 5 * 60 * 1000), `daily cap ${used}/${effCap}`);
       continue;
     }
+
+    // Time-sensitive (kickoff within 90 min): bypass pacing so a forecast can
+    // never be starved into expiry — hard caps/gaps still apply below.
+    const urgent = Boolean(item.expiresAt) && item.expiresAt! - Date.now() < 90 * 60 * 1000;
+
+    if (!urgent) {
+      // Proportional daily share — spend the day's budget evenly across 24h
+      // instead of letting a post-reset backlog drain it in the first hours.
+      const dayStart = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate());
+      const elapsedH = (Date.now() - dayStart) / 3_600_000;
+      const allowedNow = Math.ceil((effCap * elapsedH) / 24);
+      if (used >= allowedNow) {
+        const nextAt = dayStart + ((used + 1) * 24 * 3_600_000) / effCap;
+        defer(Math.max(60_000, nextAt - Date.now() + jitter(20_000, 40_000)), `daily share ${used}/${allowedNow}`);
+        continue;
+      }
+      // Per-hour smoothing on top of the share (bounds burst size within an hour).
+      const hourlyCap = Math.max(1, Math.ceil(effCap / 24));
+      const doneThisHour = hourlySent[item.chat_id] || 0;
+      if (doneThisHour >= hourlyCap) {
+        defer(jitter(8 * 60 * 1000, 6 * 60 * 1000), `hourly pace ${doneThisHour}/${hourlyCap}`);
+        continue;
+      }
+    }
+
     if (ch.last_post_at && Date.now() - Date.parse(ch.last_post_at) < MIN_CHANNEL_GAP_MS) {
       defer(60 * 1000, 'channel gap');
       continue;
@@ -172,7 +216,9 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
     const result = await sendTelegram(item.chat_id, item.text, item.parse_mode);
     lastGlobalSendAt = Date.now();
     if (result.ok) {
-      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(result.sentTo ?? item.chat_id);
+      const deliveredTo = result.sentTo ?? item.chat_id;
+      if (process.env.DRY_RUN !== '1') channelsStore.recordPost(deliveredTo);
+      hourlySent[deliveredTo] = (hourlySent[deliveredTo] || 0) + 1;
       if (result.sentTo && result.sentTo !== item.chat_id) {
         item.channelTitle = channelsStore.get(result.sentTo)?.title || item.channelTitle;
         item.chat_id = result.sentTo;
