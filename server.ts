@@ -213,6 +213,7 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/api/viral/*', // engagement endpoints (unlucky wall, votes, referrals, challenges) stay guest-open
     '/api/predictions/*/result', // manual settlement (validated by X-API-Key / session inside the route)
     '/api/push/*', // Web Push subscribe/unsubscribe (public VAPID key, endpoint-scoped, no PII)
+    '/api/growth/*', // growth brain simulator — loopback/private origins only (checked inside the route)
     '/api/indexnow', // machine-to-machine SEO endpoint (domain-restricted inside the route + rate limited)
   ],
   redirectPath: '/auth-required',
