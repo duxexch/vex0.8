@@ -15,6 +15,7 @@ import {
   PaymentMethod,
 } from '../types';
 import { AppIconRenderer } from './AppIconRenderer';
+import { GrowthTab } from './admin/GrowthTab';
 import { CompanyBrandLogo } from './CompanyBrandLogo';
 import { CompanyApiIntegration } from './CompanyApiIntegration';
 import { IntegrationTester } from './IntegrationTester';
@@ -101,6 +102,7 @@ import {
   ListChecks,
   DollarSign,
   Trophy,
+  TrendingUp,
 } from 'lucide-react';
 import { AbTestingTab } from './AbTestingTab';
 import { SportsAgentManager } from './admin/SportsAgentManager';
@@ -310,7 +312,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     | 'notifications'
     | 'payment_methods'
     | 'compliance'
-    | 'lottery_manager';
+    | 'lottery_manager'
+    | 'growth';
 
   const [activeTab, setActiveTab] = useState<AdminTab>('dedicated_brand');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -1801,6 +1804,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       icon: Split,
                     },
                     { id: 'notifications', label: t('مركز الإشعارات الفورية', 'Notifications Hub', 'Центр уведомлений'), icon: Bell },
+                    { id: 'growth', label: t('محرك ذكاء النمو (Leads)', 'Growth Engine (Leads)', 'Движок роста (лиды)'), icon: TrendingUp },
                     { id: 'payment_methods', label: t('إدارة وسائل الدفع', 'Payment Methods', 'Способы оплаты'), icon: DollarSign },
                     { id: 'lottery_manager', label: t('إدارة اليانصيب والسحوبات', 'Lottery & Draws Engine', 'Управление лотереей'), icon: Trophy },
                     { id: 'compliance', label: t('امتثال المتاجر', 'Store Compliance', 'Соответствие магазинам'), icon: FileText },
@@ -1829,6 +1833,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               {/* Tab Body */}
               <div className="flex-1 overflow-y-auto p-5">
               
+              {activeTab === 'growth' && (
+                <div className="animate-fade-in">
+                  <GrowthTab />
+                </div>
+              )}
               {activeTab === 'sports_agents' && (
                 <div className="animate-fade-in">
                   <SportsAgentManager lang={adminLang} />

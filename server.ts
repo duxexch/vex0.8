@@ -20,6 +20,26 @@ import { geoLocaleMiddleware } from './server/geoLocale';
 import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS } from './server/sessionGuard';
 import { buildBotPromoMessage } from './server/botPromo';
 import {
+  initGrowth,
+  startGrowth,
+  growthOnUpdate,
+  growthOnStart,
+  growthLinkPhone,
+  growthLinkWeb,
+  growthHealth,
+  growthStats,
+  listLeads as growthListLeads,
+  getSettings as getGrowthSettings,
+  saveSettings as saveGrowthSettings,
+  segmentOf as growthSegmentOf,
+  stopLead as growthStopLead,
+  listCampaigns as growthListCampaigns,
+  createCampaign as growthCreateCampaign,
+  sendCampaign as growthSendCampaign,
+  generateCampaignCopy as growthGenerateCampaignCopy,
+  classifyIntent as growthClassifyIntent,
+} from './server/growth';
+import {
   extractPrediction,
   extractPredictionSync,
   buildCompactText,
@@ -51,7 +71,7 @@ import { startPostScheduler, getSchedulerStatus } from './server/postScheduler';
 import { getSentryStatus } from './server/postSentry';
 import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel } from './server/channelOnboard';
 import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
-import { startPromoScheduler, getPromoStatus, runPromoPass } from './server/promoPosts';
+import { startPromoScheduler, getPromoStatus, runPromoPass, setPromoBotUsername } from './server/promoPosts';
 import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
@@ -399,6 +419,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     aiReady: !!process.env.GEMINI_API_KEY,
+    growth: growthHealth(),
   });
 });
 
@@ -1246,6 +1267,110 @@ app.post('/api/admin/promo/run', async (_req, res) => {
   try {
     const result = await runPromoPass();
     res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- Growth Intelligence Engine (admin) ----------------
+
+app.get('/api/admin/growth/stats', (_req, res) => {
+  try {
+    res.json({ success: true, stats: growthStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/growth/leads', (req, res) => {
+  try {
+    const q = String(req.query.q || '').toLowerCase();
+    const segment = String(req.query.segment || '');
+    const status = String(req.query.status || '');
+    const limit = Math.min(200, Number(req.query.limit) || 100);
+    let leads = growthListLeads().map((l) => ({ ...l, segment: growthSegmentOf(l) }));
+    if (q) {
+      leads = leads.filter(
+        (l) =>
+          l.id.includes(q) ||
+          (l.username || '').toLowerCase().includes(q) ||
+          (l.first_name || '').toLowerCase().includes(q) ||
+          (l.phone || '').includes(q)
+      );
+    }
+    if (segment) leads = leads.filter((l) => l.segment === segment);
+    if (status) leads = leads.filter((l) => l.status === status);
+    leads.sort((a, b) => b.last_touch_at - a.last_touch_at);
+    res.json({ success: true, leads: leads.slice(0, limit), total: leads.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/leads/:id/stop', (req, res) => {
+  const tgId = Number(String(req.params.id).replace(/^tg_/, ''));
+  if (!tgId) return res.status(400).json({ error: 'bad lead id' });
+  growthStopLead(tgId);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/growth/leads/:id/message', async (req, res) => {
+  try {
+    const tgId = Number(String(req.params.id).replace(/^tg_/, ''));
+    const text = String(req.body?.text || '').trim();
+    if (!tgId || !text) return res.status(400).json({ error: 'lead id & text required' });
+    const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const result = await sendTelegramMessage(tgId, safe, { parse_mode: 'HTML' });
+    res.json({ success: !!result?.ok, result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/growth/settings', (_req, res) => {
+  res.json({ success: true, settings: getGrowthSettings() });
+});
+
+app.post('/api/admin/growth/settings', (req, res) => {
+  const s = saveGrowthSettings(req.body || {});
+  res.json({ success: true, settings: s });
+});
+
+app.get('/api/admin/growth/campaigns', (_req, res) => {
+  res.json({ success: true, campaigns: growthListCampaigns() });
+});
+
+app.post('/api/admin/growth/campaigns', async (req, res) => {
+  try {
+    const { name, segment, text, generate } = req.body || {};
+    if (!name || !segment) return res.status(400).json({ error: 'name & segment required' });
+    let finalText = String(text || '').trim();
+    if (generate) finalText = await growthGenerateCampaignCopy(finalText || String(name), String(segment));
+    if (!finalText) return res.status(400).json({ error: 'text required (or pass generate:true with a seed)' });
+    const campaign = growthCreateCampaign({ name: String(name), segment: String(segment), text: finalText });
+    res.json({ success: true, campaign });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/campaigns/:id/send', async (req, res) => {
+  try {
+    const campaign = await growthSendCampaign(req.params.id);
+    if (!campaign) return res.status(400).json({ error: 'campaign not found or already sent' });
+    res.json({ success: true, campaign });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dry-run a message through the growth brain (classification only, no writes)
+app.post('/api/admin/growth/simulate', async (req, res) => {
+  try {
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'text required' });
+    const intent = growthClassifyIntent(text);
+    res.json({ success: true, intent });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -3432,6 +3557,11 @@ async function handleTelegramUpdate(update: any) {
     TELEGRAM_ACTIVE_CODES.set(code, session);
     if (telegramUserId) {
       TELEGRAM_USER_SESSIONS.set(telegramUserId, sessionId);
+      // Growth engine: verified phone + web account → complete the lead identity
+      growthLinkPhone(telegramUserId, cleanPhone);
+      if (session.user_id && session.user_id !== 'user_guest') {
+        growthLinkWeb(telegramUserId, session.user_id);
+      }
     }
 
     // Emit live WebSocket update to the browser — the code itself NEVER leaves server/bot:
@@ -3504,6 +3634,13 @@ async function handleTelegramUpdate(update: any) {
     }
 
     // No / unknown session payload → promotional post (Part 4 of the plan)
+    // Growth engine: capture the lead + deep-link attribution (ch_/ref_/ab_)
+    if (telegramUserId) {
+      growthOnStart(
+        { id: telegramUserId, username: telegramUsername, first_name: telegramFirstName },
+        deepLinkPayload || null
+      );
+    }
     await sendTelegramMessage(chatId, buildBotPromoMessage(), {
       keyboard: [
         [
@@ -3592,6 +3729,7 @@ async function startTelegramPolling() {
             telegramPollingOffset = update.update_id + 1;
             recordTelegramRelay(update);
             await handleTelegramUpdate(update);
+            growthOnUpdate(update); // growth engine: listeners/drips (fire-and-forget)
           }
         }
       } catch (err: any) {
@@ -4340,6 +4478,26 @@ function startDockerNotificationWorker() {
 
   // Channel onboarding agent: my_chat_member updates classify new channels.
   initChannelOnboard({ emit: (event, payload) => io.emit(event, payload) });
+
+  // Growth intelligence engine: lead capture, smart replies, prediction drops,
+  // drip funnels and segmented campaigns. Delayed start so data files settle.
+  initGrowth({
+    send: (chatId, text, options) => sendTelegramMessage(chatId, text, options),
+    notifyAdmin: (text) => {
+      console.log(`[Growth] ${text}`);
+      io.emit('notification', { message: text, type: 'info', title: 'Growth Engine', at: Date.now() });
+    },
+    getLotteryState: () => serverLotteryState,
+  });
+  // deep-link attribution on promo posts (ch_<chat_id> codes)
+  setPromoBotUsername(telegramConfig.bot_username || process.env.TELEGRAM_BOT_USERNAME || '');
+  setTimeout(() => {
+    try {
+      startGrowth();
+    } catch (err) {
+      console.error('[Growth] start failed:', err);
+    }
+  }, 5 * 60 * 1000);
 
   // Live commentary follower: goals/halftime/final → commentator posts per channel.
   initLiveCommentary({ emit: (event, payload) => io.emit(event, payload) });

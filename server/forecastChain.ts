@@ -682,3 +682,85 @@ export function stopForecastScheduler(): void {
     schedulerTimer = null;
   }
 }
+
+// ---------------------------------------------------- growth listener hook
+// Match group chatter against ALREADY-ANALYZED fixtures so the growth
+// listener can drop a real prediction card (pure disk read, no network).
+
+export interface PredictionMention {
+  slug: string;
+  home: string;
+  away: string;
+  league: string;
+  kickoffLabel: string;
+  pHome: number;
+  pAway: number;
+  predictedScore: string;
+  postId?: string;
+  label: string;
+}
+
+const AR_TEAM_ALIASES: Record<string, string[]> = {
+  'real madrid': ['ريال مدريد', 'الريال'],
+  barcelona: ['برشلونة', 'بارسا', 'بارصا'],
+  'manchester city': ['مان سيتي', 'مانشستر سيتي'],
+  'manchester united': ['مان يونايتد', 'مانشستر يونايتد', 'يونايتد'],
+  liverpool: ['ليفربول'],
+  arsenal: ['ارسنال', 'أرسنال'],
+  chelsea: ['تشيلسي', 'تشيلسى'],
+  tottenham: ['توتنهام', 'سبيرز'],
+  juventus: ['يوفنتوس', 'يوفي'],
+  'ac milan': ['ميلان', 'ايه سي ميلان'],
+  inter: ['انتر ميلان', 'إنتر ميلان'],
+  bayern: ['بايرن'],
+  dortmund: ['دورتموند'],
+  psg: ['باريس سان جيرمان', 'سان جيرمان'],
+  'al ahly': ['الاهلي', 'الأهلي'],
+  'al hilal': ['الهلال'],
+  'al nassr': ['النصر'],
+  'al ittihad': ['الاتحاد'],
+};
+
+function mentionsTeam(lower: string, name: string): boolean {
+  const n = name.toLowerCase();
+  if (n.length > 3 && lower.includes(n)) return true;
+  for (const [key, aliases] of Object.entries(AR_TEAM_ALIASES)) {
+    if (!n.includes(key) && !key.includes(n)) continue;
+    for (const a of aliases) if (lower.includes(a)) return true;
+  }
+  return false;
+}
+
+export function findPredictionMention(text: string): PredictionMention | null {
+  try {
+    const lower = (text || '').toLowerCase();
+    if (lower.length < 5) return null;
+    const state = readJson<{ entries: Record<string, any> }>(STATE_PATH, { entries: {} });
+    const file = readJson<{ teams?: Record<string, { name: string }>; fixtures?: Fixture[] }>(FIXTURES_PATH, {});
+    const feedTeams = file.teams || {};
+    const now = Date.now();
+    for (const f of file.fixtures || []) {
+      if (!f?.slug) continue;
+      const home = teamName(f.home, feedTeams);
+      const away = teamName(f.away, feedTeams);
+      if (!mentionsTeam(lower, home) || !mentionsTeam(lower, away)) continue;
+      const entry = state.entries[f.slug];
+      if (!entry || typeof entry.pHome !== 'number' || typeof entry.pAway !== 'number') continue;
+      const kick = kickoffMs(f);
+      if (kick != null && (kick < now || kick > now + LOOKAHEAD_MS)) continue;
+      return {
+        slug: f.slug,
+        home,
+        away,
+        league: f.league,
+        kickoffLabel: kickoffLabelMecca(f),
+        pHome: entry.pHome,
+        pAway: entry.pAway,
+        predictedScore: String(entry.predictedScore || ''),
+        postId: entry.postId,
+        label: `${home} × ${away}`,
+      };
+    }
+  } catch {}
+  return null;
+}

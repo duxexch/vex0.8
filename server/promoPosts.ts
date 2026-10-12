@@ -30,6 +30,19 @@ const APP_SLOT_UTC = 13;
 const APP_LINK = 'https://vex.deals/lottery';
 const APP_LINK_NEUTRAL = 'https://vex.deals';
 
+// Growth attribution: promo posts carry a per-channel deep link so every
+// user who /starts through it is credited to the channel that converted them.
+let promoBotUsername = '';
+
+export function setPromoBotUsername(username: string): void {
+  promoBotUsername = (username || '').replace(/^@/, '');
+}
+
+function growthCta(chatId: number | string): string {
+  if (!promoBotUsername) return '';
+  return `\n🤖 دردش مع ذكاء VEX واحصل على تحليلات فورية: https://t.me/${promoBotUsername}?start=ch_${chatId}`;
+}
+
 const APP_PROMOS_BETTING: string[] = [
   `🎰 تحمّل تطبيق VEX Lottery الرسمي — جائزة اليانصيب على شاشتك الرئيسية!
 📲 تثبيت في ثوانٍ من المتصفح مباشرة (أندرويد وآيفون) — بدون متجر وموثوق من جوجل ✅
@@ -192,7 +205,7 @@ export async function runPromoPass(): Promise<{
         continue;
       }
 
-      const text = await buildPromo(ch, slot);
+      const text = (await buildPromo(ch, slot)) + growthCta(ch.chat_id);
       schedulePost({
         chat_id: ch.chat_id,
         channelTitle: ch.title,
@@ -266,6 +279,7 @@ export async function runAppPromoPass(): Promise<{ planned: number; skipped: num
     if (betting && ch.brand.signature && !text.includes(ch.brand.signature)) {
       text += `\n\n${ch.brand.signature}`;
     }
+    text += growthCta(ch.chat_id);
     schedulePost({
       chat_id: ch.chat_id,
       channelTitle: ch.title,
