@@ -1376,6 +1376,24 @@ app.post('/api/admin/growth/simulate', async (req, res) => {
   }
 });
 
+// Loopback-only twin of the simulate endpoint (server-internal testing, no session)
+app.post('/api/growth/simulate', async (req, res) => {
+  const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || String(req.headers['x-real-ip'] || '').trim()
+    || String(req.socket.remoteAddress || '').trim();
+  if (!isLoopbackOrPrivateIp(rawIp)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+  try {
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'text required' });
+    const intent = growthClassifyIntent(text);
+    res.json({ success: true, intent });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Manual trigger for the forecast chain (admin)
 app.post('/api/admin/forecast/run', async (req, res) => {
   try {
