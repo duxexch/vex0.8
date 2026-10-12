@@ -3495,6 +3495,10 @@ function isLoopbackOrPrivateIp(ip: string): boolean {
 }
 
 async function handleTelegramUpdate(update: any) {
+  // Growth engine: classify group chatter / DMs, capture leads, drop predictions
+  // (fire-and-forget; covers both the poller and webhook paths).
+  growthOnUpdate(update);
+
   // Bot membership changes (added/removed as channel admin) → onboarding agent
   // classifies the channel and saves it for publishing.
   if (update.my_chat_member) {
@@ -3748,7 +3752,6 @@ async function startTelegramPolling() {
             telegramPollingOffset = update.update_id + 1;
             recordTelegramRelay(update);
             await handleTelegramUpdate(update);
-            growthOnUpdate(update); // growth engine: listeners/drips (fire-and-forget)
           }
         }
       } catch (err: any) {
