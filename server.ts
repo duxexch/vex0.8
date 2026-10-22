@@ -5198,6 +5198,7 @@ Expires: ${new Date(Date.now() + 365*24*60*60*1000).toISOString()}
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /admin/
 
 User-agent: Googlebot
 Allow: /
@@ -5211,12 +5212,43 @@ Allow: /
 User-agent: AdsBot-Google
 Allow: /
 
+User-agent: Bingbot
+Allow: /
+
 User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
 Allow: /
 
 User-agent: PerplexityBot
 Allow: /
 
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+# AI-readable site guide (llms.txt standard): https://${domain}/llms.txt
 Sitemap: https://${domain}/sitemap.xml
 `;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
