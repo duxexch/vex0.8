@@ -171,17 +171,30 @@ export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
     if (p.status === 'pending') {
       return {
         label: isAr ? '⏳ بانتظار النتيجة' : '⏳ Awaiting result',
-        cls: 'bg-amber-50 text-amber-700 border-amber-200',
+        cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
       };
     }
     switch (p.verdict) {
       case 'hit':
-        return { label: isAr ? '✅ تحقق' : '✅ Hit', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        return { label: isAr ? '✅ تحقق' : '✅ Hit', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' };
       case 'miss':
-        return { label: isAr ? '❌ لم يتحقق' : '❌ Missed', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+        return { label: isAr ? '❌ لم يتحقق' : '❌ Missed', cls: 'bg-rose-500/15 text-rose-300 border-rose-500/40' };
       default:
-        return { label: isAr ? '➖ تعادل' : '➖ Draw', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+        return { label: isAr ? '➖ تعادل' : '➖ Draw', cls: 'bg-white/10 text-slate-300 border-white/15' };
     }
+  };
+
+  // لون أكسنت الشركة المنشِّطة لتوقع المباريات (نفس منطق PostActionButtons)
+  const accentForPost = (post: SitePost): string => {
+    const active = companies.filter((c) => c.is_active);
+    const target = String(post.company || '').trim().toLowerCase();
+    const comp =
+      active.find((c) => c.name.toLowerCase() === target) ||
+      (branding?.exclusiveMode && branding.targetCompanyId && branding.targetCompanyId !== 'all'
+        ? active.find((c) => c.id === branding.targetCompanyId)
+        : undefined) ||
+      active[0];
+    return comp?.color || '#a855f7';
   };
 
   useEffect(() => {
@@ -663,22 +676,28 @@ END:VCALENDAR`;
           </div>
 
           {/* AI Smart Alerts (High-Volatility Betting Markets & Odds Shifts) Panel */}
-          <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border border-amber-300/90 rounded-2xl p-3.5 shadow-xs space-y-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
+          <div
+            className="relative overflow-hidden rounded-2xl p-3.5 backdrop-blur-xl shadow-lg shadow-black/20 space-y-3"
+            style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: '1px solid #f59e0b55' }}
+          >
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+            <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25 bg-amber-500" />
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-400" />
+            <div className="relative flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-2xs">
+                <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 flex items-center justify-center shadow-md shadow-black/30">
                   <Zap className="w-4 h-4" />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <h3 className="font-black text-xs text-amber-950">
+                    <h3 className="font-black text-xs text-amber-300">
                       {isAr ? 'التنبيهات الذكية: تقلبات المراهنات وتحركات الاحتمالات (Smart Alerts)' : 'AI Smart Alerts: Betting Odds Volatility'}
                     </h3>
-                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-200 text-amber-900">
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-400/20 text-amber-200 border border-amber-400/40">
                       AI Engine
                     </span>
                   </div>
-                  <p className="text-[10px] text-amber-800">
+                  <p className="text-[10px] text-amber-300/80">
                     {isAr 
                       ? 'يقترح تلقائياً تنبيهات فورية عند رصد سيولة مفاجئة أو هبوط حاد في احتمالات الأسواق للدوريات المفعلة.'
                       : 'Automatically suggests alerts based on high-volatility betting markets or significant odds shifts.'}
@@ -687,7 +706,7 @@ END:VCALENDAR`;
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-amber-200 bg-amber-400/15 border border-amber-400/40 px-2 py-0.5 rounded-lg flex items-center gap-1.5">
                   {activeOddsShiftLeagues.length > 0 && (
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
@@ -699,7 +718,7 @@ END:VCALENDAR`;
                 <button
                   type="button"
                   onClick={() => openManageAlerts()}
-                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                  className="px-2.5 py-1 bg-gradient-to-br from-amber-400 to-amber-500 hover:brightness-110 text-slate-950 rounded-lg text-[10px] font-black transition-all shadow-md shadow-black/30 cursor-pointer flex items-center gap-1"
                 >
                   <Sliders className="w-3 h-3" />
                   <span>{isAr ? 'تخصيص الدوريات' : 'Configure'}</span>
@@ -715,7 +734,7 @@ END:VCALENDAR`;
 
               if (detected.length === 0) {
                 return (
-                  <div className="bg-white/70 rounded-xl p-2.5 text-center text-xs text-amber-800 border border-amber-200/60">
+                  <div className="relative bg-slate-950/60 rounded-xl p-2.5 text-center text-xs text-amber-300/90 border border-white/10">
                     {isAr 
                       ? 'الأسواق مستقرة حالياً ولا توجد تحركات احتمالات حادة غير اعتيادية.' 
                       : 'Betting markets currently stable; no sharp odds volatility detected.'}
@@ -724,7 +743,7 @@ END:VCALENDAR`;
               }
 
               return (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-0.5">
+                <div className="relative grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-0.5">
                   {detected.map((alert) => {
                     const isMonitored = smartAlertLeagues.includes(alert.league);
                     const matchingFixture = fixtures.find(f => f.id === alert.fixtureId);
@@ -732,25 +751,25 @@ END:VCALENDAR`;
                     return (
                       <div
                         key={alert.fixtureId}
-                        className={`p-3 rounded-xl border transition-all flex flex-col justify-between gap-2 shadow-2xs ${
+                        className={`p-3 rounded-xl border transition-all flex flex-col justify-between gap-2 ${
                           isMonitored 
-                            ? 'bg-white border-amber-300 ring-1 ring-amber-200/70' 
-                            : 'bg-white/70 border-slate-200/80 opacity-90'
+                            ? 'bg-slate-950/60 border-amber-400/50 ring-1 ring-amber-400/30' 
+                            : 'bg-slate-950/40 border-white/10'
                         }`}
                       >
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-1.5 text-xs">
-                            <span className="font-bold text-slate-800 truncate flex items-center gap-1">
-                              <Trophy className="w-3 h-3 text-amber-500 shrink-0" />
+                            <span className="font-bold text-slate-100 truncate flex items-center gap-1">
+                              <Trophy className="w-3 h-3 text-amber-400 shrink-0" />
                               {alert.matchTitle}
                             </span>
                             <div className="flex items-center gap-1 shrink-0">
-                              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-md ${
+                              <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-md border ${
                                 alert.volatilityLevel === 'extreme' 
-                                  ? 'bg-rose-100 text-rose-800' 
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' 
                                   : alert.volatilityLevel === 'high'
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-blue-100 text-blue-800'
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    : 'bg-sky-500/20 text-sky-300 border-sky-500/40'
                               }`}>
                                 {isAr ? 'تقلب:' : 'Volatility:'} {
                                   alert.volatilityLevel === 'extreme' ? (isAr ? 'حاد' : 'Extreme') :
@@ -758,38 +777,38 @@ END:VCALENDAR`;
                                   (isAr ? 'متوسط' : 'Moderate')
                                 }
                               </span>
-                              <span className="text-[10px] font-mono font-black text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                              <span className="text-[10px] font-mono font-black text-rose-300 bg-rose-500/15 px-1.5 py-0.2 rounded border border-rose-500/40">
                                 {alert.shiftPercentage}%
                               </span>
                             </div>
                           </div>
 
-                          <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100 space-y-1">
+                          <div className="text-[11px] text-slate-400 bg-slate-950/70 p-2 rounded-lg border border-white/10 space-y-1">
                             <div className="flex items-center justify-between">
                               <span className="text-slate-500 font-medium">{isAr ? 'السوق المتأثر:' : 'Market:'} {alert.marketType}</span>
-                              <span className="font-mono text-slate-700 font-bold">
-                                {alert.previousOdds} ➔ <span className="text-emerald-700">{alert.currentOdds}</span>
+                              <span className="font-mono text-slate-200 font-bold">
+                                {alert.previousOdds} ➔ <span className="text-emerald-300">{alert.currentOdds}</span>
                               </span>
                             </div>
-                            <div className="flex items-center justify-between text-xs pt-0.5 border-t border-slate-200/60">
-                              <span className="font-bold text-amber-900">{isAr ? 'الاقتراح الذكي:' : 'Smart Pick:'}</span>
-                              <span className="font-black text-emerald-800">{alert.suggestedPick}</span>
+                            <div className="flex items-center justify-between text-xs pt-0.5 border-t border-white/10">
+                              <span className="font-bold text-amber-300">{isAr ? 'الاقتراح الذكي:' : 'Smart Pick:'}</span>
+                              <span className="font-black text-emerald-300">{alert.suggestedPick}</span>
                             </div>
                           </div>
 
-                          <p className="text-[10px] text-slate-600 leading-tight">
+                          <p className="text-[10px] text-slate-500 leading-tight">
                             {isAr ? alert.reasoningAr : alert.reasoningEn}
                           </p>
                         </div>
 
-                        <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <div className="pt-1.5 border-t border-white/10 flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => handleToggleSmartAlert(alert.league)}
                             className={`relative px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
                               isMonitored
-                                ? 'bg-amber-500 text-white border-amber-600 shadow-2xs hover:bg-amber-600'
-                                : 'bg-white text-slate-700 border-amber-300 hover:bg-amber-50 hover:text-amber-800'
+                                ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-md shadow-black/30 hover:brightness-110'
+                                : 'bg-slate-800/90 text-slate-200 border-amber-400/50 hover:bg-amber-500/15 hover:text-amber-200'
                             } animate-smart-glow ring-2 ring-amber-400/50`}
                             title={
                               isAr
@@ -797,7 +816,7 @@ END:VCALENDAR`;
                                 : '🔥 Real-time sharp odds shift detected! Click to toggle Smart Alert'
                             }
                           >
-                            <Sparkles className={`w-3.5 h-3.5 ${isMonitored ? 'text-amber-100' : 'text-amber-500 animate-pulse'}`} />
+                            <Sparkles className={`w-3.5 h-3.5 ${isMonitored ? 'text-amber-200' : 'text-amber-400 animate-pulse'}`} />
                             <span>
                               {isMonitored ? (isAr ? 'تنبيه ذكي: نشط' : 'Smart: Active') : (isAr ? 'تفعيل للدوري' : 'Enable League')}
                             </span>
@@ -811,7 +830,7 @@ END:VCALENDAR`;
                             <button
                               type="button"
                               onClick={() => onAnalyzeMatch(matchingFixture)}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                              className="px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                             >
                               <Bot className="w-3 h-3" />
                               <span>{isAr ? 'تحليل الفرصة' : 'Analyze Pick'}</span>
@@ -834,7 +853,7 @@ END:VCALENDAR`;
           {loadingFixtures ? (
             <SportsFixturesSkeleton />
           ) : filteredFixtures.length === 0 ? (
-            <div className="text-center py-10 text-xs text-slate-500 bg-white rounded-xl border border-slate-200">
+            <div className="text-center py-10 text-xs text-slate-400 bg-slate-900/70 rounded-2xl border border-white/10">
               {isAr ? 'لا توجد مباريات مطابقة للبحث' : 'No matches found matching criteria'}
             </div>
           ) : (
@@ -842,13 +861,17 @@ END:VCALENDAR`;
               {filteredFixtures.map((fixture) => (
                 <div
                   key={fixture.id}
-                  className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs space-y-3 flex flex-col justify-between hover:border-slate-300 transition-all spotlight-surface tilt-card-3d"
+                  className="relative overflow-hidden rounded-2xl p-4 backdrop-blur-xl shadow-lg shadow-black/20 space-y-3 flex flex-col justify-between transition-all spotlight-surface group"
+                  style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: '1px solid #10b98155' }}
                 >
-                  <div className="space-y-3">
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                  <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25 bg-emerald-500" />
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500" />
+                  <div className="relative space-y-3">
                     {/* League & Kickoff */}
-                    <div className="flex items-center justify-between text-xs text-slate-500">
-                      <span className="font-bold text-slate-800 flex items-center gap-1.5 truncate max-w-[140px]">
-                        <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span className="font-bold text-slate-200 flex items-center gap-1.5 truncate max-w-[140px]">
+                        <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                         <span className="truncate">{fixture.league}</span>
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -862,8 +885,8 @@ END:VCALENDAR`;
                               onClick={() => handleToggleSmartAlert(fixture.league)}
                               className={`relative p-1 rounded-md border transition-all cursor-pointer ${
                                 isSmartActive
-                                  ? 'bg-amber-500 border-amber-600 text-white shadow-2xs hover:bg-amber-600'
-                                  : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-amber-700 hover:bg-amber-50'
+                                  ? 'bg-amber-500 border-amber-500 text-slate-950 hover:brightness-110'
+                                  : 'bg-slate-800/80 border-white/10 text-slate-500 hover:text-amber-300 hover:bg-amber-500/15'
                               } ${hasOddsShift ? 'animate-smart-glow border-amber-400 ring-2 ring-amber-400/50' : ''}`}
                               title={
                                 hasOddsShift
@@ -875,7 +898,7 @@ END:VCALENDAR`;
                                     : (isAr ? `تفعيل التنبيه الذكي لتقلبات واحتمالات ${fixture.league}` : `Enable Smart Alert for ${fixture.league}`)
                               }
                             >
-                              <Sparkles className={`w-3.5 h-3.5 ${isSmartActive ? 'text-amber-100' : hasOddsShift ? 'text-amber-600 animate-pulse' : 'text-slate-400'}`} />
+                              <Sparkles className={`w-3.5 h-3.5 ${isSmartActive ? 'text-slate-950' : hasOddsShift ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
                               {hasOddsShift && (
                                 <span className="absolute -top-1 -right-1 flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
@@ -894,8 +917,8 @@ END:VCALENDAR`;
                           }}
                           className={`p-1.5 rounded-xl border transition-all cursor-pointer active:scale-90 ${
                             subscribedLeagues.includes(fixture.league)
-                              ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/20'
-                              : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-emerald-50'
+                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-md shadow-black/30 ring-2 ring-emerald-500/20'
+                              : 'bg-slate-800/80 border-white/10 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15'
                           }`}
                           title={
                             subscribedLeagues.includes(fixture.league)
@@ -909,13 +932,13 @@ END:VCALENDAR`;
                             <Bell className="w-3.5 h-3.5" />
                           )}
                         </button>
-                        <span className="flex items-center gap-1 font-mono text-[11px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md text-slate-600">
-                          <Clock className="w-3 h-3 text-slate-400" />
+                        <span className="flex items-center gap-1 font-mono text-[11px] bg-slate-950/60 border border-white/10 px-2 py-0.5 rounded-md text-slate-300">
+                          <Clock className="w-3 h-3 text-slate-500" />
                           {fixture.kickoffTime}
                         </span>
                         <button
                           onClick={() => downloadICS(fixture)}
-                          className="p-1 rounded-md bg-slate-50 border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          className="p-1 rounded-md bg-slate-800/80 border border-white/10 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 transition-colors cursor-pointer"
                           title={isAr ? 'أضف إلى التقويم' : 'Add to Calendar'}
                         >
                           <CalendarPlus className="w-3.5 h-3.5" />
@@ -924,38 +947,38 @@ END:VCALENDAR`;
                     </div>
 
                     {/* Teams Showcase */}
-                    <div className="flex items-center justify-between gap-3 py-2 border-y border-slate-100">
+                    <div className="flex items-center justify-between gap-3 py-2 border-y border-white/10">
                       <div className="flex items-center gap-2.5 flex-1 min-w-0">
                         <img
                           src={fixture.homeLogo}
                           alt={fixture.homeTeam}
                           referrerPolicy="no-referrer"
-                          className="w-9 h-9 rounded-xl object-contain border border-slate-200 p-0.5 bg-slate-50 shrink-0"
+                          className="w-9 h-9 rounded-xl object-contain border border-white/10 p-0.5 bg-white/95 shrink-0"
                         />
                         <div className="min-w-0">
-                          <span className="font-bold text-xs text-slate-900 block truncate">
+                          <span className="font-bold text-xs text-white block truncate">
                             {fixture.homeTeam}
                           </span>
-                          <span className="text-[10px] text-slate-400">{isAr ? 'مضيف' : 'Home'}</span>
+                          <span className="text-[10px] text-slate-500">{isAr ? 'مضيف' : 'Home'}</span>
                         </div>
                       </div>
 
                       <div className="text-center px-2 shrink-0">
-                        <span className="text-xs font-black text-slate-400 font-mono">VS</span>
+                        <span className="text-xs font-black text-slate-500 font-mono">VS</span>
                       </div>
 
                       <div className="flex items-center justify-end gap-2.5 flex-1 min-w-0 text-left" dir="ltr">
                         <div className="min-w-0">
-                          <span className="font-bold text-xs text-slate-900 block text-right truncate">
+                          <span className="font-bold text-xs text-white block text-right truncate">
                             {fixture.awayTeam}
                           </span>
-                          <span className="text-[10px] text-slate-400 block text-right">{isAr ? 'ضيف' : 'Away'}</span>
+                          <span className="text-[10px] text-slate-500 block text-right">{isAr ? 'ضيف' : 'Away'}</span>
                         </div>
                         <img
                           src={fixture.awayLogo}
                           alt={fixture.awayTeam}
                           referrerPolicy="no-referrer"
-                          className="w-9 h-9 rounded-xl object-contain border border-slate-200 p-0.5 bg-slate-50 shrink-0"
+                          className="w-9 h-9 rounded-xl object-contain border border-white/10 p-0.5 bg-white/95 shrink-0"
                         />
                       </div>
                     </div>
@@ -972,19 +995,19 @@ END:VCALENDAR`;
                           onClick={() => onAnalyzeMatch(fixture)}
                           className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all ${
                             isLeagueSmart
-                              ? 'bg-gradient-to-r from-amber-50 to-orange-50/80 border-amber-300 shadow-2xs hover:border-amber-400'
-                              : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
+                              ? 'bg-gradient-to-r from-amber-500/15 to-orange-500/10 border-amber-500/40 hover:border-amber-400'
+                              : 'bg-slate-950/60 border-white/10 hover:bg-slate-900/70'
                           }`}
                           title={isAr ? 'انقر لعرض التحليل التكتيكي للذكاء الاصطناعي' : 'Click to view AI tactical analysis'}
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <Zap className={`w-3.5 h-3.5 shrink-0 ${isLeagueSmart ? 'text-amber-600 animate-pulse' : 'text-slate-400'}`} />
+                            <Zap className={`w-3.5 h-3.5 shrink-0 ${isLeagueSmart ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className={`text-[10px] font-black truncate ${isLeagueSmart ? 'text-amber-950' : 'text-slate-700'}`}>
+                                <span className={`text-[10px] font-black truncate ${isLeagueSmart ? 'text-amber-200' : 'text-slate-300'}`}>
                                   {isAr ? 'تقلب احتمالات ملحوظ:' : 'Sharp Odds Shift:'}
                                 </span>
-                                <span className="text-[9px] font-bold font-mono px-1 rounded bg-rose-100 text-rose-800 tabular-nums">
+                                <span className="text-[9px] font-bold font-mono px-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 tabular-nums">
                                   {shiftAlert.shiftPercentage}%
                                 </span>
                               </div>
@@ -995,7 +1018,7 @@ END:VCALENDAR`;
                           </div>
 
                           <div className="shrink-0 flex items-center gap-1">
-                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200 font-mono tabular-nums">
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono tabular-nums">
                               {shiftAlert.suggestedPick}
                             </span>
                           </div>
@@ -1005,27 +1028,27 @@ END:VCALENDAR`;
 
                     {/* Odds Grid */}
                     <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-200">
-                        <span className="text-[10px] text-slate-500 block mb-0.5 truncate">
+                      <div className="bg-slate-950/60 p-2 rounded-xl text-center border border-white/10">
+                        <span className="text-[10px] text-slate-400 block mb-0.5 truncate">
                           1 ({fixture.homeTeam.slice(0, 8)})
                         </span>
-                        <span className="text-xs font-black text-emerald-700 font-mono tabular-nums">
+                        <span className="text-xs font-black text-emerald-300 font-mono tabular-nums">
                           {fixture.odds.home}
                         </span>
                       </div>
 
-                      <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-200">
-                        <span className="text-[10px] text-slate-500 block mb-0.5">{isAr ? 'X (تعادل)' : 'X (Draw)'}</span>
-                        <span className="text-xs font-black text-amber-700 font-mono tabular-nums">
+                      <div className="bg-slate-950/60 p-2 rounded-xl text-center border border-white/10">
+                        <span className="text-[10px] text-slate-400 block mb-0.5">{isAr ? 'X (تعادل)' : 'X (Draw)'}</span>
+                        <span className="text-xs font-black text-amber-300 font-mono tabular-nums">
                           {fixture.odds.draw}
                         </span>
                       </div>
 
-                      <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-200">
-                        <span className="text-[10px] text-slate-500 block mb-0.5 truncate">
+                      <div className="bg-slate-950/60 p-2 rounded-xl text-center border border-white/10">
+                        <span className="text-[10px] text-slate-400 block mb-0.5 truncate">
                           2 ({fixture.awayTeam.slice(0, 8)})
                         </span>
-                        <span className="text-xs font-black text-sky-700 font-mono tabular-nums">
+                        <span className="text-xs font-black text-sky-300 font-mono tabular-nums">
                           {fixture.odds.away}
                         </span>
                       </div>
@@ -1033,17 +1056,17 @@ END:VCALENDAR`;
                   </div>
 
                   {/* Action: AI Analysis */}
-                  <div className="pt-2.5 flex items-center justify-between border-t border-slate-100">
-                    <span className="text-[11px] text-slate-500 flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <div className="relative pt-2.5 flex items-center justify-between border-t border-white/10">
+                    <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                       {isAr ? '+18 تحليل تكتيكي' : '+18 Tactical Analysis'}
                     </span>
 
                     <button
                       onClick={() => onAnalyzeMatch(fixture)}
-                      className="h-8 flex items-center gap-1.5 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                      className="h-8 flex items-center gap-1.5 px-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 hover:brightness-110 text-white text-xs font-black transition-all shadow-md shadow-black/30 active:scale-95 cursor-pointer"
                     >
-                      <Bot className="w-3.5 h-3.5 text-emerald-600" />
+                      <Bot className="w-3.5 h-3.5" />
                       <span>{isAr ? 'تقرير الذكاء الاصطناعي' : 'AI Report'}</span>
                       <ChevronRight className="w-3.5 h-3.5 rtl:rotate-180" />
                     </button>
@@ -1061,38 +1084,42 @@ END:VCALENDAR`;
           {news.map((item) => (
             <div
               key={item.id}
-              className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs flex flex-col justify-between hover:border-slate-300 transition-colors"
+              className="relative overflow-hidden rounded-2xl backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col justify-between transition-all group"
+              style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: '1px solid #0ea5e955' }}
             >
-              <div>
-                <div className="h-40 w-full relative overflow-hidden bg-slate-100">
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+              <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25 bg-sky-500" />
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-sky-500 z-20" />
+              <div className="relative">
+                <div className="h-40 w-full relative overflow-hidden bg-slate-900">
                   {item.imageUrl ? (
                     <img
                       src={item.imageUrl}
                       alt={item.title}
                       referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-emerald-500/25 via-sky-500/20 to-indigo-500/25 flex items-center justify-center">
-                      <Newspaper className="w-9 h-9 text-emerald-600/70" />
+                      <Newspaper className="w-9 h-9 text-sky-400/70" />
                     </div>
                   )}
-                  <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-md bg-white/90 backdrop-blur-xs text-emerald-700 text-[10px] font-bold border border-slate-200">
+                  <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-md bg-slate-950/80 backdrop-blur-xs text-emerald-300 text-[10px] font-bold border border-emerald-500/40">
                     {item.category}
                   </span>
                 </div>
 
                 <div className="p-3.5 space-y-1.5">
                   <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span className="font-bold text-slate-700">{item.source}</span>
+                    <span className="font-bold text-slate-300">{item.source}</span>
                     <span>{item.publishedAt}</span>
                   </div>
 
-                  <h3 className="text-xs font-bold text-slate-900 leading-snug line-clamp-2">
+                  <h3 className="text-xs font-bold text-white leading-snug line-clamp-2">
                     {item.title}
                   </h3>
 
-                  <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">
+                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
                     {item.summary}
                   </p>
                 </div>
@@ -1132,12 +1159,12 @@ END:VCALENDAR`;
           </div>
 
           {predictions.length === 0 ? (
-            <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center">
+            <div className="bg-slate-900/70 border border-dashed border-white/15 rounded-2xl p-8 text-center">
               <Bot className="w-9 h-9 text-purple-400 mx-auto mb-2.5" />
-              <p className="text-sm font-bold text-slate-700">
+              <p className="text-sm font-bold text-slate-200">
                 {isAr ? 'لا توجد توقعات منشورة بعد' : 'No predictions published yet'}
               </p>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-400 mt-1">
                 {isAr
                   ? 'تُنشر توقعات المباريات هنا تلقائيًا بعد تحليل الاحتمالات'
                   : 'Match forecasts appear here automatically once odds are analyzed'}
@@ -1148,14 +1175,19 @@ END:VCALENDAR`;
               {predictions.map((post) => {
                 const pred = post.prediction!;
                 const badge = statusBadge(pred);
+                const accent = accentForPost(post);
                 return (
                   <div
                     key={post.id}
-                    className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs flex flex-col"
+                    className="relative overflow-hidden rounded-2xl backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col transition-all group"
+                    style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: `1px solid ${accent}55` }}
                   >
-                    <div className="p-3.5 space-y-2.5">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                    <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25" style={{ background: accent }} />
+                    <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: accent }} />
+                    <div className="relative p-3.5 space-y-2.5">
                       <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-xs font-black text-slate-900 leading-snug truncate">
+                        <h3 className="text-xs font-black text-white leading-snug truncate">
                           {pred.homeTeam} × {pred.awayTeam}
                         </h3>
                         <span
@@ -1167,21 +1199,21 @@ END:VCALENDAR`;
 
                       {/* Win probability bars */}
                       <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
                           <span className="truncate">🟢 {pred.homeTeam}</span>
-                          <span className="font-mono text-emerald-700">{pred.pHome}%</span>
+                          <span className="font-mono text-emerald-300">{pred.pHome}%</span>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
                             className="h-full bg-emerald-500 rounded-full transition-all"
                             style={{ width: `${pred.pHome}%` }}
                           />
                         </div>
-                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
                           <span className="truncate">🔵 {pred.awayTeam}</span>
-                          <span className="font-mono text-sky-700">{pred.pAway}%</span>
+                          <span className="font-mono text-sky-300">{pred.pAway}%</span>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
                             className="h-full bg-sky-500 rounded-full transition-all"
                             style={{ width: `${pred.pAway}%` }}
@@ -1190,13 +1222,13 @@ END:VCALENDAR`;
                       </div>
 
                       {/* Predicted vs actual score */}
-                      <div className="flex items-center justify-between text-[11px] bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 py-1.5">
-                        <span className="text-slate-600 font-bold flex items-center gap-1">
+                      <div className="flex items-center justify-between text-[11px] bg-slate-950/60 border border-white/10 rounded-xl px-2.5 py-1.5">
+                        <span className="text-slate-400 font-bold flex items-center gap-1">
                           🎯 {isAr ? 'المتوقع' : 'Predicted'}:
-                          <span className="font-mono text-slate-900">{pred.predictedScore}</span>
+                          <span className="font-mono text-white">{pred.predictedScore}</span>
                         </span>
                         {pred.status === 'settled' && pred.actualScore && (
-                          <span className="font-black text-slate-900 flex items-center gap-1">
+                          <span className="font-black text-white flex items-center gap-1">
                             {isAr ? 'النتيجة' : 'Final'}:
                             <span className="font-mono">{pred.actualScore}</span>
                           </span>
@@ -1211,9 +1243,9 @@ END:VCALENDAR`;
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <div className="flex items-center justify-between text-[10px] text-slate-500">
                         <span>{formatTime(pred.createdAt)}</span>
-                        <span className="font-bold text-slate-500">
+                        <span className="font-bold text-slate-400">
                           {pred.pctSource === 'odds'
                             ? isAr
                               ? 'من الودز'
@@ -1232,7 +1264,7 @@ END:VCALENDAR`;
                     </div>
 
                     {post.image && (
-                      <div className="h-28 w-full overflow-hidden bg-slate-100">
+                      <div className="relative h-28 w-full overflow-hidden bg-slate-900/60">
                         <img
                           src={post.image}
                           alt={pred.homeTeam}

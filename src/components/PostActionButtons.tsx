@@ -38,7 +38,7 @@ export const PostActionButtons: React.FC<PostActionButtonsProps> = ({
     'group min-w-0 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-[11px] font-black text-white shadow-xs shadow-black/10 transition-all active:scale-95 hover:brightness-110 [text-shadow:0_1px_1px_rgba(0,0,0,0.18)]';
 
   return (
-    <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3.5 py-3 mt-auto">
+    <div className="border-t border-white/10 bg-slate-950/40 px-3.5 py-3 mt-auto">
       <div className="grid grid-cols-2 gap-1.5">
         <a
           href={appUrl}
