@@ -68,7 +68,12 @@ betjam = ["https://betjam.sbs/", "https://betjam.sbs/guides",
           "https://betjam.sbs/guides/live-betting-guide", "https://betjam.sbs/guides/claim-compensation",
           "https://betjam.sbs/predictions"]
 one = ["https://1xbetservices.com/", "https://1xbetservices.com/guides",
-       "https://1xbetservices.com/predictions", "https://1xbetservices.com/predictions/today"]
+       "https://1xbetservices.com/predictions", "https://1xbetservices.com/predictions/today",
+       "https://1xbetservices.com/companies", "https://1xbetservices.com/wallets",
+       "https://1xbetservices.com/ai-sports", "https://1xbetservices.com/referrals",
+       "https://1xbetservices.com/transfers", "https://1xbetservices.com/activity",
+       "https://1xbetservices.com/unlucky-wall", "https://1xbetservices.com/lottery",
+       "https://1xbetservices.com/responsible-gambling", "https://1xbetservices.com/legal"]
 beto = ["https://betongame.cloud/", "https://betongame.cloud/guides", "https://betongame.cloud/predictions"]
 
 ok = fail = 0
