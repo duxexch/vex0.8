@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { 
-  SportsMatchFixture, 
-  SportsNewsItem, 
+import {
+  SportsMatchFixture,
+  SportsNewsItem,
   SitePost,
-  Language, 
-  AiMatchAnalysis, 
+  Language,
+  AiMatchAnalysis,
   SportsCategory,
-  SmartOddsShiftAlert 
+  SmartOddsShiftAlert,
+  Company,
+  AppBranding
 } from '../types';
 import { SportsFixturesSkeleton } from './SkeletonLoader';
 import { SportsNotificationsModal } from './SportsNotificationsModal';
+import { PostActionButtons } from './PostActionButtons';
 import { vexApi } from '../services/api';
 import { 
   getUserSubscription, 
@@ -108,6 +111,8 @@ interface AiSportsHubTabProps {
   fixtures?: SportsMatchFixture[];
   news?: SportsNewsItem[];
   sitePosts?: SitePost[];
+  companies?: Company[];
+  branding?: AppBranding;
   loadingFixtures?: boolean;
   onAnalyzeMatch: (fixture: SportsMatchFixture) => void;
   onTriggerAgentBroadcast?: () => void;
@@ -121,6 +126,8 @@ export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
   fixtures = [],
   news = [],
   sitePosts = [],
+  companies = [],
+  branding,
   loadingFixtures = false,
   onAnalyzeMatch,
   onTriggerAgentBroadcast,
@@ -1225,7 +1232,7 @@ END:VCALENDAR`;
                     </div>
 
                     {post.image && (
-                      <div className="h-28 w-full overflow-hidden bg-slate-100 mt-auto">
+                      <div className="h-28 w-full overflow-hidden bg-slate-100">
                         <img
                           src={post.image}
                           alt={pred.homeTeam}
@@ -1234,6 +1241,13 @@ END:VCALENDAR`;
                         />
                       </div>
                     )}
+
+                    <PostActionButtons
+                      postCompany={post.company}
+                      companies={companies}
+                      branding={branding}
+                      lang={lang}
+                    />
                   </div>
                 );
               })}

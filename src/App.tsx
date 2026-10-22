@@ -725,6 +725,8 @@ export default function App() {
                 fixtures={fixtures}
                 news={mergedNews}
                 sitePosts={sitePosts}
+                companies={localizedCompanies}
+                branding={appBranding}
                 loadingFixtures={loadingFixtures}
                 onAnalyzeMatch={(fixture) => setSelectedFixtureForAi(fixture)}
                 onTriggerAgentBroadcast={handleTriggerAiPrediction}
