@@ -10,7 +10,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { storage } from './server/storage';
 import { ServerCompensationRequest } from './server/seedData';
 import { agentEngine, calculateNotificationTiming } from './server/agentEngine';
-import { resolveCleanHost, renderSeoMetaHead } from './server/seoEngine';
+import { resolveCleanHost, renderSeoMetaHead, DOMAIN_MATRIX } from './server/seoEngine';
 import { LANGS, isLang, tt, type Lang } from './server/i18nUi';
 import { getProfileText, type ProfileText } from './server/i18nProfiles';
 import { GUIDES, getGuide } from './server/i18nGuides';
@@ -4700,7 +4700,13 @@ async function setupServer() {
         ...getProfileText(domain, lang),
       };
     };
-    const getLang = (req: { query: Record<string, unknown> }): Lang => isLang(req.query.lang) ? req.query.lang : 'ar';
+    // Default language follows the domain: global English-first domains (titleLocale 'en')
+    // serve English unless the visitor explicitly picks another language via ?lang=
+    const getLang = (req: { query: Record<string, unknown>; headers?: { host?: string } }): Lang => {
+      if (isLang(req.query.lang)) return req.query.lang;
+      const host = (req.headers?.host || '').replace(/^www\./, '');
+      return DOMAIN_MATRIX[host]?.titleLocale === 'en' ? 'en' : 'ar';
+    };
 
     // Date of the last full content re-verification (editorial policy: shown dates reflect real reviews,
     // never auto-generated daily)
@@ -7243,6 +7249,10 @@ ${secsHtml}
         `<meta property="og:title" content="${profile.brand} — ${profile.tagline}" />`);
       html = html.replace(/<meta property="og:description" content="[^"]*"\s*\/?>/,
         `<meta property="og:description" content="${profile.description}" />`);
+      if (DOMAIN_MATRIX[domain]?.titleLocale === 'en') {
+        html = html.replace(/<meta property="og:locale" content="[^"]*"\s*\/?>/,
+          `<meta property="og:locale" content="en_US" />`);
+      }
 
       // hreflang alternates (all 8 languages) — strip static ones from index.html first to avoid duplicates
       html = html.replace(/<link rel="alternate" hreflang=[^>]*\/?>\s*\n?/g, '');
