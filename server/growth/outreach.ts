@@ -6,6 +6,7 @@ import {
   markWa,
   waQueueForBatch,
   setWaQueued,
+  resetWaBatch,
   waStats,
   segmentOf,
   Lead,
@@ -105,8 +106,17 @@ export function waMessage(l: Lead): string {
   return WA_TEMPLATES[idx](name, interest);
 }
 
-export async function buildWaBatch(limit = 30): Promise<{ date: string; count: number; file: string; stats: object; card?: string }> {
+export async function buildWaBatch(limit = 30, force = false): Promise<{ date: string; count: number; file: string; stats: object; card?: string }> {
   const date = new Date().toISOString().slice(0, 10);
+  const file = path.join(OUTBOX_DIR, `batch_${date}.md`);
+  // idempotent: one outbox per day — reuse it unless explicitly rebuilt
+  if (!force && fs.existsSync(file)) {
+    const todayQueued = listLeads().filter(
+      (l) => l.channel === 'wa_import' && l.wa_status === 'queued' && l.wa_batch === date
+    ).length;
+    return { date, count: todayQueued, file, stats: waStats() };
+  }
+  if (force) resetWaBatch(date);
   const picks = waQueueForBatch(limit);
   const lines = [
     `# صندوق واتساب — ${date}`,
@@ -132,7 +142,6 @@ export async function buildWaBatch(limit = 30): Promise<{ date: string; count: n
   });
   if (picks.length === 0) lines.push('_مافيش جهات اتصال ننتظر إرسال — استورد الملف الأول._');
   fs.mkdirSync(OUTBOX_DIR, { recursive: true });
-  const file = path.join(OUTBOX_DIR, `batch_${date}.md`);
   fs.writeFileSync(file, lines.join('\n'), 'utf-8');
   setWaQueued(
     picks.map((p) => p.id),

@@ -539,6 +539,20 @@ export function setWaQueued(ids: string[], batch: string): void {
   });
 }
 
+/** Revert a batch's queued contacts back to pending (used when rebuilding the same day's outbox). */
+export function resetWaBatch(batch: string): number {
+  let n = 0;
+  mutateLeads((leads) => {
+    for (const l of leads) {
+      if (l.channel === 'wa_import' && l.wa_status === 'queued' && l.wa_batch === batch) {
+        l.wa_status = 'pending';
+        n++;
+      }
+    }
+  });
+  return n;
+}
+
 export function waStats(): { total: number; pending: number; queued: number; sent: number; skipped: number } {
   const leads = loadLeads().filter((l) => l.channel === 'wa_import');
   const by = { pending: 0, queued: 0, sent: 0, skipped: 0 };

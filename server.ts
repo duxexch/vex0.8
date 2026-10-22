@@ -1451,11 +1451,11 @@ app.get('/api/admin/growth/wa/outbox', (_req, res) => {
   }
 });
 
-// Generate today's manual batch (≤30 by default)
+// Generate today's manual batch (≤30 by default; body.force=false reuses the existing outbox)
 app.post('/api/admin/growth/wa/batch', async (req, res) => {
   try {
     const limit = Math.min(50, Number(req.body?.limit) || 30);
-    const batch = await growthBuildWaBatch(limit);
+    const batch = await growthBuildWaBatch(limit, req.body?.force !== false);
     res.json({ success: true, batch });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1525,7 +1525,7 @@ app.post('/api/growth/wa-batch', async (req, res) => {
   }
   try {
     const limit = Math.min(50, Number(req.body?.limit) || 30);
-    const batch = await growthBuildWaBatch(limit);
+    const batch = await growthBuildWaBatch(limit, req.body?.force !== false);
     res.json({ success: true, batch });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1548,7 +1548,7 @@ app.post('/api/growth/outreach-test', async (req, res) => {
       ],
       'test_import'
     );
-    const batch = await growthBuildWaBatch(5);
+    const batch = await growthBuildWaBatch(5, true);
     const report = growthClientReport(200).filter((c: any) => String(c.contact).includes('000001') || String(c.contact).includes('000002'));
     const marked = growthMarkWa(['01000000001'], 'sent');
     const statsAfterMark = growthWaStats();
@@ -1558,7 +1558,7 @@ app.post('/api/growth/outreach-test', async (req, res) => {
         if ((leads[i].notes || '').includes('dummy-test')) leads.splice(i, 1);
       }
     });
-    const batchClean = await growthBuildWaBatch(5);
+    const batchClean = await growthBuildWaBatch(5, true);
     res.json({ success: true, import: imp, batch, report_sample: report, marked, statsAfterMark, batchClean, calendar: growthCalendarPlan() });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
