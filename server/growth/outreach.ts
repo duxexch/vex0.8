@@ -11,6 +11,8 @@ import {
   Lead,
 } from './leadsStore';
 import { createCampaign, sendCampaign, listCampaigns, generateCampaignCopy } from './campaigns';
+import { listUpcomingPredictions } from '../forecastChain';
+import { matchToCard, renderPredictionCardPng, cardPublicUrl } from './predictionCards';
 
 // =========================================================================
 // Outreach: contact-file import, WhatsApp managed-manual batches (outbox
@@ -103,7 +105,7 @@ export function waMessage(l: Lead): string {
   return WA_TEMPLATES[idx](name, interest);
 }
 
-export function buildWaBatch(limit = 30): { date: string; count: number; file: string; stats: object } {
+export async function buildWaBatch(limit = 30): Promise<{ date: string; count: number; file: string; stats: object; card?: string }> {
   const date = new Date().toISOString().slice(0, 10);
   const picks = waQueueForBatch(limit);
   const lines = [
@@ -113,6 +115,15 @@ export function buildWaBatch(limit = 30): { date: string; count: number; file: s
     `بعد الابعت: علّم المرسل لهم هنا: POST /api/admin/growth/wa/mark`,
     ``,
   ];
+  let card: string | undefined;
+  try {
+    const [up] = listUpcomingPredictions(1);
+    if (up) {
+      const png = await renderPredictionCardPng(matchToCard(up));
+      card = cardPublicUrl(matchToCard(up));
+      if (png) lines.splice(2, 0, `📌 كارت توقع اليوم (${up.label}): ${card}`, `📁 نسخة على السيرفر: data/prediction-cards/ — ارفقه مع رسالة الافتتاحية`, ``);
+    }
+  } catch {}
   picks.forEach((l, i) => {
     lines.push(`## ${i + 1}. ${l.first_name || '—'} — ${l.phone} [${segmentOf(l)}]`);
     lines.push('');
@@ -127,7 +138,7 @@ export function buildWaBatch(limit = 30): { date: string; count: number; file: s
     picks.map((p) => p.id),
     date
   );
-  return { date, count: picks.length, file, stats: waStats() };
+  return { date, count: picks.length, file, stats: waStats(), card };
 }
 
 export function getTodayOutbox(): { date: string; exists: boolean; content: string; stats: object } {
@@ -300,7 +311,7 @@ export function startOutreachTimers(notify: (text: string) => void): void {
     outreachTimer = setTimeout(async () => {
       try {
         const executed = await calendarTick();
-        const batch = buildWaBatch(30);
+        const batch = await buildWaBatch(30);
         const lines = [`📣 تقرير Outreach — ${new Date().toISOString().slice(0, 10)}`];
         if (executed.length) lines.push(...executed.map((e) => `▸ ${e}`));
         lines.push(`📱 صندوق واتساب: ${batch.count} رسالة جاهزة للإرسال اليدوي`);

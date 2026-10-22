@@ -695,9 +695,10 @@ export interface PredictionMention {
   kickoffLabel: string;
   pHome: number;
   pAway: number;
+  pDraw?: number;
   predictedScore: string;
   postId?: string;
-  label: string;
+  label: string; // "ريال مدريد × برشلونة"
 }
 
 const AR_TEAM_ALIASES: Record<string, string[]> = {
@@ -763,4 +764,44 @@ export function findPredictionMention(text: string): PredictionMention | null {
     }
   } catch {}
   return null;
+}
+
+/** Upcoming analyzed fixtures (kickoff within LOOKAHEAD_MS), nearest first — feeds image cards. */
+export function listUpcomingPredictions(limit = 3): PredictionMention[] {
+  const out: PredictionMention[] = [];
+  try {
+    const state = readJson<{ entries: Record<string, any> }>(STATE_PATH, { entries: {} });
+    const file = readJson<{ teams?: Record<string, { name: string }>; fixtures?: Fixture[] }>(FIXTURES_PATH, {});
+    const feedTeams = file.teams || {};
+    const now = Date.now();
+    const rows: Array<{ kick: number; m: PredictionMention }> = [];
+    for (const f of file.fixtures || []) {
+      if (!f?.slug) continue;
+      const entry = state.entries[f.slug];
+      if (!entry || typeof entry.pHome !== 'number' || typeof entry.pAway !== 'number') continue;
+      const kick = kickoffMs(f);
+      if (kick == null || kick < now || kick > now + LOOKAHEAD_MS) continue;
+      const home = teamName(f.home, feedTeams);
+      const away = teamName(f.away, feedTeams);
+      rows.push({
+        kick,
+        m: {
+          slug: f.slug,
+          home,
+          away,
+          league: f.league,
+          kickoffLabel: kickoffLabelMecca(f),
+          pHome: entry.pHome,
+          pAway: entry.pAway,
+          pDraw: typeof entry.pDraw === 'number' ? entry.pDraw : Math.max(0, 100 - entry.pHome - entry.pAway),
+          predictedScore: String(entry.predictedScore || ''),
+          postId: entry.postId,
+          label: `${home} × ${away}`,
+        },
+      });
+    }
+    rows.sort((a, b) => a.kick - b.kick);
+    for (const r of rows.slice(0, Math.max(1, Math.min(10, limit)))) out.push(r.m);
+  } catch {}
+  return out;
 }

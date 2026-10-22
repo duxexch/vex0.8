@@ -46,6 +46,9 @@ import {
   calendarPlan as growthCalendarPlan,
   waStats as growthWaStats,
   mutateLeads as growthMutateLeads,
+  buildCardHtml as growthBuildCardHtml,
+  renderPredictionCardPng as growthRenderCard,
+  cardPublicUrl as growthCardUrl,
 } from './server/growth';
 import {
   extractPrediction,
@@ -1449,10 +1452,10 @@ app.get('/api/admin/growth/wa/outbox', (_req, res) => {
 });
 
 // Generate today's manual batch (≤30 by default)
-app.post('/api/admin/growth/wa/batch', (req, res) => {
+app.post('/api/admin/growth/wa/batch', async (req, res) => {
   try {
     const limit = Math.min(50, Number(req.body?.limit) || 30);
-    const batch = growthBuildWaBatch(limit);
+    const batch = await growthBuildWaBatch(limit);
     res.json({ success: true, batch });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1484,7 +1487,7 @@ app.get('/api/admin/growth/calendar', (_req, res) => {
 });
 
 // Loopback-only outreach smoke test: import dummies → batch → report → mark → cleanup
-app.post('/api/growth/outreach-test', (req, res) => {
+app.post('/api/growth/outreach-test', async (req, res) => {
   const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
     || String(req.headers['x-real-ip'] || '').trim()
     || String(req.socket.remoteAddress || '').trim();
@@ -1499,7 +1502,7 @@ app.post('/api/growth/outreach-test', (req, res) => {
       ],
       'test_import'
     );
-    const batch = growthBuildWaBatch(5);
+    const batch = await growthBuildWaBatch(5);
     const report = growthClientReport(200).filter((c: any) => String(c.contact).includes('000001') || String(c.contact).includes('000002'));
     const marked = growthMarkWa(['01000000001'], 'sent');
     const statsAfterMark = growthWaStats();
@@ -1509,8 +1512,37 @@ app.post('/api/growth/outreach-test', (req, res) => {
         if ((leads[i].notes || '').includes('dummy-test')) leads.splice(i, 1);
       }
     });
-    const batchClean = growthBuildWaBatch(5);
+    const batchClean = await growthBuildWaBatch(5);
     res.json({ success: true, import: imp, batch, report_sample: report, marked, statsAfterMark, batchClean, calendar: growthCalendarPlan() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Prediction image card — public shareable 1080×1080 PNG (promo posts + WA batches)
+app.get('/api/prediction-card.png', async (req, res) => {
+  try {
+    const q = req.query;
+    const num = (v: any, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    const home = String(q.h || '').slice(0, 40);
+    const away = String(q.a || '').slice(0, 40);
+    if (!home || !away) return res.status(400).json({ error: 'h and a required' });
+    const m = {
+      league: String(q.lg || 'مباراة ودية').slice(0, 50),
+      home,
+      away,
+      pHome: Math.min(100, Math.max(0, num(q.ph, 45))),
+      pDraw: Math.min(100, Math.max(0, num(q.pd, 25))),
+      pAway: Math.min(100, Math.max(0, num(q.pa, 30))),
+      predictedScore: String(q.s || '').slice(0, 10),
+      kickoffLabel: String(q.ko || '').slice(0, 40),
+      slug: q.slug ? String(q.slug).slice(0, 90) : undefined,
+    };
+    const file = await growthRenderCard(m);
+    if (!file) return res.status(503).json({ error: 'RENDER_FAILED' });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.sendFile(file);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

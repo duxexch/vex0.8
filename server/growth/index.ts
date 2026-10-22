@@ -7,6 +7,7 @@ export * from './campaigns';
 export * from './intel';
 export * from './sender';
 export * from './outreach';
+export * from './predictionCards';
 
 import {
   listLeads,
