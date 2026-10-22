@@ -71,12 +71,12 @@ export function matchToCard(up: PredictionMention): CardMatch {
 function bar(label: string, pct: number, color: string): string {
   const w = Math.max(6, Math.min(100, pct));
   return `
-    <div style="margin:18px 0">
-      <div style="display:flex;justify-content:space-between;font-size:30px;color:#e2e8f0;font-weight:700;margin-bottom:10px">
+    <div style="margin:13px 0">
+      <div style="display:flex;justify-content:space-between;font-size:30px;color:#e2e8f0;font-weight:700;margin-bottom:9px">
         <span>${escHtml(label)}</span><span style="color:${color}">${Math.round(pct)}%</span>
       </div>
-      <div style="height:26px;background:#1e293b;border-radius:13px;overflow:hidden">
-        <div style="height:100%;width:${w}%;background:linear-gradient(90deg,${color},${color}cc);border-radius:13px"></div>
+      <div style="height:24px;background:#1e293b;border-radius:12px;overflow:hidden">
+        <div style="height:100%;width:${w}%;background:linear-gradient(90deg,${color},${color}cc);border-radius:12px"></div>
       </div>
     </div>`;
 }
@@ -91,16 +91,16 @@ export function buildCardHtml(m: CardMatch): string {
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
     width:1080px; height:1080px; overflow:hidden;
-    font-family:'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Noto Naskh Arabic', 'DejaVu Sans', Arial, sans-serif;
+    font-family:'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Noto Naskh Arabic', 'DejaVu Sans', 'Noto Color Emoji', Arial, sans-serif;
     background:
       radial-gradient(circle at 15% 10%, rgba(16,185,129,0.22), transparent 42%),
       radial-gradient(circle at 90% 90%, rgba(56,189,248,0.14), transparent 45%),
       linear-gradient(160deg, #0f172a 0%, #022c22 100%);
-    color:#f8fafc; padding:64px 70px; display:flex; flex-direction:column;
+    color:#f8fafc; padding:52px 70px; display:flex; flex-direction:column;
   }
 </style></head>
 <body>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:34px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:26px">
     <div style="font-size:44px;font-weight:900;letter-spacing:1px">
       <span style="color:#10b981">VEX</span> DEALS
     </div>
@@ -110,34 +110,34 @@ export function buildCardHtml(m: CardMatch): string {
     </div>
   </div>
 
-  <div style="text-align:center;margin-bottom:16px">
+  <div style="text-align:center;margin-bottom:14px">
     <span style="background:#1e293b;color:#94a3b8;padding:10px 30px;border-radius:999px;font-size:28px;font-weight:600">
       ${escHtml(m.league || 'مباراة ودية')}
     </span>
   </div>
 
-  <div style="display:flex;justify-content:center;align-items:center;gap:34px;margin:26px 0 10px">
-    <div style="font-size:64px;font-weight:900;max-width:400px;line-height:1.15" dir="auto">${escHtml(m.home)}</div>
+  <div style="display:flex;justify-content:center;align-items:center;gap:34px;margin:22px 0 8px">
+    <div style="font-size:60px;font-weight:900;max-width:400px;line-height:1.15" dir="auto">${escHtml(m.home)}</div>
     <div style="font-size:46px;color:#10b981;font-weight:900">VS</div>
-    <div style="font-size:64px;font-weight:900;max-width:400px;line-height:1.15" dir="auto">${escHtml(m.away)}</div>
+    <div style="font-size:60px;font-weight:900;max-width:400px;line-height:1.15" dir="auto">${escHtml(m.away)}</div>
   </div>
-  ${m.kickoffLabel ? `<div style="text-align:center;color:#94a3b8;font-size:30px;margin-bottom:22px">⏰ ${escHtml(m.kickoffLabel)}</div>` : '<div style="margin-bottom:22px"></div>'}
+  ${m.kickoffLabel ? `<div style="text-align:center;color:#94a3b8;font-size:30px;margin-bottom:18px">⏰ ${escHtml(m.kickoffLabel)}</div>` : '<div style="margin-bottom:18px"></div>'}
 
-  <div style="background:rgba(15,23,42,0.72);border:1px solid #1e293b;border-radius:28px;padding:38px 46px;margin-bottom:34px">
+  <div style="background:rgba(15,23,42,0.72);border:1px solid #1e293b;border-radius:28px;padding:30px 46px;margin-bottom:26px">
     ${bar(m.home, homePct, '#10b981')}
     ${bar('تعادل', drawPct, '#f59e0b')}
     ${bar(m.away, awayPct, '#38bdf8')}
   </div>
 
   <div style="display:flex;justify-content:center;gap:26px;align-items:center;margin-bottom:auto">
-    <div style="background:linear-gradient(135deg,#10b981,#059669);border-radius:24px;padding:28px 56px;
-                font-size:56px;font-weight:900;box-shadow:0 12px 40px rgba(16,185,129,0.35)">
+    <div style="background:linear-gradient(135deg,#10b981,#059669);border-radius:24px;padding:24px 52px;
+                font-size:52px;font-weight:900;box-shadow:0 12px 40px rgba(16,185,129,0.35)">
       ${escHtml(score)}
     </div>
     <div style="font-size:30px;color:#94a3b8;font-weight:600;line-height:1.4">النتيجة<br>المتوقعة</div>
   </div>
 
-  <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1e293b;padding-top:30px;margin-top:30px">
+  <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1e293b;padding-top:24px;margin-top:24px">
     <div style="font-size:28px;color:#94a3b8">📈 احتمالات محسوبة من Gemini AI</div>
     <div style="font-size:34px;font-weight:800;color:#10b981">vex.deals</div>
   </div>

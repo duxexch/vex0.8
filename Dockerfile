@@ -21,8 +21,8 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # System chromium for the news scraper / image fetcher (playwright-core drives it)
-# font-noto-arabic: Arabic glyphs for prediction image cards
-RUN apk add --no-cache chromium font-noto-arabic
+# font-noto-arabic + font-noto-emoji: glyphs for prediction image cards
+RUN apk add --no-cache chromium font-noto-arabic font-noto-emoji
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
 # Copy package files
