@@ -1486,6 +1486,35 @@ app.get('/api/admin/growth/calendar', (_req, res) => {
   }
 });
 
+// Loopback-only contact import (same handler as admin endpoint, no session needed for ops scripts)
+app.post('/api/growth/import-contacts', (req, res) => {
+  const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || String(req.headers['x-real-ip'] || '').trim()
+    || String(req.socket.remoteAddress || '').trim();
+  if (!isLoopbackOrPrivateIp(rawIp)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+  try {
+    const rows = req.body?.rows;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'rows array required' });
+    }
+    if (rows.length > 10000) return res.status(400).json({ error: 'max 10000 rows per import' });
+    const clean = rows
+      .map((r: any) => ({
+        name: String(r?.name || '').slice(0, 60),
+        phone: String(r?.phone || '').trim(),
+        note: String(r?.note || '').slice(0, 300),
+      }))
+      .filter((r: any) => r.phone);
+    const source = String(req.body?.source || 'wa_import').slice(0, 40);
+    const result = growthImportContacts(clean, source);
+    res.json({ success: true, result, wa: growthWaStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Loopback-only outreach smoke test: import dummies → batch → report → mark → cleanup
 app.post('/api/growth/outreach-test', async (req, res) => {
   const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
