@@ -1515,6 +1515,23 @@ app.post('/api/growth/import-contacts', (req, res) => {
   }
 });
 
+// Loopback-only WhatsApp batch trigger (ops scripts; admin UI uses the session-guarded route)
+app.post('/api/growth/wa-batch', async (req, res) => {
+  const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || String(req.headers['x-real-ip'] || '').trim()
+    || String(req.socket.remoteAddress || '').trim();
+  if (!isLoopbackOrPrivateIp(rawIp)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+  try {
+    const limit = Math.min(50, Number(req.body?.limit) || 30);
+    const batch = await growthBuildWaBatch(limit);
+    res.json({ success: true, batch });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Loopback-only outreach smoke test: import dummies → batch → report → mark → cleanup
 app.post('/api/growth/outreach-test', async (req, res) => {
   const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
