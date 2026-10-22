@@ -45,7 +45,7 @@ export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
       '/activity',
       '/unlucky-wall',
       '/lottery',
-      '/responsible-gaming',
+      '/responsible-gambling',
       '/legal',
     ],
   },
@@ -66,7 +66,7 @@ export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
       '/companies',
       '/wallets',
       '/ai-sports',
-      '/responsible-gaming',
+      '/responsible-gambling',
       '/legal',
     ],
   },
@@ -86,7 +86,7 @@ export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
       '/',
       '/companies',
       '/wallets',
-      '/responsible-gaming',
+      '/responsible-gambling',
       '/legal',
     ],
   },
@@ -113,7 +113,7 @@ export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
       '/activity',
       '/unlucky-wall',
       '/lottery',
-      '/responsible-gaming',
+      '/responsible-gambling',
       '/legal',
     ],
   },
@@ -277,7 +277,7 @@ export function generateSitemapXml(cleanHost: string): string {
         priority = '1.0';
       } else if (route === '/companies' || route === '/wallets' || route === '/ai-sports') {
         priority = '0.9';
-      } else if (route === '/responsible-gaming' || route === '/legal') {
+      } else if (route === '/responsible-gambling' || route === '/legal') {
         priority = '0.5';
         changefreq = 'weekly';
       }
@@ -357,7 +357,7 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
       title = `سحوبات اللوتري والجوائز الكبرى المباشرة | ${config.brandName}`;
       description = `اشترك في سحوبات اللوتري الذهبي اليومية والأسبوعية مجاناً مع فرص الفوز بآلاف الدولارات.`;
       break;
-    case '/responsible-gaming':
+    case '/responsible-gambling':
       title = `سياسة اللعب المسؤول وحماية المستخدم (18+) | ${config.brandName}`;
       description = `تلتزم منصة ${config.brandName} بمعايير اللعب المسؤول وتوفير أدوات الاستبعاد الذاتي والتوعية للبالغين 18+ فقط.`;
       break;
@@ -403,7 +403,7 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
         title: `Provably Fair Lottery & Daily Jackpot Draws | ${b}`,
         description: `Join free golden daily and weekly lottery draws with SHA-256 provably fair verification and big jackpots.`,
       },
-      '/responsible-gaming': {
+      '/responsible-gambling': {
         title: `Responsible Gambling Policy & Player Protection (18+) | ${b}`,
         description: `${b} is committed to responsible gambling standards, self-exclusion tools, and adult-only (18+) awareness.`,
       },
