@@ -38,6 +38,13 @@ import {
   sendCampaign as growthSendCampaign,
   generateCampaignCopy as growthGenerateCampaignCopy,
   classifyIntent as growthClassifyIntent,
+  importContacts as growthImportContacts,
+  clientReport as growthClientReport,
+  buildWaBatch as growthBuildWaBatch,
+  getTodayOutbox as growthTodayOutbox,
+  markWaContacts as growthMarkWa,
+  calendarPlan as growthCalendarPlan,
+  waStats as growthWaStats,
 } from './server/growth';
 import {
   extractPrediction,
@@ -1390,6 +1397,86 @@ app.post('/api/growth/simulate', async (req, res) => {
     if (!text) return res.status(400).json({ error: 'text required' });
     const intent = growthClassifyIntent(text);
     res.json({ success: true, intent });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- Outreach: contacts import, WA manual batches, report, calendar ----------------
+
+// Import a contacts file (rows: {name?, phone, note?}) into the WhatsApp manual track
+app.post('/api/admin/growth/import-contacts', (req, res) => {
+  try {
+    const rows = req.body?.rows;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'rows array required' });
+    }
+    if (rows.length > 10000) return res.status(400).json({ error: 'max 10000 rows per import' });
+    const clean = rows
+      .map((r: any) => ({
+        name: String(r?.name || r?.Name || '').slice(0, 60),
+        phone: String(r?.phone || r?.Phone || r?.number || r?.tel || '').trim(),
+        note: String(r?.note || r?.Note || r?.notes || '').slice(0, 300),
+      }))
+      .filter((r: any) => r.phone);
+    const source = String(req.body?.source || 'wa_import').slice(0, 40);
+    const result = growthImportContacts(clean, source);
+    res.json({ success: true, result, wa: growthWaStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Per-client opinion report (mood + intents + next action)
+app.get('/api/admin/growth/report', (req, res) => {
+  try {
+    const limit = Math.min(500, Number(req.query.limit) || 100);
+    const clients = growthClientReport(limit);
+    res.json({ success: true, clients, total: clients.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Today's WhatsApp manual outbox (batch file content + stats)
+app.get('/api/admin/growth/wa/outbox', (_req, res) => {
+  try {
+    res.json({ success: true, outbox: growthTodayOutbox() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate today's manual batch (≤30 by default)
+app.post('/api/admin/growth/wa/batch', (req, res) => {
+  try {
+    const limit = Math.min(50, Number(req.body?.limit) || 30);
+    const batch = growthBuildWaBatch(limit);
+    res.json({ success: true, batch });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark batch contacts sent/skipped after the admin sends them by hand
+app.post('/api/admin/growth/wa/mark', (req, res) => {
+  try {
+    const phones = req.body?.phones;
+    const status = req.body?.status === 'skipped' ? 'skipped' : 'sent';
+    if (!Array.isArray(phones) || phones.length === 0) {
+      return res.status(400).json({ error: 'phones array required' });
+    }
+    const n = growthMarkWa(phones.map((p: any) => String(p)).slice(0, 200), status);
+    res.json({ success: true, marked: n, wa: growthWaStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3-month promotion calendar state
+app.get('/api/admin/growth/calendar', (_req, res) => {
+  try {
+    res.json({ success: true, calendar: growthCalendarPlan(), wa: growthWaStats() });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

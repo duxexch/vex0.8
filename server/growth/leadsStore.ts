@@ -48,6 +48,16 @@ export interface Lead {
   needs_human?: boolean;
   notes?: string;
   touchpoints: LeadTouch[]; // capped
+  // outreach module (WhatsApp managed manual track + per-client intelligence)
+  channel?: 'tg' | 'wa_import';
+  mood?: 'positive' | 'neutral' | 'negative';
+  mood_at?: number;
+  last_inbound?: string;
+  intents?: Record<string, number>;
+  imported_at?: number;
+  wa_status?: 'pending' | 'queued' | 'sent' | 'skipped';
+  wa_batch?: string;
+  wa_sent_at?: number;
 }
 
 export interface GrowthSettings {
@@ -353,4 +363,175 @@ export function recordDm(leadIdStr: string): void {
 
 export function dmStats(): { date: string; count: number } {
   return { date: dailySent.date, count: dailySent.count };
+}
+
+// ------------------- inbound intelligence (per-client opinions) -------------------
+
+export function setInbound(
+  tgUserId: number,
+  mood: 'positive' | 'negative' | 'neutral',
+  text: string,
+  intent?: string
+): void {
+  mutateLeads((leads) => {
+    const lead = leads.find((l) => l.tg_user_id === tgUserId);
+    if (!lead) return;
+    lead.mood = mood;
+    lead.mood_at = Date.now();
+    lead.last_inbound = text.slice(0, 300);
+    if (intent) {
+      lead.intents = lead.intents || {};
+      lead.intents[intent] = (lead.intents[intent] || 0) + 1;
+    }
+  });
+}
+
+// ------------------- WhatsApp imported contacts (managed manual outreach) -------------------
+
+function normPhone(phone: string): string {
+  let n = (phone || '').replace(/[^\d+]/g, '').replace(/\+/g, '');
+  if (n.startsWith('00')) n = n.slice(2);
+  return n;
+}
+
+function phoneKey(phone: string): string {
+  const digits = normPhone(phone).replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : digits.replace(/^0+/, '');
+}
+
+function waTgId(phone: string): number {
+  const key = phoneKey(phone);
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return -(Math.abs(h) % 1000000000) - 1;
+}
+
+export function upsertWaContact(
+  rows: { name?: string; phone?: string; note?: string }[],
+  source = 'wa_import'
+): { created: number; merged: number; skipped: number } {
+  const leads = loadLeads();
+  const now = Date.now();
+  let created = 0;
+  let merged = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    const phone = normPhone(r.phone || '');
+    if (phone.replace(/\D/g, '').length < 8) {
+      skipped++;
+      continue;
+    }
+    const key = phoneKey(phone);
+    let lead = leads.find((l) => l.phone && phoneKey(l.phone) === key);
+    if (lead) {
+      if (!lead.channel) lead.channel = 'wa_import';
+      if (r.name && !lead.first_name) lead.first_name = r.name.slice(0, 60);
+      if (r.note) lead.notes = ((lead.notes ? lead.notes + ' | ' : '') + r.note).slice(0, 300);
+      if (!lead.sources.includes(source)) lead.sources.push(source);
+      if (!lead.imported_at) lead.imported_at = now;
+      if (!lead.wa_status) lead.wa_status = 'pending';
+      merged++;
+      continue;
+    }
+    const tgId = waTgId(phone);
+    if (leads.some((l) => l.tg_user_id === tgId)) {
+      skipped++;
+      continue;
+    }
+    leads.push({
+      id: `wa_${key}`,
+      tg_user_id: tgId,
+      first_name: (r.name || '').slice(0, 60) || undefined,
+      phone,
+      lang: 'ar',
+      type: 'unknown',
+      status: 'new',
+      started: false,
+      score: 0,
+      interests: { lottery: 0, predictions: 0, cashback: 0, agents: 0 },
+      source,
+      sources: [source],
+      active_hours: new Array(24).fill(0),
+      first_seen_at: now,
+      last_touch_at: now,
+      drip_step: 0,
+      drip_last_at: 0,
+      drip_sent: [],
+      invites: 0,
+      group_replies: {},
+      channel: 'wa_import',
+      imported_at: now,
+      wa_status: 'pending',
+      notes: r.note?.slice(0, 300),
+      touchpoints: [{ at: now, kind: 'contact', detail: 'imported', source }],
+    });
+    created++;
+  }
+  leadsCache = leads;
+  saveLeads();
+  return { created, merged, skipped };
+}
+
+export function listWaContacts(status?: string): Lead[] {
+  return loadLeads().filter(
+    (l) => l.channel === 'wa_import' && (!status || l.wa_status === (status as any))
+  );
+}
+
+export function markWa(phones: string[], status: 'sent' | 'skipped'): number {
+  let n = 0;
+  mutateLeads((leads) => {
+    const now = Date.now();
+    for (const p of phones) {
+      const key = phoneKey(p);
+      const lead = leads.find((l) => l.phone && phoneKey(l.phone) === key);
+      if (lead && lead.wa_status !== 'sent' && lead.wa_status !== 'skipped') {
+        lead.wa_status = status;
+        if (status === 'sent') lead.wa_sent_at = now;
+        lead.last_touch_at = now;
+        lead.touchpoints.push({ at: now, kind: 'campaign', detail: `wa_${status}` });
+        if (lead.touchpoints.length > MAX_TOUCHPOINTS) {
+          lead.touchpoints = lead.touchpoints.slice(-MAX_TOUCHPOINTS);
+        }
+        n++;
+      }
+    }
+  });
+  return n;
+}
+
+/** Pending contacts for the next manual batch; stale queued (unsent) roll back to pending. */
+export function waQueueForBatch(limit: number): Lead[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const leads = loadLeads();
+  for (const l of leads) {
+    if (l.channel === 'wa_import' && l.wa_status === 'queued' && l.wa_batch !== today) {
+      l.wa_status = 'pending';
+    }
+  }
+  saveLeads();
+  return leads
+    .filter((l) => l.channel === 'wa_import' && l.wa_status === 'pending')
+    .slice(0, limit);
+}
+
+export function setWaQueued(ids: string[], batch: string): void {
+  mutateLeads((leads) => {
+    for (const l of leads) {
+      if (ids.includes(l.id)) {
+        l.wa_status = 'queued';
+        l.wa_batch = batch;
+      }
+    }
+  });
+}
+
+export function waStats(): { total: number; pending: number; queued: number; sent: number; skipped: number } {
+  const leads = loadLeads().filter((l) => l.channel === 'wa_import');
+  const by = { pending: 0, queued: 0, sent: 0, skipped: 0 };
+  for (const l of leads) by[l.wa_status || 'pending']++;
+  return { total: leads.length, ...by };
 }

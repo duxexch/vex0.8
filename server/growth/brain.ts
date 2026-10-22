@@ -274,3 +274,19 @@ export const AGENT_STEPS = [
   { key: 'a0', afterHours: 0, interest: 'agents' as const },
   { key: 'a3', afterHours: 72, interest: 'agents' as const },
 ];
+
+// --------------------------- per-client sentiment ---------------------------
+
+const POS_RE =
+  /تمام|تسلم|حلو|ممتاز|رائع|كويس|جميل|ثانك|thank|great|nice|good|perfect|love|أحسن|يا سلام|شكرا|شكرًا|مشكور|يعطيك|بطل|احسن|أحلى|فوق|معلم|كويسه/i;
+const NEG_RE =
+  /زعلان|مشكل|كذب|غش|نصب|مضروب|fraud|scam|hate|awful|terrible|مش راضي|حظر|قفل|ما وصل|مش شغال|سيء|ندمان|ندمت|استنزاف|waste|ملل|زهقت|مللت|disappointed|angry|bad experience/i;
+
+export function classifySentiment(text: string): 'positive' | 'negative' | 'neutral' {
+  const t = (text || '').slice(0, 500);
+  const p = (t.match(new RegExp(POS_RE.source, 'gi')) || []).length;
+  const n = (t.match(new RegExp(NEG_RE.source, 'gi')) || []).length;
+  if (n > 0 && n >= p) return 'negative';
+  if (p > 0) return 'positive';
+  return 'neutral';
+}

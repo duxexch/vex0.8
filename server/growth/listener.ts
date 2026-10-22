@@ -1,6 +1,7 @@
 import {
   classifyIntent,
   classifyIntentSmart,
+  classifySentiment,
   generateGroupReply,
   IntentResult,
 } from './brain';
@@ -12,6 +13,7 @@ import {
   getSettings,
   dropSeen,
   markDrop,
+  setInbound,
   Lead,
 } from './leadsStore';
 import { sendGrowthDm } from './sender';
@@ -76,6 +78,7 @@ export async function onGroupMessage(message: any): Promise<ListenerResult | nul
     type: intent.is_agent ? 'agent' : undefined,
     last_signal: text,
   });
+  setInbound(from.id, classifySentiment(text), text, intent.intent);
 
   const hasTopic = intent.topics.length > 0;
   if (hasTopic || intent.intent === 'question' || intent.intent === 'greeting') {
@@ -134,7 +137,7 @@ export async function onGroupMessage(message: any): Promise<ListenerResult | nul
 
 export async function onPrivateMessage(message: any): Promise<void> {
   const settings = getSettings();
-  if (!settings.listen_enabled || !settings.auto_reply) return;
+  if (!settings.listen_enabled) return;
   const text: string = message?.text || '';
   if (!text || text.startsWith('/')) return;
   const from = message?.from;
@@ -154,6 +157,7 @@ export async function onPrivateMessage(message: any): Promise<void> {
     type: intent.is_agent ? 'agent' : undefined,
     last_signal: text,
   });
+  setInbound(from.id, classifySentiment(text), text, intent.intent);
   addTouch(from.id, intent.wants_reply ? 'reply' : 'signal', text.slice(0, 120), 'dm');
   for (const t of intent.topics) {
     const key = INTEREST_MAP[t];
@@ -162,6 +166,7 @@ export async function onPrivateMessage(message: any): Promise<void> {
   if (intent.is_agent) {
     lead.needs_human = true;
   }
+  if (!settings.auto_reply) return;
 
   // DM replies: same cooldown map keyed by chat = user id
   const now = Date.now();

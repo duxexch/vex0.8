@@ -6,6 +6,7 @@ export * from './funnel';
 export * from './campaigns';
 export * from './intel';
 export * from './sender';
+export * from './outreach';
 
 import {
   listLeads,
@@ -18,6 +19,7 @@ import {
 import { initSender, SendFn } from './sender';
 import { setIntelNotifier, startIntelTimers } from './intel';
 import { setLotteryProvider, startFunnel } from './funnel';
+import { startOutreachTimers } from './outreach';
 import { onGroupMessage, onPrivateMessage } from './listener';
 import { recordReferral } from './campaigns';
 
@@ -27,7 +29,10 @@ export interface GrowthInit {
   getLotteryState: () => { jackpotAmount: number } | null;
 }
 
+let adminNotify: ((text: string) => void) | null = null;
+
 export function initGrowth(opts: GrowthInit): void {
+  adminNotify = opts.notifyAdmin;
   initSender(opts.send, opts.notifyAdmin);
   setIntelNotifier(opts.notifyAdmin);
   setLotteryProvider(opts.getLotteryState);
@@ -36,6 +41,7 @@ export function initGrowth(opts: GrowthInit): void {
 export function startGrowth(): void {
   startFunnel();
   startIntelTimers();
+  if (adminNotify) startOutreachTimers(adminNotify);
   console.log(`[Growth] engine started — leads=${listLeads().length}`);
 }
 
