@@ -99,8 +99,18 @@ function topInterestLine(l: Lead): string {
   return 'مهتم بمحتوى المراهنات الذكي';
 }
 
+/** Greeting name — falls back to a friendly default when the saved "name" is a number/junk. */
+function greetingName(l: Lead): string {
+  const n = (l.first_name || '').trim();
+  if (!n) return 'صديقنا';
+  const letters = (n.match(/[A-Za-z\u0600-\u06FF]/g) || []).length;
+  const digits = (n.match(/\d/g) || []).length;
+  if (letters < 2 || digits >= letters) return 'صديقنا'; // "0100…", "7486", "Mo1217", "…L"
+  return n;
+}
+
 export function waMessage(l: Lead): string {
-  const name = l.first_name || 'صديقنا';
+  const name = greetingName(l);
   const interest = topInterestLine(l);
   const idx = Math.abs((l.phone || l.id).split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % WA_TEMPLATES.length;
   return WA_TEMPLATES[idx](name, interest);
