@@ -91,7 +91,7 @@ export function buildCardHtml(m: CardMatch): string {
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
     width:1080px; height:1080px; overflow:hidden;
-    font-family:'Segoe UI', Tahoma, 'Noto Sans Arabic', Arial, sans-serif;
+    font-family:'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Noto Naskh Arabic', 'DejaVu Sans', Arial, sans-serif;
     background:
       radial-gradient(circle at 15% 10%, rgba(16,185,129,0.22), transparent 42%),
       radial-gradient(circle at 90% 90%, rgba(56,189,248,0.14), transparent 45%),
