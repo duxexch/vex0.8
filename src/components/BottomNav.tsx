@@ -91,12 +91,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       id="bottom-nav"
       role="tablist"
       aria-label="App Navigation"
-      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 w-full select-none"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white w-full select-none border-t border-slate-200/70 shadow-[0_-0.5px_0_rgba(0,0,0,0.04)]"
       style={{
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)',
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
       }}
     >
-      <div className="w-full flex justify-around items-stretch max-w-lg mx-auto px-1 pt-1.5 pb-0.5">
+      {/* Telegram-style tab bar: equal cells, icon over label, color-only active state */}
+      <div className="w-full flex items-stretch max-w-lg mx-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = item.isActive;
@@ -108,21 +109,21 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               aria-selected={active}
               aria-label={item.label}
               onClick={item.onClick}
-              className={`relative flex-1 min-w-0 flex flex-col items-center justify-center gap-1 min-h-[50px] py-1.5 px-0.5 rounded-lg transition-all duration-150 cursor-pointer active:scale-90 ${
-                active ? 'text-emerald-600' : 'text-slate-400 hover:text-slate-600'
+              className={`relative flex-1 min-w-0 h-[54px] flex flex-col items-center justify-center gap-[3px] transition-colors duration-150 cursor-pointer active:opacity-50 ${
+                active ? 'text-emerald-600' : 'text-slate-400 hover:text-slate-500'
               }`}
             >
-              {/* Icon (Telegram-style: color-only active state, no pill) */}
+              {/* Icon */}
               <span className="relative flex items-center justify-center">
                 <Icon
-                  className={`w-[22px] h-[22px] transition-all duration-150 ${
-                    active ? 'stroke-[2.3] scale-105' : 'stroke-[1.7]'
+                  className={`w-[25px] h-[25px] transition-all duration-150 ${
+                    active ? 'stroke-[2.4]' : 'stroke-[1.7]'
                   }`}
                 />
 
-                {/* Badge for notifications or pending requests */}
+                {/* Telegram-style red badge */}
                 {item.badge && (
-                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-0.5 bg-rose-600 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-xs tabular-nums">
+                  <span className="absolute -top-1 -right-2.5 min-w-[16px] h-[16px] px-1 bg-[#FF3B30] text-white text-[10px] font-semibold rounded-full flex items-center justify-center tabular-nums ring-2 ring-white">
                     {item.badge}
                   </span>
                 )}
@@ -130,8 +131,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 
               {/* Label */}
               <span
-                className={`text-[10px] leading-none tracking-tight truncate max-w-[72px] ${
-                  active ? 'font-bold text-emerald-700' : 'font-medium text-slate-400'
+                className={`text-[10.5px] leading-none whitespace-nowrap ${
+                  active ? 'font-semibold' : 'font-normal'
                 }`}
               >
                 {item.label}

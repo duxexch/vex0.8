@@ -392,13 +392,15 @@ input, textarea {
 .animate-ticker-ltr {
   display: flex;
   width: max-content;
-  animation: tickerLtr 32s linear infinite;
+  animation: tickerLtr 40s linear infinite;
+  will-change: transform;
 }
 
 .animate-ticker-rtl {
   display: flex;
   width: max-content;
-  animation: tickerRtl 32s linear infinite;
+  animation: tickerRtl 40s linear infinite;
+  will-change: transform;
 }
 
 .animate-ticker-ltr:hover,
