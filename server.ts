@@ -45,6 +45,7 @@ import {
   markWaContacts as growthMarkWa,
   calendarPlan as growthCalendarPlan,
   waStats as growthWaStats,
+  mutateLeads as growthMutateLeads,
 } from './server/growth';
 import {
   extractPrediction,
@@ -1477,6 +1478,39 @@ app.post('/api/admin/growth/wa/mark', (req, res) => {
 app.get('/api/admin/growth/calendar', (_req, res) => {
   try {
     res.json({ success: true, calendar: growthCalendarPlan(), wa: growthWaStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Loopback-only outreach smoke test: import dummies → batch → report → mark → cleanup
+app.post('/api/growth/outreach-test', (req, res) => {
+  const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || String(req.headers['x-real-ip'] || '').trim()
+    || String(req.socket.remoteAddress || '').trim();
+  if (!isLoopbackOrPrivateIp(rawIp)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+  try {
+    const imp = growthImportContacts(
+      [
+        { name: 'اختبار احمد', phone: '01000000001', note: 'dummy-test' },
+        { name: 'اختبار سارة', phone: '01000000002', note: 'dummy-test' },
+      ],
+      'test_import'
+    );
+    const batch = growthBuildWaBatch(5);
+    const report = growthClientReport(200).filter((c: any) => String(c.contact).includes('000001') || String(c.contact).includes('000002'));
+    const marked = growthMarkWa(['01000000001'], 'sent');
+    const statsAfterMark = growthWaStats();
+    // cleanup dummies + regenerate today's batch clean
+    growthMutateLeads((leads: any[]) => {
+      for (let i = leads.length - 1; i >= 0; i--) {
+        if ((leads[i].notes || '').includes('dummy-test')) leads.splice(i, 1);
+      }
+    });
+    const batchClean = growthBuildWaBatch(5);
+    res.json({ success: true, import: imp, batch, report_sample: report, marked, statsAfterMark, batchClean, calendar: growthCalendarPlan() });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
