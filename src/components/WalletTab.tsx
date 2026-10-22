@@ -604,7 +604,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                     type="button"
                     onClick={() => onGoToTransfer(wallet.company_id)}
                     disabled={wallet.frozen <= 0}
-                    className="h-8 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-800 text-[11px] font-bold border border-slate-200 flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    className="h-8 min-w-0 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-800 text-[11px] font-bold border border-slate-200 flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
                   >
                     <ArrowUpRight className="w-3 h-3 text-amber-600 shrink-0" />
                     <span className="truncate">{t.transferBtn}</span>
@@ -613,7 +613,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                   <button
                     type="button"
                     onClick={() => onGoToReferral(wallet.company_id)}
-                    className="h-8 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold border border-slate-200 flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    className="h-8 min-w-0 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold border border-slate-200 flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
                   >
                     <UserPlus className="w-3 h-3 text-emerald-600 shrink-0" />
                     <span className="truncate">{t.inviteBtn}</span>
@@ -622,7 +622,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                   <button
                     type="button"
                     onClick={() => onRequestComp(wallet.company_id)}
-                    className="h-8 px-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    className="h-8 min-w-0 px-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
                   >
                     <DollarSign className="w-3 h-3 shrink-0" />
                     <span className="truncate">{lang === 'ar' ? 'تعويض' : lang === 'es' ? 'Comp' : lang === 'ru' ? 'Возврат' : 'Comp'}</span>

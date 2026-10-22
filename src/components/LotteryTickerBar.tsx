@@ -235,7 +235,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
 
       {/* Trailing CTA */}
       <div className="relative z-20 shrink-0 h-full flex items-center px-2 bg-gradient-to-l from-slate-950 via-slate-950/90 to-transparent text-amber-400 font-bold text-[10px] gap-1 group-hover:text-amber-300 transition-colors">
-        <span className="hidden xs:inline">{isAr ? 'العب الآن' : 'Play Now'}</span>
+        <span className="hidden sm:inline">{isAr ? 'العب الآن' : 'Play Now'}</span>
         {isAr ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
       </div>
     </div>

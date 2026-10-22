@@ -39,7 +39,7 @@ export const Toast: React.FC<ToastProps> = ({ message, lang = 'ar', onClose }) =
             <div className="w-6 h-6 rounded-full bg-emerald-500/25 text-emerald-400 flex items-center justify-center shrink-0">
               <Check className="w-3.5 h-3.5 stroke-[3]" aria-hidden="true" />
             </div>
-            <span className="text-xs sm:text-sm font-bold tracking-tight text-white whitespace-nowrap">
+            <span className="text-xs sm:text-sm font-bold tracking-tight text-white max-w-[80vw] leading-snug text-balance">
               {displayMsg}
             </span>
             {onClose && (

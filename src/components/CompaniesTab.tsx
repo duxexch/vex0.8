@@ -100,6 +100,19 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Readable text color (dark/white) for a brand color background
+  const readableText = (hex: string) => {
+    try {
+      const h = hex.replace('#', '');
+      const r = parseInt(h.slice(0, 2), 16);
+      const g = parseInt(h.slice(2, 4), 16);
+      const b = parseInt(h.slice(4, 6), 16);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b > 150 ? '#0f172a' : '#ffffff';
+    } catch {
+      return '#ffffff';
+    }
+  };
+
   // Check if exclusive single-brand mode is active
   const isExclusive =
     branding?.exclusiveMode &&
@@ -614,42 +627,6 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                         <span>{isAr ? 'تطبيقات الموبايل' : 'Mobile Apps'}</span>
                       </button>
                     </div>
-
-                    {/* View Mode Switcher (Grid vs Table) */}
-                    <div className="flex items-center justify-end gap-1.5 self-end sm:self-auto">
-                      <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            setViewMode('grid');
-                          }}
-                          className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                            viewMode === 'grid'
-                              ? 'bg-white text-emerald-700 shadow-2xs'
-                              : 'text-slate-500 hover:text-slate-800'
-                          }`}
-                          title={isAr ? 'عرض البطاقات' : 'Grid View'}
-                        >
-                          <LayoutGrid className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            setViewMode('table');
-                          }}
-                          className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                            viewMode === 'table'
-                              ? 'bg-white text-emerald-700 shadow-2xs'
-                              : 'text-slate-500 hover:text-slate-800'
-                          }`}
-                          title={isAr ? 'عرض الجدول' : 'Table View'}
-                        >
-                          <List className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 </motion.div>
               )}
@@ -684,10 +661,49 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* COMPANIES LIST - ADAPTIVE GRID OR DESKTOP TABLE VIEW          */}
+      {/* COMPANIES LIST - UNIFIED LOTTERY-STYLE CARDS (GRID OR LIST)   */}
       {/* ------------------------------------------------------------- */}
       {(!exclusiveCompany || showAllPartners) && (
         <>
+          {/* View mode switcher — always visible */}
+          <div className="flex items-center justify-between gap-2 bg-white/80 backdrop-blur-md border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
+            <span className="text-[11px] font-black text-slate-500 tracking-tight">
+              {isAr ? 'طريقة العرض' : 'View mode'}
+            </span>
+            <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setViewMode('grid');
+                }}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'grid'
+                    ? 'bg-white text-emerald-700 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title={isAr ? 'عرض البطاقات' : 'Grid View'}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setViewMode('table');
+                }}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-white text-emerald-700 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title={isAr ? 'عرض القائمة' : 'List View'}
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
           {filtered.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-3 shadow-2xs">
               <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
@@ -716,192 +732,170 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
             </div>
           ) : viewMode === 'table' ? (
             /* ========================================================= */
-            /* DESKTOP & TABLET PROFESSIONAL DATA TABLE VIEW             */
+            /* FULL-WIDTH HORIZONTAL LIST CARDS (LOTTERY STYLE)           */
             /* ========================================================= */
-            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold text-[11px] uppercase tracking-wider">
-                      <th className="py-3 px-4 text-start">{isAr ? 'الشركة والمنصة' : 'Company'}</th>
-                      <th className="py-3 px-4 text-start">{isAr ? 'كود البرومو المعتمد' : 'Promo Code'}</th>
-                      <th className="py-3 px-4 text-start">{isAr ? 'حالة الحساب' : 'Account Status'}</th>
-                      <th className="py-3 px-4 text-start">{isAr ? 'حماية التعويض' : 'Protection'}</th>
-                      <th className="py-3 px-4 text-center">{isAr ? 'الإجراءات السريعة' : 'Actions'}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {sortedFiltered
-                      .filter((c) => (exclusiveCompany && !showAllPartners ? c.id === exclusiveCompany.id : true))
-                      .map((company) => {
-                        const userAccount = accounts.find((a) => a.company_id === company.id);
-                        const isRegistered = userAccount?.status === 'active';
-                        const isPending = userAccount?.status === 'pending';
-                        const loc = getLocalizedCompany(company, lang);
+            <div className="flex flex-col gap-3">
+              {sortedFiltered.map((company) => {
+                const userAccount = accounts.find((a) => a.company_id === company.id);
+                const isRegistered = userAccount?.status === 'active';
+                const isPending = userAccount?.status === 'pending';
+                const loc = getLocalizedCompany(company, lang);
 
-                        return (
-                          <tr key={company.id} className="hover:bg-slate-50/70 transition-colors">
-                            {/* Company Branding */}
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-3">
-                                <div className="rounded-xl border border-slate-200/80 p-0.5 bg-slate-50 shrink-0 shadow-2xs">
-                                  <CompanyBrandLogo companyName={company.name} size="md" className="rounded-lg" />
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-1.5">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); toggleFavorite(company.id); }}
-                                      className="text-slate-300 hover:text-amber-400 transition-colors cursor-pointer"
-                                    >
-                                      <Star
-                                        className={`w-3.5 h-3.5 ${favorites.includes(company.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                                      />
-                                    </button>
-                                    <span className="font-bold text-slate-900 text-sm">{loc.name}</span>
-                                    {company.badge && (
-                                      <span
-                                        className="text-[9px] font-black px-1.5 py-0.5 rounded border shrink-0"
-                                        style={{
-                                          backgroundColor: `${company.color}15`,
-                                          borderColor: `${company.color}35`,
-                                          color: company.color,
-                                        }}
-                                      >
-                                        {company.badge}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="text-[11px] text-slate-500 line-clamp-1 max-w-xs">{loc.description}</span>
-                                </div>
-                              </div>
-                            </td>
+                return (
+                  <div
+                    key={company.id}
+                    className="relative overflow-hidden rounded-2xl p-3.5 sm:p-4 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col sm:flex-row sm:items-center gap-3 group"
+                    style={{
+                      background: 'linear-gradient(150deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))',
+                      border: `1px solid ${company.color}55`,
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                    <div
+                      className="absolute -top-10 -right-10 w-24 h-24 rounded-full blur-2xl pointer-events-none opacity-30"
+                      style={{ background: company.color }}
+                    />
+                    <div className="absolute top-0 inset-x-0 h-0.5" style={{ background: company.color }} />
 
-                            {/* Promo Code with Copy */}
-                            <td className="py-3 px-4">
-                              <div
-                                onClick={() => handleCopyPromo(company)}
-                                className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border cursor-pointer hover:shadow-2xs transition-all"
-                                style={{
-                                  backgroundColor: `${company.color}08`,
-                                  borderColor: `${company.color}30`,
-                                }}
-                                title={t.copyPromo}
-                              >
-                                <span className="font-mono font-black text-xs" style={{ color: company.color }}>
-                                  {company.promo_code}
-                                </span>
-                                {copiedId === company.id ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5 text-slate-400 hover:text-slate-700" />
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Account Status */}
-                            <td className="py-3 px-4">
-                              {userAccount ? (
-                                <div className="space-y-0.5">
-                                  <span className="font-mono font-bold text-xs text-slate-900 block">
-                                    {userAccount.account_number}
-                                  </span>
-                                  {isRegistered ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                                      <span>{t.registeredBadge}</span>
-                                    </span>
-                                  ) : isPending ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                      <Clock className="w-3 h-3 text-amber-600" />
-                                      <span>{t.pendingBadge}</span>
-                                    </span>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenRegister(company)}
-                                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 transition-colors cursor-pointer"
-                                >
-                                  {t.linkAccount}
-                                </button>
-                              )}
-                            </td>
-
-                            {/* Protection Perk */}
-                            <td className="py-3 px-4">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>{isAr ? 'حماية خسائر فورية' : 'Loss Cashback'}</span>
+                    {/* Identity: star + logo + name + badge + account */}
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1 relative">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(company.id); }}
+                        className="text-slate-600 hover:text-amber-400 transition-colors cursor-pointer shrink-0 -ml-1 p-1"
+                      >
+                        <Star
+                          className={`w-4 h-4 ${favorites.includes(company.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                        />
+                      </button>
+                      <div className="rounded-xl bg-white/95 p-0.5 shadow-md shrink-0">
+                        <CompanyBrandLogo companyName={company.name} size="md" className="rounded-lg" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="font-black text-white text-sm tracking-tight truncate">{loc.name}</h3>
+                          {company.badge && (
+                            <span
+                              className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0"
+                              style={{
+                                backgroundColor: company.color,
+                                color: readableText(company.color),
+                              }}
+                            >
+                              {company.badge}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate font-medium mt-0.5">{loc.description}</p>
+                        {userAccount && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="font-mono font-bold text-[10px] text-slate-300">{userAccount.account_number}</span>
+                            {isRegistered ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                                <ShieldCheck className="w-3 h-3" />
+                                <span>{t.registeredBadge}</span>
                               </span>
-                            </td>
+                            ) : isPending ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                <Clock className="w-3 h-3" />
+                                <span>{t.pendingBadge}</span>
+                              </span>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-                            {/* Action Buttons */}
-                            <td className="py-3 px-4 text-center">
-                              <div className="inline-flex items-center justify-center gap-1.5">
-                                <a
-                                  href={company.affiliate_link || '#'}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="h-8 px-2.5 rounded-lg text-xs font-bold text-white transition-transform active:scale-95 flex items-center gap-1 shadow-2xs"
-                                  style={{ backgroundColor: company.color }}
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  <span>{isAr ? 'الموقع' : 'Site'}</span>
-                                </a>
+                    {/* Promo code chip */}
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPromo(company)}
+                      className="relative flex items-center gap-2 bg-slate-950/70 border rounded-xl px-3 py-1.5 shrink-0 cursor-pointer transition-all active:scale-98"
+                      style={{ borderColor: `${company.color}45` }}
+                      title={t.copyPromo}
+                    >
+                      <div className="text-start leading-tight">
+                        <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">
+                          {t.promoCode}
+                        </span>
+                        <span
+                          className="font-mono font-black text-xs tracking-wider block"
+                          style={{ color: company.color }}
+                        >
+                          {company.promo_code}
+                        </span>
+                      </div>
+                      {copiedId === company.id ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </button>
 
-                                {company.app_link && (
-                                  <a
-                                    href={company.app_link}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="h-8 px-2 rounded-lg text-xs font-bold border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 transition-colors"
-                                    title={t.appBtn}
-                                  >
-                                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                                  </a>
-                                )}
+                    {/* Actions */}
+                    <div className="grid grid-cols-2 sm:flex items-center gap-1.5 relative shrink-0">
+                      <a
+                        href={company.affiliate_link || '#'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="h-8 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 active:scale-95 shadow-md cursor-pointer"
+                        style={{
+                          background: `linear-gradient(135deg, ${company.color}, ${company.color}d0)`,
+                          color: readableText(company.color),
+                        }}
+                      >
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{t.registerAndSite}</span>
+                      </a>
 
-                                {isRegistered && (
-                                  <button
-                                    type="button"
-                                    onClick={() => onRequestComp(company.id)}
-                                    className="h-8 px-2.5 rounded-lg text-xs font-bold border flex items-center gap-1 transition-colors cursor-pointer"
-                                    style={{
-                                      color: company.color,
-                                      borderColor: `${company.color}40`,
-                                      backgroundColor: `${company.color}10`,
-                                    }}
-                                  >
-                                    <PlusCircle className="w-3.5 h-3.5" />
-                                    <span>{isAr ? 'تعويض' : 'Claim'}</span>
-                                  </button>
-                                )}
+                      {company.app_link && (
+                        <a
+                          href={company.app_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="h-8 px-3 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer"
+                        >
+                          <Download className="w-3 h-3 shrink-0" />
+                          <span className="truncate">{t.appBtn}</span>
+                        </a>
+                      )}
 
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenDetails(company)}
-                                  className="h-8 px-2 rounded-lg text-xs font-bold border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 flex items-center transition-colors cursor-pointer"
-                                  title={t.detailsBtn}
-                                >
-                                  <Info className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
+                      <button
+                        type="button"
+                        onClick={() => (isRegistered ? onRequestComp(company.id) : onOpenRegister(company))}
+                        className="h-8 px-3 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        {isRegistered ? (
+                          <>
+                            <PlusCircle className="w-3 h-3 text-emerald-400" />
+                            <span className="truncate">{t.requestCompensation}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Edit3 className="w-3 h-3" />
+                            <span className="truncate">{t.linkAccount}</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onOpenDetails(company)}
+                        className="h-8 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-white/10 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Info className="w-3 h-3" />
+                        <span className="truncate">{t.detailsBtn}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             /* ========================================================= */
-            /* BALANCED RESPONSIVE GRID VIEW (4 COLUMNS ON XL SCREENS)   */
+            /* UNIFIED LOTTERY-STYLE GRID CARDS                          */
             /* ========================================================= */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {sortedFiltered
-                .filter((c) => (exclusiveCompany && !showAllPartners ? c.id === exclusiveCompany.id : true))
                 .map((company) => {
                   const userAccount = accounts.find((a) => a.company_id === company.id);
                   const isRegistered = userAccount?.status === 'active';
@@ -911,27 +905,38 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                   return (
                     <div
                       key={company.id}
-                      className="bg-white border border-slate-200 hover:border-slate-300 rounded-2xl p-4 transition-all duration-200 shadow-2xs hover:shadow-md flex flex-col justify-between relative overflow-hidden h-full group spotlight-surface tilt-card-3d"
+                      className="relative overflow-hidden rounded-2xl p-4 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col justify-between h-full group spotlight-surface transition-all duration-200"
+                      style={{
+                        background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))',
+                        border: `1px solid ${company.color}55`,
+                      }}
                     >
+                      {/* Sheen + brand glow */}
+                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                      <div
+                        className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25"
+                        style={{ background: company.color }}
+                      />
+
                       {/* Top Color Accent Line */}
                       <div
-                        className="absolute top-0 left-0 right-0 h-1"
+                        className="absolute top-0 left-0 right-0 h-0.5"
                         style={{ backgroundColor: company.color }}
                       />
 
-                      <div className="space-y-3">
+                      <div className="space-y-3 relative">
                         {/* Header: Logo, Name, Badge & Status */}
                         <div className="flex items-start justify-between gap-2.5 pt-0.5">
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <button
                               onClick={(e) => { e.stopPropagation(); toggleFavorite(company.id); }}
-                              className="text-slate-300 hover:text-amber-400 transition-colors cursor-pointer shrink-0 -ml-1 p-1"
+                              className="text-slate-600 hover:text-amber-400 transition-colors cursor-pointer shrink-0 -ml-1 p-1"
                             >
                               <Star
                                 className={`w-4 h-4 ${favorites.includes(company.id) ? 'fill-amber-400 text-amber-400' : ''}`}
                               />
                             </button>
-                            <div className="rounded-xl border border-slate-200/80 p-0.5 bg-slate-50 shrink-0 shadow-2xs">
+                            <div className="rounded-xl bg-white/95 p-0.5 shadow-md shrink-0">
                               <CompanyBrandLogo
                                 companyName={company.name}
                                 size="md"
@@ -939,10 +944,10 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                               />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <h3 className="font-black text-slate-900 text-sm tracking-tight truncate">
+                              <h3 className="font-black text-white text-sm tracking-tight truncate">
                                 {loc.name}
                               </h3>
-                              <p className="text-[11px] text-slate-500 truncate font-medium mt-0.5">
+                              <p className="text-[11px] text-slate-400 truncate font-medium mt-0.5">
                                 {loc.description}
                               </p>
                             </div>
@@ -950,11 +955,10 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
 
                           {company.badge && (
                             <span
-                              className="text-[9px] font-black px-2 py-0.5 rounded-md border leading-tight shrink-0"
+                              className="text-[9px] font-black px-2 py-0.5 rounded-md leading-tight shrink-0"
                               style={{
-                                backgroundColor: `${company.color}12`,
-                                borderColor: `${company.color}35`,
-                                color: company.color,
+                                backgroundColor: company.color,
+                                color: readableText(company.color),
                               }}
                             >
                               {company.badge}
@@ -965,15 +969,14 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                         {/* Promo Code Box */}
                         <div
                           onClick={() => handleCopyPromo(company)}
-                          className="p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all active:scale-98 shadow-2xs hover:shadow-xs"
+                          className="p-2.5 rounded-xl border bg-slate-950/60 flex items-center justify-between cursor-pointer transition-all active:scale-98 shadow-2xs hover:shadow-xs"
                           style={{
-                            backgroundColor: `${company.color}08`,
-                            borderColor: `${company.color}25`,
+                            borderColor: `${company.color}40`,
                           }}
                           title={t.copyPromo}
                         >
                           <div className="space-y-0.5">
-                            <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">
                               {t.promoCode}
                             </span>
                             <span
@@ -984,47 +987,47 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                             </span>
                           </div>
                           <div
-                            className="w-7 h-7 rounded-lg flex items-center justify-center bg-white shadow-2xs border"
-                            style={{ borderColor: `${company.color}35` }}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center bg-slate-800 border"
+                            style={{ borderColor: `${company.color}45` }}
                           >
                             {copiedId === company.id ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
                             ) : (
-                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <Copy className="w-3.5 h-3.5 text-slate-400" />
                             )}
                           </div>
                         </div>
 
                         {/* Account Status / ID Box */}
                         {userAccount ? (
-                          <div className="p-2 rounded-xl border border-slate-200 bg-slate-50/80 flex items-center justify-between shadow-2xs text-xs">
+                          <div className="p-2 rounded-xl border border-white/10 bg-slate-950/50 flex items-center justify-between shadow-2xs text-xs">
                             <div className="space-y-0.5 min-w-0">
-                              <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">
+                              <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">
                                 {t.accountLabel}
                               </span>
-                              <span className="font-mono font-bold text-slate-900 text-[11px] block truncate">
+                              <span className="font-mono font-bold text-slate-200 text-[11px] block truncate">
                                 {userAccount.account_number}
                               </span>
                             </div>
                             {isRegistered ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0">
-                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded-md shrink-0">
+                                <ShieldCheck className="w-3 h-3" />
                                 <span>{t.registeredBadge}</span>
                               </span>
                             ) : isPending ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md shrink-0">
-                                <Clock className="w-3 h-3 text-amber-600" />
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-md shrink-0">
+                                <Clock className="w-3 h-3" />
                                 <span>{t.pendingBadge}</span>
                               </span>
                             ) : null}
                           </div>
                         ) : (
-                          <div className="p-2 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between text-xs text-slate-500">
+                          <div className="p-2 rounded-xl border border-white/10 bg-slate-950/50 flex items-center justify-between text-xs text-slate-400">
                             <span className="text-[11px] font-medium">{t.notRegisteredBadge}</span>
                             <button
                               type="button"
                               onClick={() => onOpenRegister(company)}
-                              className="h-6 px-2 rounded-lg bg-white border border-slate-200 text-slate-800 font-bold text-[11px] hover:bg-slate-100 transition-colors shadow-2xs cursor-pointer"
+                              className="h-6 px-2 rounded-lg bg-slate-800 border border-white/10 text-slate-200 font-bold text-[11px] hover:bg-slate-700 transition-colors shadow-2xs cursor-pointer"
                             >
                               {t.linkAccount}
                             </button>
@@ -1033,41 +1036,46 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                       </div>
 
                       {/* Action Buttons: 2x2 Grid with balanced heights */}
-                      <div className="mt-3.5 pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-1.5">
+                      <div className="mt-3.5 pt-2.5 border-t border-white/10 grid grid-cols-2 gap-1.5 relative">
                         <a
                           href={company.affiliate_link || '#'}
                           target="_blank"
                           rel="noreferrer"
-                          className="h-8 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 active:scale-95 text-white shadow-2xs cursor-pointer"
-                          style={{ backgroundColor: company.color }}
+                          className="h-8 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 active:scale-95 shadow-md cursor-pointer"
+                          style={{
+                            background: `linear-gradient(135deg, ${company.color}, ${company.color}d0)`,
+                            color: readableText(company.color),
+                          }}
                         >
                           <ExternalLink className="w-3 h-3 shrink-0" />
                           <span className="truncate">{t.registerAndSite}</span>
                         </a>
 
-                        <a
-                          href={company.app_link || '#'}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="h-8 px-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1 active:scale-95 bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200 shadow-2xs cursor-pointer"
-                        >
-                          <Download className="w-3 h-3 shrink-0 text-slate-600" />
-                          <span>{t.appBtn}</span>
-                        </a>
+                        {company.app_link && (
+                          <a
+                            href={company.app_link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="h-8 px-2 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer"
+                          >
+                            <Download className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{t.appBtn}</span>
+                          </a>
+                        )}
 
                         <button
                           type="button"
                           onClick={() => (isRegistered ? onRequestComp(company.id) : onOpenRegister(company))}
-                          className="h-8 px-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 transition-all active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                          className="h-8 px-2 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
                         >
                           {isRegistered ? (
                             <>
-                              <PlusCircle className="w-3 h-3 text-emerald-600" />
+                              <PlusCircle className="w-3 h-3 text-emerald-400" />
                               <span className="truncate">{t.requestCompensation}</span>
                             </>
                           ) : (
                             <>
-                              <Edit3 className="w-3 h-3 text-slate-600" />
+                              <Edit3 className="w-3 h-3" />
                               <span className="truncate">{t.linkAccount}</span>
                             </>
                           )}
@@ -1076,10 +1084,10 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                         <button
                           type="button"
                           onClick={() => onOpenDetails(company)}
-                          className="h-8 px-2 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-800 text-xs font-bold border border-slate-200 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          className="h-8 px-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-white/10 transition-colors flex items-center justify-center gap-1 cursor-pointer"
                         >
-                          <Info className="w-3 h-3 text-slate-400" />
-                          <span>{t.detailsBtn}</span>
+                          <Info className="w-3 h-3" />
+                          <span className="truncate">{t.detailsBtn}</span>
                         </button>
                       </div>
                     </div>

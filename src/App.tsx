@@ -61,7 +61,7 @@ import { Toast } from './components/Toast';
 import { IosInstallModal } from './components/IosInstallModal';
 import { LotteryTickerBar } from './components/LotteryTickerBar';
 import { AppSplashScreen } from './components/AppSplashScreen';
-import { AppMoreBottomSheet } from './components/AppMoreBottomSheet';
+import { SideDrawer } from './components/SideDrawer';
 import { PullToRefresh } from './components/PullToRefresh';
 
 export default function App() {
@@ -641,6 +641,7 @@ export default function App() {
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         pendingRequestsCount={pendingRequestsCount}
+        onOpenMenu={() => setIsMoreSheetOpen(true)}
       />
 
       {/* iOS Install Banner */}
@@ -677,7 +678,7 @@ export default function App() {
 
       {/* 3. Dedicated Scrollable Content Viewport with Native Pull-To-Refresh */}
       <PullToRefresh onRefresh={loadData} lang={lang}>
-        <main className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3 pb-24 md:pb-16 min-h-full">
+        <main className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3 pb-24 min-h-full">
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, y: 8 }}
@@ -804,12 +805,13 @@ export default function App() {
         pendingRequestsCount={pendingRequestsCount}
       />
 
-      {/* 5. Native App Hub Bottom Sheet */}
-      <AppMoreBottomSheet
+      {/* 5. Side Drawer (single menu: sections, account, notifications, language) */}
+      <SideDrawer
         isOpen={isMoreSheetOpen}
         onClose={() => setIsMoreSheetOpen(false)}
         lang={lang}
         activeTab={activeTab}
+        isPhoneVerified={!!userProfile?.is_phone_verified}
         onSelectTab={(tab) => {
           setActiveTab(tab);
           setIsMoreSheetOpen(false);
@@ -818,6 +820,12 @@ export default function App() {
         onOpenResponsibleGaming={() => setResponsibleGamingOpen(true)}
         onOpenLegalTerms={() => setLegalTermsOpen(true)}
         onOpenSecurityAnalysis={() => setSecurityAnalysisOpen(true)}
+        onOpenPhoneModal={() => setPhoneModalOpen(true)}
+        onOpenNotifications={() => setNotifCenterOpen(true)}
+        onInstallPwa={handleInstallPwa}
+        isStandalone={isStandalone}
+        onSelectLang={(newLang) => { setLang(newLang); syncPushLang(); }}
+        unreadNotificationsCount={unreadNotificationsCount}
         pendingRequestsCount={pendingRequestsCount}
       />
 

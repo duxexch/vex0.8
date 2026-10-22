@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface CompanyBrandLogoProps {
   companyName?: string;
@@ -6,6 +6,19 @@ interface CompanyBrandLogoProps {
   className?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
+
+// Real brand logos shipped in /public/logos (from the local VEX_Content library)
+const LOGO_FILES: Array<{ match: (s: string) => boolean; file: string }> = [
+  { match: (s) => s.includes('1XBET'), file: '/logos/1xbet.png' },
+  { match: (s) => s.includes('MELBET'), file: '/logos/melbet.png' },
+  { match: (s) => s.includes('BETJAM'), file: '/logos/betjam.png' },
+  { match: (s) => s.includes('MOSTBET') || s.includes('موست'), file: '/logos/mostbet.png' },
+  { match: (s) => s.includes('XPARI') || s.includes('XPARIBET'), file: '/logos/xpari.png' },
+  { match: (s) => s.includes('BIZBET'), file: '/logos/bizbet.png' },
+  { match: (s) => s.includes('LINEBET'), file: '/logos/linebet.png' },
+  { match: (s) => s.includes('GOOO'), file: '/logos/goobet.png' },
+  { match: (s) => s.includes('VEX'), file: '/logos/vex.png' },
+];
 
 export const CompanyBrandLogo: React.FC<CompanyBrandLogoProps> = ({
   companyName,
@@ -15,6 +28,7 @@ export const CompanyBrandLogo: React.FC<CompanyBrandLogoProps> = ({
 }) => {
   const raw = companyName || companyId || 'Partner';
   const normalized = (typeof raw === 'string' ? raw : '').toUpperCase().trim();
+  const [imgFailed, setImgFailed] = useState(false);
 
   const sizeClasses = {
     sm: 'w-8 h-8 text-[9px] rounded-full aspect-square shrink-0 ring-1 ring-white/20',
@@ -22,6 +36,25 @@ export const CompanyBrandLogo: React.FC<CompanyBrandLogoProps> = ({
     lg: 'w-12 h-12 text-sm rounded-full aspect-square shrink-0 ring-2 ring-white/20',
     xl: 'w-16 h-16 text-base rounded-full aspect-square shrink-0 ring-2 ring-white/30',
   }[size];
+
+  // Real logo image (fallback to the CSS brand tiles below if missing/failed)
+  const logoFile = LOGO_FILES.find((m) => m.match(normalized))?.file;
+  if (logoFile && !imgFailed) {
+    return (
+      <div
+        className={`relative overflow-hidden flex items-center justify-center bg-white select-none shadow-sm ${sizeClasses} ${className}`}
+        title={String(raw)}
+      >
+        <img
+          src={logoFile}
+          alt={String(raw)}
+          draggable={false}
+          onError={() => setImgFailed(true)}
+          className="w-full h-full object-contain p-0.5"
+        />
+      </div>
+    );
+  }
 
   // 1XBET Official Branding
   if (normalized.includes('1XBET') || normalized.includes('1X')) {
@@ -203,7 +236,7 @@ export const CompanyBrandLogo: React.FC<CompanyBrandLogoProps> = ({
       className={`relative overflow-hidden flex items-center justify-center font-black select-none shadow-sm bg-slate-800 text-white border border-slate-700 ${sizeClasses} ${className}`}
     >
       <span className="tracking-tight uppercase">
-        {companyName.slice(0, 3)}
+        {String(raw).slice(0, 3)}
       </span>
     </div>
   );

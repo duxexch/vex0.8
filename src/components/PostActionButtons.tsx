@@ -35,7 +35,7 @@ export const PostActionButtons: React.FC<PostActionButtonsProps> = ({
   const regUrl = comp?.affiliate_link || 'https://vex.deals';
 
   const btn =
-    'group flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-[11px] font-black text-white shadow-xs shadow-black/10 transition-all active:scale-95 hover:brightness-110 [text-shadow:0_1px_1px_rgba(0,0,0,0.18)]';
+    'group min-w-0 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-[11px] font-black text-white shadow-xs shadow-black/10 transition-all active:scale-95 hover:brightness-110 [text-shadow:0_1px_1px_rgba(0,0,0,0.18)]';
 
   return (
     <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3.5 py-3 mt-auto">

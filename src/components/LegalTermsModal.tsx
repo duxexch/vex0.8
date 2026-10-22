@@ -56,7 +56,7 @@ export const LegalTermsModal: React.FC<LegalTermsModalProps> = ({
             <div className="p-1.5 border-b border-slate-100 flex gap-1.5 bg-slate-100">
               <button
                 onClick={() => setActiveSubTab('privacy')}
-                className={`flex-1 h-8 rounded-lg text-xs font-bold transition-all ${
+                className={`flex-1 h-8 rounded-lg text-xs font-bold transition-all flex items-center justify-center text-center ${
                   activeSubTab === 'privacy'
                     ? 'bg-white text-slate-900 shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -67,7 +67,7 @@ export const LegalTermsModal: React.FC<LegalTermsModalProps> = ({
 
               <button
                 onClick={() => setActiveSubTab('terms')}
-                className={`flex-1 h-8 rounded-lg text-xs font-bold transition-all ${
+                className={`flex-1 h-8 rounded-lg text-xs font-bold transition-all flex items-center justify-center text-center ${
                   activeSubTab === 'terms'
                     ? 'bg-white text-slate-900 shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
