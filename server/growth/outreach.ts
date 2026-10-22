@@ -216,7 +216,8 @@ export async function calendarTick(): Promise<string[]> {
   const day = daysBetween(state.start, today) + 1;
   const executed: string[] = [];
   if (day < 1 || day > 90) return executed;
-  const due = CALENDAR.filter((c) => c.day === day && !state.done.includes(`d${c.day}:${c.name}`));
+  // catch-up: execute any due item not yet done (missed days are not skipped, max 3/tick)
+  const due = CALENDAR.filter((c) => c.day <= day && !state.done.includes(`d${c.day}:${c.name}`)).slice(0, 3);
   for (const item of due) {
     const key = `d${item.day}:${item.name}`;
     const text = await generateCampaignCopy(item.seed, item.segment);
