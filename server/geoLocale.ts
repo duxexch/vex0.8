@@ -107,7 +107,7 @@ const DOMAIN_BY_REGION: Record<string, string> = {
   'KW': '1xbetservices.com',
   'BH': 'betjam.sbs',
   'OM': 'betongame.cloud',
-  'GLOBAL': 'vex.deals',
+  'GLOBAL': '1xbetservices.com',
 };
 
 interface GeoIPResponse {

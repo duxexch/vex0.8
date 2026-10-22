@@ -18,6 +18,8 @@ export interface DomainConfig {
   redirectTarget?: string;
   isIndexable: boolean;
   supportedRoutes: string[];
+  /** When 'en', page titles/descriptions render English-first for global SEO. */
+  titleLocale?: 'en' | 'ar';
 }
 
 export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
@@ -92,18 +94,25 @@ export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
     domain: '1xbetservices.com',
     role: 'secondary_brand',
     brandName: '1xBet Agency Services',
-    taglineAr: 'المركز المعتمد لخدمات وكلاء 1xBet واسترداد الخسائر والبونص الحصري',
-    taglineEn: '1xBet Verified Agency Services & Instant Loss Compensation Center',
-    descriptionAr: 'المركز المعتمد لخدمات وكلاء 1xBet. سجل بكود VEX للحصول على أعلى نسبة استرداد خسائر، تحويل الأرصدة، وفك تجميد الحسابات.',
-    descriptionEn: 'Verified 1xBet Agency Services portal. Register with code VEX for maximum loss compensation, secure wallet transfers, and instant cashback.',
-    keywords: '1xBet, 1xbetservices.com, كود 1xbet, كاش باك 1xbet, تعويضات 1xbet, وكيل 1xbet, VEX Deals',
+    taglineAr: 'المركز العالمي المعتمد لخدمات وكلاء 1xBet واسترداد الخسائر والبونص الحصري',
+    taglineEn: 'Global 1xBet Verified Agency Services & Instant Loss Compensation Center',
+    descriptionAr: 'المركز العالمي المعتمد لخدمات وكلاء 1xBet. سجل بكود VEX للحصول على أعلى نسبة استرداد خسائر، تحويل الأرصدة، وفك تجميد الحسابات — متاح لكل الدول.',
+    descriptionEn: 'Official global 1xBet agency services portal. Register with code VEX for maximum loss compensation (cashback), secure wallet transfers, instant balance tracking, and referral unfreezing — available worldwide in 8 languages.',
+    keywords: '1xBet, 1xbetservices, 1xbet agent services, 1xbet promo code, 1xbet cashback, loss compensation, global betting support, betting wallet tracking, VEX Deals, وكيل 1xBet, كاش باك 1xbet, تعويضات الخسائر, كود 1xbet',
     primaryColor: '#0284c7',
     canonicalBase: 'https://1xbetservices.com',
     isIndexable: true,
+    titleLocale: 'en',
     supportedRoutes: [
       '/',
       '/companies',
       '/wallets',
+      '/ai-sports',
+      '/referrals',
+      '/transfers',
+      '/activity',
+      '/unlucky-wall',
+      '/lottery',
       '/responsible-gaming',
       '/legal',
     ],
@@ -225,6 +234,24 @@ Allow: /
 User-agent: Applebot
 Allow: /
 
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
 # XML Sitemap Index
 Sitemap: ${config.canonicalBase}/sitemap.xml
 `;
@@ -340,6 +367,56 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
       break;
   }
 
+  // Global domains (titleLocale 'en') render English-first titles & descriptions
+  if (config.titleLocale === 'en') {
+    const b = config.brandName;
+    const enMeta: Record<string, { title: string; description: string }> = {
+      '/companies': {
+        title: `Approved Betting Partners & Bookmakers Directory | ${b}`,
+        description: `Browse all verified betting partners and bookmakers on ${b}, with official bonus codes, promo codes and direct registration links.`,
+      },
+      '/wallets': {
+        title: `Betting Wallet Balance Tracking & Unfreezing | ${b}`,
+        description: `Track balances across digital betting wallets, monitor frozen and available funds, and unfreeze balances instantly.`,
+      },
+      '/ai-sports': {
+        title: `AI Football Predictions & Match Analysis | ${b}`,
+        description: `Gemini-powered tactical football match analysis with win probabilities, predicted scores, and smart betting indicators.`,
+      },
+      '/referrals': {
+        title: `Referral Program With 10% Instant Unlock | ${b}`,
+        description: `Share your referral link and unlock 10% of your balance instantly when invited friends sign up and accept transfers.`,
+      },
+      '/transfers': {
+        title: `Secure Balance Transfers Between Wallets | ${b}`,
+        description: `Fast, encrypted balance transfers between users with anti-collusion protection and bank-grade security.`,
+      },
+      '/activity': {
+        title: `Claim History & Compensation Activity Log | ${b}`,
+        description: `Follow compensation claim status, account verification, and a full history of transactions and transfers.`,
+      },
+      '/unlucky-wall': {
+        title: `Unlucky Wall: Losing Bet Stories & Community Refunds | ${b}`,
+        description: `Share losing bet slips on the Unlucky Wall and receive solidarity compensation to protect your balance.`,
+      },
+      '/lottery': {
+        title: `Provably Fair Lottery & Daily Jackpot Draws | ${b}`,
+        description: `Join free golden daily and weekly lottery draws with SHA-256 provably fair verification and big jackpots.`,
+      },
+      '/responsible-gaming': {
+        title: `Responsible Gambling Policy & Player Protection (18+) | ${b}`,
+        description: `${b} is committed to responsible gambling standards, self-exclusion tools, and adult-only (18+) awareness.`,
+      },
+      '/legal': {
+        title: `Terms of Service & Privacy Policy | ${b}`,
+        description: `Legal terms of use and data protection privacy policy for ${b} users worldwide.`,
+      },
+    };
+    const en = enMeta[cleanPath];
+    title = en ? en.title : `${b} - ${config.taglineEn}`;
+    description = en ? en.description : config.descriptionEn;
+  }
+
   const canonicalUrl = cleanPath === '/' ? `${config.canonicalBase}/` : `${config.canonicalBase}${cleanPath}`;
 
   // Structured Data JSON-LD
@@ -371,7 +448,7 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
         url: config.canonicalBase,
         name: config.brandName,
         description: description,
-        inLanguage: ['ar', 'en', 'es', 'ru'],
+        inLanguage: config.titleLocale === 'en' ? ['en', 'ar', 'es', 'ru', 'fr', 'de', 'tr', 'pt'] : ['ar', 'en', 'es', 'ru'],
       },
       {
         '@type': 'Organization',
@@ -419,7 +496,9 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
     <meta property="og:url" content="${canonicalUrl}" />
     <meta property="og:site_name" content="${config.brandName}" />
     <meta property="og:image" content="${config.canonicalBase}/icon-512.svg" />
-    <meta property="og:locale" content="ar_AR" />
+    <meta property="og:locale" content="${config.titleLocale === 'en' ? 'en_US' : 'ar_AR'}" />
+    <meta property="og:locale:alternate" content="ar_AR" />
+    <meta property="og:locale:alternate" content="en_US" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
