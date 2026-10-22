@@ -515,6 +515,16 @@ export function waQueueForBatch(limit: number): Lead[] {
   saveLeads();
   return leads
     .filter((l) => l.channel === 'wa_import' && l.wa_status === 'pending')
+    .sort((a, b) => {
+      // Egyptian numbers first, then named (personalized message) before unnamed
+      const ae = a.phone?.startsWith('+20') ? 0 : 1;
+      const be = b.phone?.startsWith('+20') ? 0 : 1;
+      if (ae !== be) return ae - be;
+      const an = a.first_name ? 0 : 1;
+      const bn = b.first_name ? 0 : 1;
+      if (an !== bn) return an - bn;
+      return (a.phone || '').localeCompare(b.phone || '');
+    })
     .slice(0, limit);
 }
 
