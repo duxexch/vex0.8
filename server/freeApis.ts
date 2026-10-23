@@ -80,14 +80,15 @@ export async function pingFreeApis(): Promise<FreeApiPing[]> {
 
 const PING_TARGETS: Array<{ id: string; url: string }> = [
   { id: 'espn-hidden', url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard' },
-  { id: 'thesportsdb', url: 'https://www.thesportsdb.com/api/v1/json/3/all_leagues.php' },
+  { id: 'fixturedownload', url: 'https://fixturedownload.com/feed/json/eng.1' },
+  { id: 'google-news-rss', url: 'https://news.google.com/rss' },
+  { id: 'ip-api', url: 'http://ip-api.com/json/8.8.8.8' },
   { id: 'open-meteo', url: 'https://api.open-meteo.com/v1/forecast?latitude=30.0&longitude=31.2&current=temperature_2m&forecast_days=1' },
   { id: 'frankfurter', url: 'https://api.frankfurter.dev/v1/latest?base=USD' },
   { id: 'coingecko', url: 'https://api.coingecko.com/api/v3/ping' },
   { id: 'mymemory', url: 'https://api.mymemory.translated.net/get?q=hello&langpair=en%7Car' },
   { id: 'actualwinnings', url: 'https://actualwinnings.com/data/jackpots.json' },
   { id: 'er-api', url: 'https://open.er-api.com/v6/latest/USD' },
-  { id: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?count=1&rss_url=https://news.google.com/rss' },
   { id: 'restcountries', url: 'https://restcountries.com/v3.1/all?fields=name' },
 ];
 
@@ -119,11 +120,12 @@ const CATALOG: FreeApiEntry[] = [
     name: 'TheSportsDB',
     category: 'sports',
     website: 'https://www.thesportsdb.com',
-    endpoint: 'https://www.thesportsdb.com/api/v1/json/3',
-    auth: 'keyless',
-    quota: 'free TEST key "3": events, tables, badges, media',
+    endpoint: 'https://www.thesportsdb.com/api/v1/json',
+    auth: 'env',
+    envKey: 'THESPORTSDB_KEY',
+    quota: 'free tier with signup key',
     wired: '',
-    notes: '100k+ events, club logos and league tables',
+    notes: '100k+ events, logos, tables; TEST key "3" now returns 403 (2026-10)',
   },
   {
     id: 'api-sports',
@@ -635,9 +637,11 @@ const CATALOG: FreeApiEntry[] = [
     category: 'utility',
     website: 'https://rss2json.com',
     endpoint: 'https://api.rss2json.com/v1/api.json',
-    auth: 'keyless',
-    quota: 'keyless free tier (RSS → JSON, daily limits)',
+    auth: 'env',
+    envKey: 'RSS2JSON_KEY',
+    quota: 'free key tier (anonymous requests now 403)',
     wired: '',
+    notes: 'free API key from rss2json.com; turns Google News RSS into JSON',
   },
   {
     id: 'allorigins',
