@@ -83,7 +83,7 @@ const PING_TARGETS: Array<{ id: string; url: string }> = [
   // Season feed slug includes the season year (same rule as the ingest in server.ts)
   {
     id: 'fixturedownload',
-    url: `https://fixturedownload.com/feed/json/eng.1-${new Date().getMonth() >= 6 ? new Date().getFullYear() : new Date().getFullYear() - 1}`,
+    url: `https://fixturedownload.com/feed/json/epl-${new Date().getMonth() >= 6 ? new Date().getFullYear() : new Date().getFullYear() - 1}`,
   },
   { id: 'google-news-rss', url: 'https://news.google.com/rss' },
   { id: 'ip-api', url: 'http://ip-api.com/json/8.8.8.8' },
