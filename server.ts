@@ -4171,7 +4171,7 @@ app.post('/api/telegram/session', (req, res) => {
 
   TELEGRAM_SESSIONS.set(sessionId, session);
 
-  const botUser = telegramConfig.bot_username || 'VexVerifyBot';
+  const botUser = telegramConfig.bot_username || process.env.TELEGRAM_BOT_USERNAME || 'Vex_wallet_bot';
   const deepLink = `https://t.me/${botUser}?start=${sessionId}`;
 
   res.json({

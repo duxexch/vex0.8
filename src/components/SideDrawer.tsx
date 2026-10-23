@@ -27,7 +27,7 @@ import { ensureWebPushSubscription } from '../services/pushService';
 import { LANGUAGES } from './Header';
 
 const WA_CONTACT_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 عايز أتواصل معاكم');
-const TELEGRAM_CONTACT_URL = 'https://t.me/VexVerifyBot';
+const TELEGRAM_CONTACT_URL = 'https://t.me/Vex_wallet_bot';
 
 interface SideDrawerProps {
   isOpen: boolean;

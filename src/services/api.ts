@@ -827,8 +827,8 @@ class VexMobileApiService {
     return {
       session_id: fallbackId,
       user_id: this.userId,
-      bot_username: 'VexVerifyBot',
-      deep_link: `https://t.me/VexVerifyBot?start=${fallbackId}`,
+      bot_username: 'Vex_wallet_bot',
+      deep_link: `https://t.me/Vex_wallet_bot?start=${fallbackId}`,
       status: 'pending_telegram',
       expires_at: Date.now() + 15 * 60 * 1000,
       bot_configured: false,

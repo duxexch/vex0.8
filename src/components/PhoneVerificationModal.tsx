@@ -198,7 +198,7 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
     }
   };
 
-  const botUsername = session?.bot_username || 'VexVerifyBot';
+  const botUsername = session?.bot_username || 'Vex_wallet_bot';
   const deepLink = session?.deep_link || `https://t.me/${botUsername}`;
 
   return (

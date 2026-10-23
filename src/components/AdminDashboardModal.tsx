@@ -5806,7 +5806,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       <div className="p-3 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-1">
                         <span className="font-bold text-sky-600">{t('2. تسمية البوت', '2. Name Your Bot', '2. Назвать бота')}</span>
                         <p className="text-[11px] text-slate-500 leading-relaxed">
-                          {t('اختر اسماً للبوت واسم مستخدم ينتهي بكلمة bot (مثل: VexVerifyBot)', 'Choose a name and username ending in "bot"', 'Придумайте имя и юзернейм, оканчивающийся на "bot" (например: VexVerifyBot)')}
+                          {t('اختر اسماً للبوت واسم مستخدم ينتهي بكلمة bot (مثل: Vex_wallet_bot)', 'Choose a name and username ending in "bot"', 'Придумайте имя и юзернейм, оканчивающийся на "bot" (например: Vex_wallet_bot)')}
                         </p>
                       </div>
 

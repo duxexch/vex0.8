@@ -3,7 +3,7 @@ import { Download, UserPlus, MessageCircle, Send } from 'lucide-react';
 import { Company, Language, AppBranding } from '../types';
 
 const WHATSAPP_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 شفت توقع المباريات وحابب أسجّل');
-const TELEGRAM_URL = 'https://t.me/VexVerifyBot';
+const TELEGRAM_URL = 'https://t.me/Vex_wallet_bot';
 
 interface PostActionButtonsProps {
   postCompany?: string;
