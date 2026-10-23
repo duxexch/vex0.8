@@ -233,20 +233,24 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
 app.use(authRequiredMiddleware);
 
 // Lazy Google Gen AI initialization
+// Placeholder env values (e.g. "your_gemini_api_key_here") must never count as ready.
+function hasRealGeminiKey(): boolean {
+  const k = String(process.env.GEMINI_API_KEY || '').trim();
+  if (k.length < 20) return false;
+  return !/^(your_|xxx|changeme|placeholder|dummy|test_)/i.test(k);
+}
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
-      aiClient = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
+  if (!aiClient && hasRealGeminiKey()) {
+    const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
         },
-      });
-    }
+      },
+    });
   }
   return aiClient;
 }
@@ -430,7 +434,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    aiReady: !!process.env.GEMINI_API_KEY,
+    aiReady: hasRealGeminiKey(),
     growth: growthHealth(),
   });
 });
@@ -4342,8 +4346,48 @@ app.post('/api/telegram/simulate-contact', (req, res) => {
   });
 });
 
-// 8. Telegram Webhook Endpoint
+// 8. Telegram Webhook Endpoint — secret-protected. Polling is the active transport;
+// without the secret nobody can inject fake updates / trigger replies to arbitrary chats.
+const WEBHOOK_SECRET_FILE = path.join(process.cwd(), 'data', 'telegram_webhook_secret.txt');
+let cachedWebhookSecret = '';
+function getWebhookSecret(): string {
+  if (cachedWebhookSecret) return cachedWebhookSecret;
+  const envSecret = String(process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
+  if (envSecret) {
+    cachedWebhookSecret = envSecret;
+    return cachedWebhookSecret;
+  }
+  try {
+    if (fs.existsSync(WEBHOOK_SECRET_FILE)) {
+      const existing = fs.readFileSync(WEBHOOK_SECRET_FILE, 'utf-8').trim();
+      if (existing) {
+        cachedWebhookSecret = existing;
+        return existing;
+      }
+    }
+    const fresh = crypto.randomBytes(24).toString('hex');
+    fs.mkdirSync(path.dirname(WEBHOOK_SECRET_FILE), { recursive: true });
+    fs.writeFileSync(WEBHOOK_SECRET_FILE, fresh + '\n', { encoding: 'utf-8', mode: 0o600 });
+    cachedWebhookSecret = fresh;
+    console.log('[Telegram Webhook] secret generated → data/telegram_webhook_secret.txt');
+    return fresh;
+  } catch {
+    return '';
+  }
+}
+function webhookSecretOk(provided: string, expected: string): boolean {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(provided, 'utf-8');
+  const b = Buffer.from(expected, 'utf-8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 app.post('/api/telegram/webhook', async (req, res) => {
+  const provided = String(req.get('x-telegram-bot-api-secret-token') || '');
+  const expected = getWebhookSecret();
+  if (!webhookSecretOk(provided, expected)) {
+    console.warn('[Telegram Webhook] rejected: missing/invalid secret token');
+    return res.sendStatus(403);
+  }
   try {
     await handleTelegramUpdate(req.body);
   } catch (err) {

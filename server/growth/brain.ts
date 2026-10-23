@@ -12,12 +12,14 @@ export interface IntentResult {
     | 'prediction_ask'
     | 'lottery_ask'
     | 'cashback_ask'
+    | 'deposit_ask'
+    | 'withdraw_ask'
     | 'promo_ask'
     | 'agent_interest'
     | 'question'
     | 'other'
     | 'spam';
-  topics: string[]; // ['predictions','lottery','cashback','agents','promo']
+  topics: string[]; // ['predictions','lottery','cashback','agents','promo','deposit','withdraw']
   wants_reply: boolean;
   is_agent: boolean;
   lang: 'ar' | 'en';
@@ -27,6 +29,10 @@ const AR_AGENT = /وكل[اةئن]|وكيل|شراكت|عمول|افيليت|col
 const AR_PRED = /توقع|تنبؤ|تحليل|توصيه|توصية| Odds?|odd |prediction|analysis|\btip|مباراة|مباريات|يلعب|fixture|تشكيلة|تشكيل|كوؤن|كون|نتائج|نتيجة/i;
 const AR_LOTTERY = /يانصيب|lottery|jackpot|جاكبت|سحب|تذكرة|تذاكر|ticket|prize|جائزة|فوز|rich for life|اربح|أربح/i;
 const AR_CASHBACK = /تعويض|استرداد|كاش ?باك|cash ?back|خسر|خسائر|خساره|خسارة|refund|compensat|ارجع|أرجع|فلوس/i;
+const AR_DEPOSIT = /\bdeposit|ودع|ايداع|إيداع|وديعة|top ?up|شحن الرصيد|شحن حساب/i;
+// strong withdraw phrasing only — bare "سحب" stays ambiguous (lottery draw vs payout)
+const AR_WITHDRAW = /\bwithdraw|cash ?out|سحب فلوس|سحب رصيد|عملية السحب|عملية سحب|طلب سحب|طلب السحب|خرج(ت)? فلوس|استلم فلوس|سحب حساب/i;
+const LOTTERY_STRONG = /يانصيب|lottery|jackpot|جاكبت|تذكرة|تذاكر|جائزة/;
 const AR_PROMO = /كود|برومو|خصم|promo|discount|\bcode|عرض|عروض|حمله|حملة/i;
 const AR_GREET = /^(هلا|مرحبا|مرحبًا|السلام|اهلا|أهلا|هاي|أهلين|صباح|مساء|hi|hello|hey|yo|salam)\b|^(هلا|مرحبا|السلام|اهلا|أهلا|هاي)[\s!.،]/i;
 const SPAM_RE = /http[s]?:\/\/(?!t\.me|vex\.deals)|viagra|casino(?! )|18\+|صراخ|نيك|سكس|sex |crypto ?profit|investment ?guaranteed|forex ?signal/i;
@@ -39,29 +45,47 @@ function hasAny(text: string, re: RegExp): boolean {
 /** Fast regex classification — only falls back to the LLM for long/ambiguous texts. */
 export function classifyIntent(text: string): IntentResult {
   const t = (text || '').slice(0, 1200);
-  const lower = t.toLowerCase();
   const lang: 'ar' | 'en' = /[\u0600-\u06FF]/.test(t) ? 'ar' : 'en';
 
   if (hasAny(t, SPAM_RE) && t.length < 80) {
     return { intent: 'spam', topics: [], wants_reply: false, is_agent: false, lang };
   }
 
-  const topics: string[] = [];
   const is_agent = hasAny(t, AR_AGENT);
+  const is_deposit = hasAny(t, AR_DEPOSIT);
+  const is_withdraw = hasAny(t, AR_WITHDRAW);
+  const lottery_strong = hasAny(t, LOTTERY_STRONG);
+  const is_greeting = hasAny(t, AR_GREET) && t.trim().length < 60;
+  const is_question = hasAny(t, QUESTION_RE) || t.trim().endsWith('؟');
+  // soft withdraw: bare "سحب" with a money context but no strong lottery words
+  // (e.g. "مش عارف اسحب") — while "سحب الجائزة" stays lottery via lottery_strong.
+  const withdraw_soft =
+    !is_withdraw && !lottery_strong && hasAny(t, /سحب/) &&
+    (is_question || hasAny(t, /فلوس|رصيد|حساب|بنك|محفظة/));
+  const wantWithdraw = is_withdraw || withdraw_soft;
+
+  const topics: string[] = [];
   if (is_agent) topics.push('agents');
   if (hasAny(t, AR_PRED)) topics.push('predictions');
   if (hasAny(t, AR_LOTTERY)) topics.push('lottery');
+  if (is_deposit) topics.push('deposit');
+  if (wantWithdraw) topics.push('withdraw');
   if (hasAny(t, AR_CASHBACK)) topics.push('cashback');
   if (hasAny(t, AR_PROMO)) topics.push('promo');
-
-  const is_greeting = hasAny(t, AR_GREET) && t.trim().length < 60;
-  const is_question = hasAny(t, QUESTION_RE) || t.trim().endsWith('؟');
 
   if (is_greeting && topics.length === 0) {
     return { intent: 'greeting', topics: [], wants_reply: true, is_agent: false, lang };
   }
   if (is_agent) {
     return { intent: 'agent_interest', topics, wants_reply: true, is_agent: true, lang };
+  }
+  // wallet intents outrank cashback/lottery — "ودع فلوس" is a deposit, not a refund;
+  // "عملية السحب" is a payout, not a lottery draw.
+  if (is_deposit) {
+    return { intent: 'deposit_ask', topics, wants_reply: true, is_agent: false, lang };
+  }
+  if (wantWithdraw) {
+    return { intent: 'withdraw_ask', topics, wants_reply: true, is_agent: false, lang };
   }
   if (topics.includes('cashback')) {
     return { intent: 'cashback_ask', topics, wants_reply: true, is_agent: false, lang };
@@ -87,14 +111,14 @@ export async function classifyIntentSmart(text: string): Promise<IntentResult> {
   if (base.intent !== 'other' || !text || text.trim().length < 20) return base;
   try {
     const raw = await generateWithFailover(
-      `صنّف رسالة مستخدم في مجتمع VEX Deals (منصة توقعات رياضية + يانصيب + تعويض خسائر):\n"${text.slice(0, 600)}"\n\nأعد JSON فقط: {"intent":"greeting|prediction_ask|lottery_ask|cashback_ask|promo_ask|agent_interest|question|other|spam","topics":["predictions|lottery|cashback|agents|promo"],"wants_reply":boolean,"is_agent":boolean,"lang":"ar|en"}`,
+      `صنّف رسالة مستخدم في مجتمع VEX Deals (منصة توقعات رياضية + يانصيب + تعويض خسائر):\n"${text.slice(0, 600)}"\n\nأعد JSON فقط: {"intent":"greeting|prediction_ask|lottery_ask|cashback_ask|deposit_ask|withdraw_ask|promo_ask|agent_interest|question|other|spam","topics":["predictions|lottery|cashback|agents|promo|deposit|withdraw"],"wants_reply":boolean,"is_agent":boolean,"lang":"ar|en"}`,
       'You are an intent classifier. Reply with compact JSON only, no prose.',
       0.1
     );
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return base;
     const parsed = JSON.parse(jsonMatch[0]);
-    const valid = ['greeting','prediction_ask','lottery_ask','cashback_ask','promo_ask','agent_interest','question','other','spam'];
+    const valid = ['greeting','prediction_ask','lottery_ask','cashback_ask','deposit_ask','withdraw_ask','promo_ask','agent_interest','question','other','spam'];
     if (!valid.includes(parsed.intent)) return base;
     return {
       intent: parsed.intent,
@@ -117,6 +141,7 @@ VEX Deals هي منصة مراهنات رياضية ويانصيب وتعويض 
 - تعويض الخسائر: تذاكر يانصيب مجانية حسب خسائر الباقة — متوفر في نفس الموقع
 - الموقع https://vex.deals — تطبيق قابل للتثبيت (VEX Lottery)
 - الوكلاء: شراكة ربحية بعمولات — يتواصلون مع الإدارة عبر البوت مباشرة
+- الإيداع والسحب من صفحة المحفظة داخل الموقع — الدعم متابع مع المستخدم لو العملية وقفت
 - البوت هنا يرد على الأسئلة ويرمي تحليلات المباريات وقتها، وما بيستناش حد يسأله
 `;
 
@@ -162,6 +187,10 @@ function fallbackReply(name: string, intent: IntentResult, matchHint?: string): 
       return `اليانصيب مفتوح يومياً وتقدر تكسب تذاكر مجانية 🎟️ https://vex.deals/#lottery`;
     case 'cashback_ask':
       return `التعويض بيرجع لك تذاكر يانصيب مجانية حسب خسائر الباقة — التفاصيل على الموقع 💸 https://vex.deals`;
+    case 'deposit_ask':
+      return `الإيداع من داخل الموقع مباشرة من صفحة المحفظة 👉 https://vex.deals — ولو واجهت مشكلة رح تساعدك الإدارة.`;
+    case 'withdraw_ask':
+      return `طلب السحب بيتعمل من صفحة المحفظة على الموقع 👉 https://vex.deals — لو العملية وقفت رح يتواصل معاك الدعم.`;
     case 'promo_ask':
       return `أكواد الخصم والعروض الحالية تلاقيها داخل الموقع مباشرة 👉 https://vex.deals`;
     case 'greeting':
