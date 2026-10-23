@@ -7,20 +7,35 @@ import { storage } from './storage';
 export class OpenRouterClient {
   private apiKey: string;
   private baseUrl: string;
-  readonly kind: 'openrouter' | 'deepseek' | 'openai';
+  readonly kind: AIProvider;
 
   constructor(apiKey?: string, baseUrl?: string) {
-    this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || '';
     this.baseUrl = (baseUrl || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
-    this.kind = this.baseUrl.includes('deepseek')
-      ? 'deepseek'
-      : this.baseUrl.includes('openai.com')
-        ? 'openai'
-        : 'openrouter';
+    // Keyless providers (Pollinations) must never receive an Authorization
+    // header, and must not inherit the shared OpenRouter key either.
+    const anonymous = this.baseUrl.includes('pollinations.ai');
+    this.apiKey = anonymous
+      ? ''
+      : apiKey ?? (this.baseUrl.includes('openrouter.ai') ? (process.env.OPENROUTER_API_KEY || '') : '');
+    this.kind = anonymous
+      ? 'pollinations'
+      : this.baseUrl.includes('groq.com')
+        ? 'groq'
+        : this.baseUrl.includes('cerebras.ai')
+          ? 'cerebras'
+          : this.baseUrl.includes('mistral.ai')
+            ? 'mistral'
+            : this.baseUrl.includes('z.ai')
+              ? 'zai'
+              : this.baseUrl.includes('deepseek')
+                ? 'deepseek'
+                : this.baseUrl.includes('openai.com')
+                  ? 'openai'
+                  : 'openrouter';
   }
 
   isAvailable(): boolean {
-    return !!this.apiKey;
+    return this.kind === 'pollinations' || !!this.apiKey;
   }
 
   async generateContent(model: string, prompt: string, systemInstruction?: string, temperature: number = 0.7): Promise<string | null> {
@@ -33,21 +48,36 @@ export class OpenRouterClient {
       }
       messages.push({ role: 'user', content: prompt });
 
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-          'HTTP-Referer': 'https://vex.deals',
-          'X-Title': 'VEX Deals Agent Engine',
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature,
-          max_tokens: 4000,
-        }),
-      });
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.apiKey) {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+        headers['HTTP-Referer'] = 'https://vex.deals';
+        headers['X-Title'] = 'VEX Deals Agent Engine';
+      }
+
+      const attempt = (modelId: string): Promise<Response> =>
+        fetch(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: modelId,
+            messages,
+            temperature,
+            max_tokens: 4000,
+          }),
+        });
+
+      let response = await attempt(model);
+
+      // OpenRouter balance can't cover this paid model (402) → retry with a
+      // ":free" model on the same key (free models don't consume credit).
+      if (response.status === 402 && this.kind === 'openrouter') {
+        const freeModel = await pickFreeOpenRouterModel(model);
+        if (freeModel && freeModel !== model) {
+          console.warn(`[openrouter] 402 billing — retrying with free model: ${freeModel}`);
+          response = await attempt(freeModel);
+        }
+      }
 
       if (!response.ok) {
         const error = await response.text();
@@ -71,27 +101,78 @@ export class OpenRouterClient {
   }
 }
 
+// ---------------------------------------------------------------------------
+// OpenRouter free-tier models (":free" suffix) — used when the shared account
+// balance can't cover a paid model (402). The catalog is fetched live from
+// OpenRouter and cached for 6h so ids stay current without config changes.
+// ---------------------------------------------------------------------------
+let freeModelCache: { at: number; ids: string[] } | null = null;
+
+async function listFreeOpenRouterModels(): Promise<string[]> {
+  if (freeModelCache && Date.now() - freeModelCache.at < 6 * 3600 * 1000) return freeModelCache.ids;
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return freeModelCache?.ids || [];
+    const data = await res.json();
+    const ids: string[] = (data?.data || [])
+      .filter((m: any) => m?.id && m?.pricing && Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0)
+      .map((m: any) => String(m.id));
+    if (ids.length) freeModelCache = { at: Date.now(), ids };
+    return ids;
+  } catch {
+    return freeModelCache?.ids || [];
+  }
+}
+
+async function pickFreeOpenRouterModel(preferred?: string): Promise<string | null> {
+  const ids = await listFreeOpenRouterModels();
+  if (!ids.length) return null;
+  const family = String(preferred || '').split('/')[1]?.split(':')[0]?.toLowerCase() || '';
+  return (family && ids.find((id) => id.toLowerCase().includes(family))) || ids[0] || null;
+}
+
 // =========================================================================
-// AI Provider Factory - supports Gemini, OpenRouter, OpenAI and DeepSeek
+// AI Provider Factory - Gemini, OpenRouter, OpenAI, DeepSeek + free tiers
+// (Groq, Cerebras, Mistral, Z.ai) + keyless Pollinations fallback
 // =========================================================================
-export type AIProvider = 'gemini' | 'openrouter' | 'openai' | 'deepseek';
+export type AIProvider =
+  | 'gemini'
+  | 'openrouter'
+  | 'openai'
+  | 'deepseek'
+  | 'groq'
+  | 'cerebras'
+  | 'mistral'
+  | 'zai'
+  | 'pollinations';
 
 export function getAIProvider(provider?: AIProvider): AIProvider {
   if (provider) return provider;
-  // Default priority: OpenRouter → OpenAI → DeepSeek → Gemini
+  // Default priority: paid keys first, free tiers next, keyless last.
   if (isValidKey(process.env.OPENROUTER_API_KEY)) return 'openrouter';
   if (isValidKey(process.env.OPENAI_API_KEY)) return 'openai';
   if (isValidKey(process.env.DEEPSEEK_API_KEY)) return 'deepseek';
-  return 'gemini';
+  if (isValidKey(process.env.GROQ_API_KEY)) return 'groq';
+  if (isValidKey(process.env.CEREBRAS_API_KEY)) return 'cerebras';
+  if (isValidKey(process.env.MISTRAL_API_KEY)) return 'mistral';
+  if (isValidKey(process.env.ZAI_API_KEY)) return 'zai';
+  if (isValidKey(process.env.GEMINI_API_KEY)) return 'gemini';
+  return 'pollinations';
 }
 
-/** Which provider keys are actually configured (skips placeholder values), in failover order. */
+/** Which providers are usable (skips placeholder values), in failover order. */
 export function availableProviders(): AIProvider[] {
   const out: AIProvider[] = [];
   if (isValidKey(process.env.OPENROUTER_API_KEY)) out.push('openrouter');
   if (isValidKey(process.env.OPENAI_API_KEY)) out.push('openai');
   if (isValidKey(process.env.DEEPSEEK_API_KEY)) out.push('deepseek');
+  if (isValidKey(process.env.GROQ_API_KEY)) out.push('groq');
+  if (isValidKey(process.env.CEREBRAS_API_KEY)) out.push('cerebras');
+  if (isValidKey(process.env.MISTRAL_API_KEY)) out.push('mistral');
+  if (isValidKey(process.env.ZAI_API_KEY)) out.push('zai');
   if (isValidKey(process.env.GEMINI_API_KEY)) out.push('gemini');
+  // Keyless anonymous endpoint — always the last resort so the chain never dies.
+  out.push('pollinations');
   return out;
 }
 
@@ -110,6 +191,21 @@ export function createAIClient(provider?: AIProvider) {
   if (selected === 'deepseek') {
     return new OpenRouterClient(process.env.DEEPSEEK_API_KEY, 'https://api.deepseek.com/v1');
   }
+  if (selected === 'groq') {
+    return new OpenRouterClient(process.env.GROQ_API_KEY, 'https://api.groq.com/openai/v1');
+  }
+  if (selected === 'cerebras') {
+    return new OpenRouterClient(process.env.CEREBRAS_API_KEY, 'https://api.cerebras.ai/v1');
+  }
+  if (selected === 'mistral') {
+    return new OpenRouterClient(process.env.MISTRAL_API_KEY, 'https://api.mistral.ai/v1');
+  }
+  if (selected === 'zai') {
+    return new OpenRouterClient(process.env.ZAI_API_KEY, 'https://api.z.ai/api/paas/v4');
+  }
+  if (selected === 'pollinations') {
+    return new OpenRouterClient('', 'https://text.pollinations.ai/openai');
+  }
   // Fallback to Gemini
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
@@ -119,8 +215,18 @@ export function createAIClient(provider?: AIProvider) {
   });
 }
 
+/** Native default model per OpenAI-compatible provider (internal ids don't apply there). */
+const KIND_DEFAULT_MODELS: Partial<Record<AIProvider, string>> = {
+  groq: 'llama-3.3-70b-versatile',
+  cerebras: 'llama-3.3-70b',
+  mistral: 'mistral-small-latest',
+  zai: 'glm-4.7-flash',
+  pollinations: 'openai',
+};
+
 /** Map internal (Gemini-style) model ids to valid ids for the target provider. */
-export function toOpenRouterModel(model?: string, kind: 'openrouter' | 'deepseek' | 'openai' = 'openrouter'): string {
+export function toOpenRouterModel(model?: string, kind: AIProvider = 'openrouter'): string {
+  if (KIND_DEFAULT_MODELS[kind]) return KIND_DEFAULT_MODELS[kind]!;
   if (kind === 'deepseek') {
     if (model && model.startsWith('deepseek/')) return model.replace('deepseek/', '');
     return model && model.startsWith('deepseek-') ? model : 'deepseek-chat';

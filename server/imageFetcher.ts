@@ -138,7 +138,36 @@ export async function fetchPostImage(preferredUrl: string | undefined, query: st
   const viaBing = await bingImageSearch(query, destBase);
   if (viaBing) return viaBing;
 
-  return googleImageSearch(query, destBase);
+  const viaGoogle = await googleImageSearch(query, destBase);
+  if (viaGoogle) return viaGoogle;
+
+  // Last resort: keyless Pollinations AI — generates a fitting graphic instead
+  // of returning nothing when both browser searches come up empty.
+  const aiDest = `${destBase}_ai.jpg`;
+  return (await pollinationsImage(query, aiDest)) ? aiDest : null;
+}
+
+/** Keyless AI image generation (Pollinations). Longer timeout than web downloads. */
+async function pollinationsImage(query: string, dest: string): Promise<boolean> {
+  try {
+    const seed = Math.floor(Math.random() * 1_000_000);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(query)}?width=768&height=768&nologo=true&seed=${seed}`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+      signal: AbortSignal.timeout(60000),
+      redirect: 'follow',
+    });
+    if (!res.ok) return false;
+    const type = res.headers.get('content-type') || '';
+    if (!type.startsWith('image/')) return false;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 5000 || buf.length > 8 * 1024 * 1024) return false;
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, buf);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Clean up images older than 7 days to avoid disk bloat. */

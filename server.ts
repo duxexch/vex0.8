@@ -10,6 +10,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { storage } from './server/storage';
 import { ServerCompensationRequest } from './server/seedData';
 import { agentEngine, calculateNotificationTiming } from './server/agentEngine';
+import { listFreeApis, pingFreeApis } from './server/freeApis';
 import { resolveCleanHost, renderSeoMetaHead, DOMAIN_MATRIX } from './server/seoEngine';
 import { LANGS, isLang, tt, type Lang } from './server/i18nUi';
 import { getProfileText, type ProfileText } from './server/i18nProfiles';
@@ -437,6 +438,32 @@ app.get('/api/health', (req, res) => {
     aiReady: hasRealGeminiKey(),
     growth: growthHealth(),
   });
+});
+
+// Curated free/public API catalog (researched 2026 free tiers).
+// Read-only directory; never exposes key values (status = env presence only).
+// Optional ?ping=1 live-checks a keyless sample; ?category= filters groups.
+app.get('/api/free-apis', async (req, res) => {
+  try {
+    const category = String(req.query.category || '').trim();
+    const apis = listFreeApis().filter((a) => !category || a.category === category);
+    const live = req.query.ping ? await pingFreeApis() : null;
+    res.json({
+      success: true,
+      total: apis.length,
+      keyless: apis.filter((a) => a.auth === 'keyless').length,
+      configured: apis.filter((a) => a.auth === 'env' && a.status === 'ready').length,
+      needsKey: apis.filter((a) => a.status === 'needs-key').length,
+      byCategory: apis.reduce<Record<string, number>>((acc, a) => {
+        acc[a.category] = (acc[a.category] || 0) + 1;
+        return acc;
+      }, {}),
+      ...(live ? { live } : {}),
+      apis,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Companies Directory Management Endpoints (Replica-Synced)
