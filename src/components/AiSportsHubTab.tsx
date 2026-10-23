@@ -677,10 +677,10 @@ END:VCALENDAR`;
 
           {/* AI Smart Alerts (High-Volatility Betting Markets & Odds Shifts) Panel */}
           <div
-            className="relative overflow-hidden rounded-2xl p-3.5 backdrop-blur-xl shadow-lg shadow-black/20 space-y-3"
-            style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: '1px solid #f59e0b55' }}
+            className="relative overflow-hidden rounded-2xl p-3.5 bg-gradient-to-br from-amber-950/40 via-slate-900/80 to-slate-950/90 backdrop-blur-xl shadow-xl shadow-amber-500/10 space-y-3"
+            style={{ border: '1px solid #f59e0b55' }}
           >
-            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
             <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25 bg-amber-500" />
             <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-400" />
             <div className="relative flex items-center justify-between flex-wrap gap-2">
@@ -861,10 +861,10 @@ END:VCALENDAR`;
               {filteredFixtures.map((fixture) => (
                 <div
                   key={fixture.id}
-                  className="relative overflow-hidden rounded-2xl p-4 backdrop-blur-xl shadow-lg shadow-black/20 space-y-3 flex flex-col justify-between transition-all spotlight-surface group"
-                  style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: '1px solid #10b98155' }}
+                  className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-slate-900/70 via-slate-900/60 to-slate-950/80 backdrop-blur-xl shadow-lg shadow-black/20 space-y-3 flex flex-col justify-between transition-all spotlight-surface group"
+                  style={{ border: '1px solid #10b98155' }}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
                   <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25 bg-emerald-500" />
                   <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500" />
                   <div className="relative space-y-3">
@@ -1084,10 +1084,10 @@ END:VCALENDAR`;
           {news.map((item) => (
             <div
               key={item.id}
-              className="relative overflow-hidden rounded-2xl backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col justify-between transition-all group"
-              style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: '1px solid #0ea5e955' }}
+              className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900/70 via-slate-900/60 to-slate-950/80 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col justify-between transition-all group"
+              style={{ border: '1px solid #0ea5e955' }}
             >
-              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
               <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25 bg-sky-500" />
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-sky-500 z-20" />
               <div className="relative">
@@ -1179,10 +1179,10 @@ END:VCALENDAR`;
                 return (
                   <div
                     key={post.id}
-                    className="relative overflow-hidden rounded-2xl backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col transition-all group"
-                    style={{ background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))', border: `1px solid ${accent}55` }}
+                    className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900/70 via-slate-900/60 to-slate-950/80 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col transition-all group"
+                    style={{ border: `1px solid ${accent}55` }}
                   >
-                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
                     <div className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25" style={{ background: accent }} />
                     <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: accent }} />
                     <div className="relative p-3.5 space-y-2.5">

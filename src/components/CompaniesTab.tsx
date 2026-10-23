@@ -33,7 +33,12 @@ import {
   Sparkles,
   Building2,
   Filter,
+  MessageCircle,
+  Send,
 } from 'lucide-react';
+
+const WA_CONTACT_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 عايز أتواصل معاكم');
+const TELEGRAM_CONTACT_URL = 'https://t.me/VexVerifyBot';
 
 interface CompaniesTabProps {
   companies: Company[];
@@ -670,7 +675,28 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
             <span className="text-[11px] font-black text-slate-500 tracking-tight">
               {isAr ? 'طريقة العرض' : 'View mode'}
             </span>
-            <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1.5">
+              <a
+                href={WA_CONTACT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-br from-[#25D366] to-[#0f8f5a] text-white text-[10px] font-black shadow-xs [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer"
+                title={isAr ? 'تواصل عبر واتساب' : 'Contact via WhatsApp'}
+              >
+                <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{isAr ? 'واتساب' : 'WhatsApp'}</span>
+              </a>
+              <a
+                href={TELEGRAM_CONTACT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 text-white text-[10px] font-black shadow-xs [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer"
+                title={isAr ? 'تواصل عبر تيليجرام' : 'Contact via Telegram'}
+              >
+                <Send className="w-3.5 h-3.5 shrink-0" />
+                <span>{isAr ? 'تيليجرام' : 'Telegram'}</span>
+              </a>
+              <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200">
               <button
                 type="button"
                 onClick={() => {
@@ -701,6 +727,7 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
               >
                 <List className="w-4 h-4" />
               </button>
+              </div>
             </div>
           </div>
 
@@ -744,13 +771,12 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                 return (
                   <div
                     key={company.id}
-                    className="relative overflow-hidden rounded-2xl p-3.5 sm:p-4 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col sm:flex-row sm:items-center gap-3 group"
+                    className="relative overflow-hidden rounded-2xl p-3.5 sm:p-4 bg-gradient-to-br from-slate-900/70 via-slate-900/60 to-slate-950/80 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col sm:flex-row sm:items-center gap-3 group"
                     style={{
-                      background: 'linear-gradient(150deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))',
                       border: `1px solid ${company.color}55`,
                     }}
                   >
-                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
                     <div
                       className="absolute -top-10 -right-10 w-24 h-24 rounded-full blur-2xl pointer-events-none opacity-30"
                       style={{ background: company.color }}
@@ -905,14 +931,13 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                   return (
                     <div
                       key={company.id}
-                      className="relative overflow-hidden rounded-2xl p-4 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col justify-between h-full group spotlight-surface transition-all duration-200"
+                      className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-slate-900/70 via-slate-900/60 to-slate-950/80 backdrop-blur-xl shadow-lg shadow-black/20 flex flex-col justify-between h-full group spotlight-surface transition-all duration-200"
                       style={{
-                        background: 'linear-gradient(155deg, rgba(15,23,42,0.94), rgba(2,6,23,0.97))',
                         border: `1px solid ${company.color}55`,
                       }}
                     >
                       {/* Sheen + brand glow */}
-                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
                       <div
                         className="absolute -top-12 -right-10 w-28 h-28 rounded-full blur-3xl pointer-events-none opacity-25"
                         style={{ background: company.color }}

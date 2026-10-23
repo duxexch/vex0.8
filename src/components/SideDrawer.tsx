@@ -18,11 +18,16 @@ import {
   Download,
   X,
   Check,
+  MessageCircle,
+  Send,
 } from 'lucide-react';
 import { Language, TabType } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { ensureWebPushSubscription } from '../services/pushService';
 import { LANGUAGES } from './Header';
+
+const WA_CONTACT_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 عايز أتواصل معاكم');
+const TELEGRAM_CONTACT_URL = 'https://t.me/VexVerifyBot';
 
 interface SideDrawerProps {
   isOpen: boolean;
@@ -383,7 +388,32 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 4. Language */}
+              {/* 4. Contact Us — WhatsApp & Telegram */}
+              <div className="space-y-1.5">
+                {sectionTitle(isAr ? 'تواصل معنا' : 'Contact Us')}
+                <div className="grid grid-cols-2 gap-2 px-0.5">
+                  <a
+                    href={WA_CONTACT_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl bg-gradient-to-br from-[#25D366] to-[#0f8f5a] text-white text-xs font-black shadow-xs shadow-black/10 [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 shrink-0" />
+                    <span>{isAr ? 'واتساب' : 'WhatsApp'}</span>
+                  </a>
+                  <a
+                    href={TELEGRAM_CONTACT_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-white text-xs font-black shadow-xs shadow-black/10 [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer"
+                  >
+                    <Send className="w-4 h-4 shrink-0" />
+                    <span>{isAr ? 'تيليجرام' : 'Telegram'}</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* 5. Language */}
               <div className="space-y-1.5">
                 {sectionTitle(isAr ? 'اللغة' : 'Language')}
                 <div className="grid grid-cols-4 gap-1.5 px-1">
