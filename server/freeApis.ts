@@ -80,7 +80,11 @@ export async function pingFreeApis(): Promise<FreeApiPing[]> {
 
 const PING_TARGETS: Array<{ id: string; url: string }> = [
   { id: 'espn-hidden', url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard' },
-  { id: 'fixturedownload', url: 'https://fixturedownload.com/feed/json/eng.1' },
+  // Season feed slug includes the season year (same rule as the ingest in server.ts)
+  {
+    id: 'fixturedownload',
+    url: `https://fixturedownload.com/feed/json/eng.1-${new Date().getMonth() >= 6 ? new Date().getFullYear() : new Date().getFullYear() - 1}`,
+  },
   { id: 'google-news-rss', url: 'https://news.google.com/rss' },
   { id: 'ip-api', url: 'http://ip-api.com/json/8.8.8.8' },
   { id: 'open-meteo', url: 'https://api.open-meteo.com/v1/forecast?latitude=30.0&longitude=31.2&current=temperature_2m&forecast_days=1' },
