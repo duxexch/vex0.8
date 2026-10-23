@@ -1,9 +1,9 @@
 import React from 'react';
 import { Download, UserPlus, MessageCircle, Send } from 'lucide-react';
 import { Company, Language, AppBranding } from '../types';
+import TelegramContactButton from './TelegramContactButton';
 
 const WHATSAPP_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 شفت توقع المباريات وحابب أسجّل');
-const TELEGRAM_URL = 'https://t.me/Vex_wallet_bot';
 
 interface PostActionButtonsProps {
   postCompany?: string;
@@ -67,15 +67,13 @@ export const PostActionButtons: React.FC<PostActionButtonsProps> = ({
           <MessageCircle className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">{isAr ? 'واتساب' : 'WhatsApp'}</span>
         </a>
-        <a
-          href={TELEGRAM_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`${btn} bg-gradient-to-br from-sky-400 to-blue-600`}
+        <TelegramContactButton
+          lang={lang}
+          className={`${btn} bg-gradient-to-br from-sky-400 to-blue-600 cursor-pointer`}
         >
           <Send className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">{isAr ? 'تيليجرام' : 'Telegram'}</span>
-        </a>
+        </TelegramContactButton>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import { getLocalizedCompany } from '../utils/companyTranslator';
 import { triggerHaptic } from '../utils/haptics';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 import { Card } from './Card';
+import TelegramContactButton from './TelegramContactButton';
 import {
   Copy,
   Check,
@@ -38,7 +39,6 @@ import {
 } from 'lucide-react';
 
 const WA_CONTACT_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 عايز أتواصل معاكم');
-const TELEGRAM_CONTACT_URL = 'https://t.me/Vex_wallet_bot';
 
 interface CompaniesTabProps {
   companies: Company[];
@@ -686,16 +686,13 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                 <MessageCircle className="w-3.5 h-3.5 shrink-0" />
                 <span>{isAr ? 'واتساب' : 'WhatsApp'}</span>
               </a>
-              <a
-                href={TELEGRAM_CONTACT_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+              <TelegramContactButton
+                lang={lang}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 text-white text-[10px] font-black shadow-xs [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer"
-                title={isAr ? 'تواصل عبر تيليجرام' : 'Contact via Telegram'}
               >
                 <Send className="w-3.5 h-3.5 shrink-0" />
                 <span>{isAr ? 'تيليجرام' : 'Telegram'}</span>
-              </a>
+              </TelegramContactButton>
               <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200">
               <button
                 type="button"
