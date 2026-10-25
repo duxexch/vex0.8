@@ -274,6 +274,7 @@ function dropDanglingLinkLines(text: string): string {
       return true;
     })
     .join('\n')
+    .replace(/["'«”‟]\s*["'«”‟]/g, '')
     .replace(/[ \t]+/gm, ' ')
     .replace(/\n[ \t]+\n/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n')
