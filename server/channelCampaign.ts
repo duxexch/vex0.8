@@ -265,12 +265,14 @@ function dropDanglingLinkLines(text: string): string {
     .filter((line) => {
       const t = line.trim();
       if (!t) return true;
-      const isLinkLabel = /(رابط|تسجيل|تطبيق|تحميل|download|register|CODE\s*POM|code\s*promo|🎁)/i.test(t) && /رابط|CODE|🎁|register|download/i.test(t);
-      const hasUrl = /https?:\/\//.test(t);
-      const isBareGift = /^🎁?[\s:]*$/i.test(t);
+      // strip tatweel/diacritics so decorated labels ("رابـط تــحـمــيـل") still match
+      const norm = t.replace(/[\u0640\u064B-\u065F]/g, '');
+      const isLinkLabel = /(رابط|تسجيل|تطبيق|تحميل|download|register|CODE\s*POM|code\s*promo|🎁)/i.test(norm) && /(رابط|CODE|🎁|register|download)/i.test(norm);
+      const hasUrl = /https?:\/\//.test(norm);
+      const isBareGift = /^🎁?[\s:]*$/i.test(norm);
       if (isBareGift) return false;
-      if (isLinkLabel && !hasUrl && !/CODE\s*POM/i.test(t)) return false;
-      if (/CODE\s*POM/i.test(t) && !/[A-Z0-9]{3,}/i.test(t.replace(/CODE\s*POM[OA]\s*:?/i, ''))) return false;
+      if (isLinkLabel && !hasUrl && !/CODE\s*POM/i.test(norm)) return false;
+      if (/CODE\s*POM/i.test(norm) && !/[A-Z0-9]{3,}/i.test(norm.replace(/CODE\s*POM[OA]\s*:?/i, ''))) return false;
       return true;
     })
     .join('\n')
