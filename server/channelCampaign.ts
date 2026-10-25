@@ -441,12 +441,12 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
   try {
     const state = loadState();
     state.stats.lastTickAt = new Date().toISOString();
-    const next = state.queue.find((e) => e.status === 'pending');
+    let next = state.queue.find((e) => e.status === 'pending');
     if (!next) {
       saveState(state);
       return { posted: 0, skipped: 'queue empty' };
     }
-    const ch = channelsStore.get(next.chatId);
+    let ch = channelsStore.get(next.chatId);
     if (!ch || !ch.active) {
       next.status = 'failed';
       next.error = 'channel missing/inactive';
@@ -455,9 +455,29 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
       return { posted: 0, skipped: 'channel inactive' };
     }
     const dryRun = process.env.DRY_RUN === '1';
-    if (!dryRun && !channelsStore.getPublishable(new Date()).find((c) => c.chat_id === ch.chat_id)) {
-      saveState(state);
-      return { posted: 0, skipped: `channel ${ch.title} not publishable now (cap/quiet hours)` };
+    if (!dryRun) {
+      const publishable = new Set(channelsStore.getPublishable(new Date()).map((c) => c.chat_id));
+      if (!publishable.has(ch.chat_id)) {
+        // Head's channel is capped / in quiet hours — take the next publishable
+        // entry instead of stalling the whole queue on the head.
+        const alt = state.queue.find((e) => e.status === 'pending' && publishable.has(e.chatId));
+        if (alt) {
+          next = alt;
+          ch = channelsStore.get(next.chatId);
+          if (!ch) {
+            next.status = 'failed';
+            next.error = 'channel missing';
+            state.stats.failed++;
+            saveState(state);
+            return { posted: 0, skipped: 'channel missing' };
+          }
+        } else {
+          saveState(state);
+          const why = 'no publishable campaign channel now (caps/quiet hours)';
+          console.log(`[Campaign] tick skipped: ${why}`);
+          return { posted: 0, skipped: why };
+        }
+      }
     }
 
     const source = ensureSourcePosts().find((p) => p.id === next.sourceId);

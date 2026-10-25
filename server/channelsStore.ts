@@ -124,7 +124,7 @@ export const channelsStore = {
       if (!c.active) return false;
       if (c.category === 'users' || c.category === 'support') return false;
       if (c.daily_reset !== today) return true; // reset pending — cap not consumed yet
-      if (c.daily_used >= c.daily_cap + overflow) return false;
+      if (c.daily_cap != null && c.daily_used >= c.daily_cap + overflow) return false;
       if (c.quiet_start != null && c.quiet_end != null) {
         const qs = c.quiet_start, qe = c.quiet_end;
         const inQuiet = qs < qe ? hour >= qs && hour < qe : hour >= qs || hour < qe;
