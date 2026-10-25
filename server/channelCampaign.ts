@@ -228,12 +228,18 @@ function resolveCompany(ch: ChannelProfile): CompanyInfo | null {
   return null;
 }
 
+function siteUrl(): string {
+  return String(process.env.APP_URL || 'https://vex.deals').replace(/\/+$/, '');
+}
+
 function buildButtons(c: CompanyInfo | null, ch: ChannelProfile): Array<Array<{ text: string; url: string }>> {
   const rows: Array<Array<{ text: string; url: string }>> = [];
   if (c?.affiliate_link) rows.push([{ text: `🏆 سجّل في ${c.name} الآن`, url: c.affiliate_link }]);
   if (c?.app_link) rows.push([{ text: `📲 حمّل تطبيق ${c.name}`, url: c.app_link }]);
-  if (!rows.length && ch.brand?.domain) {
-    rows.push([{ text: '🌐 زيّن موقعنا', url: `https://${ch.brand.domain}` }]);
+  if (!rows.length) {
+    const url = String(ch.brand?.domain || '').trim() || siteUrl();
+    const label = String(ch.brand?.company || '').trim() || 'VEX';
+    rows.push([{ text: `🌐 زيارة ${label}`, url }]);
   }
   return rows;
 }
@@ -253,13 +259,70 @@ function stripSourceLinks(text: string): string {
 }
 
 function fallbackAdapt(source: string, c: CompanyInfo | null): string {
-  const base = stripSourceLinks(source);
-  if (!c) return base;
+  let base = stripSourceLinks(source);
+  // rebrand: source posts promote their own bookmaker — swap foreign brand names
+  const target = (c?.name || 'VEX').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const other of loadCompanies()) {
+    if (c && (other.id === c.id || other.name.toLowerCase() === c.name.toLowerCase())) continue;
+    if (other.name.length > 3) {
+      base = base.replace(new RegExp(other.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), target);
+    }
+  }
+  base = base.replace(new RegExp(`${target}\\s*\\.com`, 'gi'), target).trim();
+  if (!c) {
+    return [base, '', `🌐 ${siteUrl()}`].join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
   const lines = [base, ''];
   if (c.affiliate_link) lines.push(`🌐 رابط التـسجيل في موقع ${c.name} 👇`, `🔗 ${c.affiliate_link}`, '');
   if (c.app_link) lines.push(`🌐 رابط تحميل تطبيق ${c.name} 👇`, `🔗 ${c.app_link}`, '');
   if (c.promo_code) lines.push(`🎁 CODE POMO: ${c.promo_code}`);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Guard against weak free-tier models echoing the source: strip the source's own
+ * URLs / promo codes, ensure the target company's links are present, and reject
+ * the rewrite entirely (fall back to the safe template) if it still promotes a
+ * different betting company than the target one.
+ */
+function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null): string | null {
+  let out = text;
+  // remove every URL that literally appears in the source post
+  for (const u of source.text.match(/https?:\/\/[^\s<>"']+/g) || []) {
+    out = out.split(u).join('');
+  }
+  // remove the source channel's promo codes and any leftover CODE POMO line
+  out = out
+    .replace(/YEXD\d*/gi, '')
+    .replace(/CODE\s*POM[OA]\s*:?\s*\S*/gi, '')
+    .replace(/code\s*promo\s*:?\s*\S*/gi, '')
+    .replace(/[ \t]+/gm, ' ')
+    .replace(/\n[ \t]+\n/g, '\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (out.length < 40) return null;
+
+  // other-company guard: a rewrite that still promotes a different betting brand is rejected
+  const otherBrand = loadCompanies()
+    .filter((x) => x.is_active !== false && (!c || x.id !== c.id && x.name.toLowerCase() !== c.name.toLowerCase()))
+    .map((x) => x.name)
+    .find((n) => n.length > 3 && new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(out));
+  if (otherBrand) return null;
+
+  // ensure target links exist; append the standard block when the model omitted them
+  const missingAffiliate = c?.affiliate_link && !out.includes(c.affiliate_link);
+  const missingApp = c?.app_link && !out.includes(c.app_link);
+  if (c && (missingAffiliate || missingApp)) {
+    const lines = [out, ''];
+    if (missingAffiliate) lines.push(`🌐 رابط التـسجيل في موقع ${c.name} 👇`, `🔗 ${c.affiliate_link}`, '');
+    if (missingApp) lines.push(`🌐 رابط تحميل تطبيق ${c.name} 👇`, `🔗 ${c.app_link}`, '');
+    if (c.promo_code && !out.includes(c.promo_code)) lines.push(`🎁 CODE POMO: ${c.promo_code}`);
+    out = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  if (!c && !/https?:\/\//.test(out)) {
+    out = [out, '', `🌐 ${siteUrl()}`].join('\n');
+  }
+  return out.slice(0, 3900);
 }
 
 async function adaptPost(source: SourcePost, c: CompanyInfo | null, coachNote: string | null): Promise<{ text: string; llm: boolean }> {
@@ -286,8 +349,11 @@ async function adaptPost(source: SourcePost, c: CompanyInfo | null, coachNote: s
     if (out && out.trim().length > 40) {
       let text = out.trim().replace(/^```[\s\S]*?```$/m, (m) => m.replace(/```[a-z]*/g, '').trim());
       text = text.replace(/^["'«»]+|["'«»]+$/g, '').trim();
-      if (text.length > 3900) text = text.slice(0, 3900);
-      return { text, llm: true };
+      const sanitized = sanitizeAdapted(text, source, c);
+      if (sanitized && sanitized.length > 40) {
+        return { text: sanitized, llm: true };
+      }
+      console.log('[Campaign] LLM rewrite rejected by sanitizer — using safe template');
     }
   } catch (err) {
     console.error('[Campaign] LLM adapt failed, using template:', err);
