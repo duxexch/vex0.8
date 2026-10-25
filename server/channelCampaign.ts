@@ -258,6 +258,28 @@ function stripSourceLinks(text: string): string {
     .trim();
 }
 
+/** Remove link-label leftovers whose URL was stripped (e.g. "رابط التسجيل في موقع X" with no URL). */
+function dropDanglingLinkLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      const isLinkLabel = /(رابط|تسجيل|تطبيق|تحميل|download|register|CODE\s*POM|code\s*promo|🎁)/i.test(t) && /رابط|CODE|🎁|register|download/i.test(t);
+      const hasUrl = /https?:\/\//.test(t);
+      const isBareGift = /^🎁?[\s:]*$/i.test(t);
+      if (isBareGift) return false;
+      if (isLinkLabel && !hasUrl && !/CODE\s*POM/i.test(t)) return false;
+      if (/CODE\s*POM/i.test(t) && !/[A-Z0-9]{3,}/i.test(t.replace(/CODE\s*POM[OA]\s*:?/i, ''))) return false;
+      return true;
+    })
+    .join('\n')
+    .replace(/[ \t]+/gm, ' ')
+    .replace(/\n[ \t]+\n/g, '\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function fallbackAdapt(source: string, c: CompanyInfo | null): string {
   let base = stripSourceLinks(source);
   // rebrand: source posts promote their own bookmaker — swap foreign brand names
@@ -269,6 +291,7 @@ function fallbackAdapt(source: string, c: CompanyInfo | null): string {
     }
   }
   base = base.replace(new RegExp(`${target}\\s*\\.com`, 'gi'), target).trim();
+  base = dropDanglingLinkLines(base);
   if (!c) {
     return [base, '', `🌐 ${siteUrl()}`].join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
@@ -322,6 +345,8 @@ function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null
   if (!c && !/https?:\/\//.test(out)) {
     out = [out, '', `🌐 ${siteUrl()}`].join('\n');
   }
+  out = dropDanglingLinkLines(out);
+  if (out.length < 40) return null;
   return out.slice(0, 3900);
 }
 
