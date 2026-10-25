@@ -273,6 +273,8 @@ function dropDanglingLinkLines(text: string): string {
       if (isBareGift) return false;
       if (isLinkLabel && !hasUrl && !/CODE\s*POM/i.test(norm)) return false;
       if (/CODE\s*POM/i.test(norm) && !/[A-Z0-9]{3,}/i.test(norm.replace(/CODE\s*POM[OA]\s*:?/i, ''))) return false;
+      // bare emoji/separator lines (e.g. a lone 🔗 left after its URL was stripped)
+      if (!/https?:\/\//.test(norm) && !/[\p{L}\p{N}]/u.test(norm)) return false;
       return true;
     })
     .join('\n')
