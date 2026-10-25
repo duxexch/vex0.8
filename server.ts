@@ -80,6 +80,14 @@ import {
 } from './server/forecastChain';
 import { generateWithFailover, extractJsonObject } from './server/agentEngine';
 import { startPostScheduler, getSchedulerStatus } from './server/postScheduler';
+import {
+  initCampaign,
+  startCampaignScheduler,
+  campaignTick,
+  buildCampaignQueue,
+  getCampaignStatus,
+  pullSourcePosts,
+} from './server/channelCampaign';
 import { getSentryStatus } from './server/postSentry';
 import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel } from './server/channelOnboard';
 import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
@@ -461,6 +469,50 @@ app.get('/api/free-apis', async (req, res) => {
       ...(live ? { live } : {}),
       apis,
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Channel campaign — adapted @yexd2 posts → my channels, per-company deep-link buttons.
+// Public read-only status; mutations are loopback/private only.
+app.get('/api/channel-campaign/status', (_req, res) => {
+  try {
+    res.json({ success: true, ...getCampaignStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/channel-campaign/tick', async (req, res) => {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!isLoopbackOrPrivateIp(ip)) return res.status(403).json({ error: 'loopback only' });
+  try {
+    const result = await campaignTick();
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/channel-campaign/build', (req, res) => {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!isLoopbackOrPrivateIp(ip)) return res.status(403).json({ error: 'loopback only' });
+  try {
+    const total = Math.min(200, Math.max(1, Number(req.body?.total) || 70));
+    const result = buildCampaignQueue(total);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/channel-campaign/pull-source', async (req, res) => {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!isLoopbackOrPrivateIp(ip)) return res.status(403).json({ error: 'loopback only' });
+  try {
+    const result = await pullSourcePosts(4);
+    res.json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -4757,6 +4809,17 @@ function startDockerNotificationWorker() {
       console.error('[Forecast] scheduler start failed:', err);
     }
   }, 90 * 1000);
+
+  // Channel campaign: @yexd2-style source posts adapted per company with
+  // deep-link inline buttons; 70-post queue, one post per tick (8 min).
+  initCampaign({ emit: (event, payload) => io.emit(event, payload) });
+  setTimeout(() => {
+    try {
+      startCampaignScheduler(8);
+    } catch (err) {
+      console.error('[Campaign] scheduler start failed:', err);
+    }
+  }, 3 * 60 * 1000);
 
   // Scheduled-post dispatcher: delivers forecast/promo/live queue entries with
   // per-channel caps, quiet hours, anti-spam gaps and retries.
