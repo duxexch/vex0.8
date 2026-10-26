@@ -367,6 +367,14 @@ function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null
     .replace(/\n[ \t]+\n/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  // normalize invented paths on OUR domains (e.g. vex.deals/register) to the rotating link
+  for (const d of BOT_PROMO_DOMAINS) {
+    const base = d.replace(/\/+$/, '');
+    out = out.replace(
+      new RegExp(`${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/(register|app|signup|login)(?=[\\s\"')]|$)`, 'gi'),
+      rotateSiteLink(seed)
+    );
+  }
   if (out.length < 40) return null;
 
   // other-company guard: a rewrite that still promotes a different betting brand is rejected
