@@ -39,6 +39,12 @@ export interface ChannelProfile {
   /** Free-text classification summary produced by the onboarding agent */
   analysis?: string;
   lang: 'ar' | 'en' | 'auto';
+  /** Arabic dialect detected from the channel's own posts (onboarding agent) */
+  dialect?: string; // 'egyptian' | 'gulf' | 'levantine' | 'msa' | 'maghrebi' | ...
+  /** Writing tone detected from the channel's own posts */
+  tone?: string; // 'hype' | 'analytical' | 'friendly' | 'formal' | ...
+  /** Free-text guidance for how posts in this channel should look */
+  content_style?: string;
   active: boolean;
   ai_enabled: boolean;
   /** Max posts per day for this channel */

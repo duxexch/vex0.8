@@ -6043,11 +6043,17 @@ ${urls}</urlset>`;
 
       const name = company.name;
       const details = company.details || '';
+      const description = company.description || '';
       const promo = company.promo_code || '';
+      const affiliate = company.affiliate_link || '';
+      const appLink = company.app_link || '';
+      const bonus = company.bonus_text || '';
+      const accent = /^#[0-9a-fA-F]{6}$/.test(company.color || '') ? company.color : '#10b981';
       const pagePath = `/company/${company.id}`;
       const T_ = (k: string, vars: Record<string, string> = {}) => tt(k, lang, { name, brand: profile.brand, promo, ...vars });
       const jstr = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
       const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const metaDesc = `${T_('company.meta_desc')} ${description || details}`.replace(/\s+/g, ' ').trim().slice(0, 300);
 
       const html = `<!doctype html>
 <html lang="${lang}" dir="${profile.dir}">
@@ -6055,12 +6061,12 @@ ${urls}</urlset>`;
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${name} - ${T_('company.subtitle')} | ${profile.brand}</title>
-  <meta name="description" content="${T_('company.meta_desc')} ${details.substring(0, 120)}" />
+  <meta name="description" content="${escAttr(metaDesc)}" />
   <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
   <link rel="canonical" href="${canonicalUrl(domainUrl, pagePath, lang)}" />
 ${hreflangs(domainUrl, pagePath)}
   <meta property="og:title" content="${name} - ${profile.brand}" />
-  <meta property="og:description" content="${T_('company.og_desc')}" />
+  <meta property="og:description" content="${escAttr(metaDesc)}" />
   <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
   <meta property="og:type" content="article" />
   <meta property="og:locale" content="${lang === 'ar' ? 'ar_AR' : lang + '_' + lang.toUpperCase()}" />
@@ -6130,7 +6136,21 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
     .langbar { background: #0b1220; padding: 8px 20px; display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.85rem; }
     .langbar a { color: #94a3b8; text-decoration: none; }
     .langbar a.active, .langbar a:hover { color: #10b981; }
-    footer { text-align: center; padding: 30px; color: #94a3b8; font-size: 0.85rem; border-top: 1px solid #1e293b; margin-top: 40px; }
+  footer { text-align: center; padding: 30px; color: #94a3b8; font-size: 0.85rem; border-top: 1px solid #1e293b; margin-top: 40px; }
+  </style>
+  <style>
+    /* Company brand theming — accent follows each company's official color */
+    :root { --c: ${accent}; --c-dark: ${accent}cc; --c-soft: ${accent}26; }
+    h1, h2 { color: var(--c) !important; }
+    h2 { border-bottom-color: var(--c-soft) !important; }
+    .badge { background: var(--c) !important; }
+    .promo { border: 2px dashed var(--c) !important; }
+    .promo code, .faq strong, .related a, .nav a:hover { color: var(--c) !important; }
+    .steps li::marker { color: var(--c) !important; }
+    .cta { background: linear-gradient(135deg, var(--c), var(--c-dark)) !important; }
+    .copybtn { background: var(--c); color: #fff; border: none; padding: 10px 26px; border-radius: 10px; font-weight: bold; font-size: 1rem; cursor: pointer; margin-top: 12px; font-family: inherit; }
+    .copybtn:hover { opacity: 0.88; }
+    .copied { color: var(--c); font-weight: bold; margin-inline-start: 10px; }
   </style>
   ${siteSchemaTag(domainUrl, profile)}</head>
 <body>
@@ -6157,10 +6177,21 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
     <p style="margin-top:20px;font-size:1.05rem;color:#10b981;">${profile.intro}</p>
     <p style="margin-top:15px;font-size:1.1rem;color:#e2e8f0;">${details}</p>
 
+    ${description ? `<p style="margin-top:15px;">${description}</p>` : ''}
+    ${bonus ? `<p style="margin-top:10px;color:var(--c);font-weight:bold;">🎁 ${bonus}</p>` : ''}
+
     <div class="promo">
       <p>${T_('company.promo_title')}</p>
-      <code>${promo}</code>
+      <code id="promoCode">${promo}</code>
+      <br>
+      <button class="copybtn" type="button" onclick="copyPromo(this)">📋 ${lang === 'ar' ? 'انسخ الكود' : 'Copy code'}</button>
+      <span class="copied" id="copiedMsg" style="display:none;">✓ ${lang === 'ar' ? 'تم النسخ' : 'Copied'}</span>
       <p style="margin-top:10px;font-size:0.9rem;">${T_('company.promo_note')}</p>
+    </div>
+
+    <div style="text-align:center;margin:25px 0;">
+      ${affiliate ? `<a href="${escAttr(affiliate)}" class="cta" rel="nofollow sponsored noopener" target="_blank">🏆 ${lang === 'ar' ? `سجّل الآن في ${name}` : `Register on ${name}`}</a>` : ''}
+      ${appLink ? `<a href="${escAttr(appLink)}" class="cta" rel="nofollow sponsored noopener" target="_blank">📲 ${lang === 'ar' ? `تحميل تطبيق ${name}` : `Download ${name} app`}</a>` : ''}
     </div>
 
     <h2>📋 ${T_('company.steps_title')}</h2>
@@ -6213,6 +6244,25 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
     <p>${T_('company.footer_page')} ${CONTENT_VERIFIED}</p>
     <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
   </footer>
+  <script>
+  function copyPromo(btn) {
+    var code = document.getElementById('promoCode').textContent.trim();
+    var done = function () {
+      var m = document.getElementById('copiedMsg');
+      if (m) { m.style.display = 'inline'; setTimeout(function () { m.style.display = 'none'; }, 2500); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(done).catch(function () { fallbackCopy(code); done(); });
+    } else { fallbackCopy(code); done(); }
+  }
+  function fallbackCopy(code) {
+    var ta = document.createElement('textarea');
+    ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  </script>
 </body>
 </html>`;
 

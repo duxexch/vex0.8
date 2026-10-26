@@ -1,5 +1,6 @@
 import { generateWithFailover, extractJsonObject, availableProviders } from './agentEngine';
 import { channelsStore, ChannelProfile } from './channelsStore';
+import { parseTmePage } from './channelCampaign';
 
 // =========================================================================
 // Channel Onboarding Agent — when the publisher bot is added as admin to a
@@ -22,6 +23,9 @@ const CLASSIFY_SYSTEM = `أنت عميل تصنيف قنوات تيليجرام 
   "topics": ["football","basketball","live","transfer","promo","lottery","news","payout","users","general"],
   "betting_related": true,
   "lang": "ar|en",
+  "dialect": "egyptian|gulf|levantine|maghrebi|msa",
+  "tone": "hype|analytical|friendly|formal|playful",
+  "content_style": "سطر واحد يصف صيغة المنشورات المثالية لهذه القناة (بنية المنشور، طول الكلام، الإيموجي، هل يستخدم عناوين وقوائم)",
   "daily_cap": 12,
   "brand": {"company":"...","signature":"...","emoji":"rich|minimal|none"},
   "summary": "سطر واحد يصف القناة ونوع جمهورها"
@@ -30,15 +34,24 @@ const CLASSIFY_SYSTEM = `أنت عميل تصنيف قنوات تيليجرام 
 - category: sports=محتوى رياضي، partners=شركاء/embrochen، payments=مدفوعات وسحب وإيداع، support=دعم فني، users=تحديثات مستخدمين.
 - topics: اختر ما ينطبق فقط من القائمة (3 كحد أقصى). إن لم يتبين ركّز على general/news.
 - betting_related: true إذا كانت القناة عن المراهنة الرياضية أو تنشر توقعات/أوليات/كاش باك/عروض كازينو أو روابط مراهنات. false إذا كانت قناة أخبار رياضية عادية بلا أي صلة بالمراهنة.
+- dialect: استنتج اللهجة من منشورات القناة نفسها (وليس من الوصف فقط): egyptian=مصري، gulf=خليجي، levantine=شامي، maghrebi=مغاربي، msa=فصحى. للقنوات الإنجليزية اكتب msa.
+- tone: نبرة الكتابة الغالبة على القناة.
+- content_style: من أمثلة منشوراتها الفعلية — كيف يجب أن يبدو منشورنا ليبدو ابن القناة.
 - daily_cap: بين 8 و 16 بحسب حجم نشاط القناة (الافتراضي 12).
-- brand.signature: توقيع/CTA مناسب بنفس لغة القناة (فارغ إن لم يكن ضرورياً). brand.company فارغ إن لم يظهر اسم واضح.
+- brand.signature: توقيع/CTA مناسب بنفس لغة ولهجة القناة (فارغ إن لم يكن ضرورياً). brand.company فارغ إن لم يظهر اسم واضح.
 - lang: حسب لغة محتوى القناة.`;
+
+const DIALECTS = ['egyptian', 'gulf', 'levantine', 'maghrebi', 'msa'];
+const TONES = ['hype', 'analytical', 'friendly', 'formal', 'playful'];
 
 function normalizeClassification(raw: any, chat: { title?: string; username?: string }): {
   category: ChannelProfile['category'];
   topics: string[];
   betting_related: boolean;
   lang: 'ar' | 'en';
+  dialect: string;
+  tone: string;
+  content_style: string;
   daily_cap: number;
   brand: ChannelProfile['brand'];
   analysis: string;
@@ -47,11 +60,16 @@ function normalizeClassification(raw: any, chat: { title?: string; username?: st
   const topics = Array.isArray(raw?.topics) ? raw.topics.filter((t: any) => typeof t === 'string').slice(0, 3) : [];
   const emoji = ['rich', 'minimal', 'none'].includes(raw?.brand?.emoji) ? raw.brand.emoji : 'rich';
   const cap = typeof raw?.daily_cap === 'number' && raw.daily_cap >= 4 && raw.daily_cap <= 30 ? Math.round(raw.daily_cap) : 12;
+  const dialect = DIALECTS.includes(raw?.dialect) ? raw.dialect : 'msa';
+  const tone = TONES.includes(raw?.tone) ? raw.tone : 'friendly';
   return {
     category: cat,
     topics: topics.length ? topics : ['news'],
     betting_related: raw?.betting_related !== false,
     lang: raw?.lang === 'en' ? 'en' : 'ar',
+    dialect,
+    tone,
+    content_style: typeof raw?.content_style === 'string' ? raw.content_style.slice(0, 400) : '',
     daily_cap: cap,
     brand: {
       domain: typeof raw?.brand?.domain === 'string' ? raw.brand.domain.slice(0, 60) : '',
@@ -85,14 +103,37 @@ async function fetchChatDescription(chatId: string | number): Promise<string> {
   return '';
 }
 
+/** Read a public channel's recent posts via the t.me/s web preview (best-effort). */
+async function fetchRecentChannelPosts(username?: string): Promise<string> {
+  if (!username) return '';
+  const handle = username.replace(/^@/, '').trim();
+  if (!handle || /[^A-Za-z0-9_]/.test(handle)) return '';
+  try {
+    const res = await fetch(`https://t.me/s/${handle}`, {
+      signal: AbortSignal.timeout(12000),
+      headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0' },
+    });
+    if (!res.ok) return '';
+    const posts = parseTmePage(await res.text())
+      .map((p) => p.text.replace(/\s+/g, ' ').trim())
+      .filter((t) => t.length > 25)
+      .slice(-8);
+    return posts.length ? posts.join('\n---\n').slice(0, 3500) : '';
+  } catch {
+    return '';
+  }
+}
+
 async function classifyChannel(
   chat: { id: number | string; title?: string; username?: string },
-  description: string
+  description: string,
+  recentPosts = ''
 ): Promise<ReturnType<typeof normalizeClassification>> {
   const info =
     `القناة: ${chat.title || chat.id}\n` +
     `المعرّف: ${chat.username ? '@' + chat.username : chat.id}\n` +
-    `الوصف:\n${description || '(لا يوجد وصف — استنتج من الاسم)'}`;
+    `الوصف:\n${description || '(لا يوجد وصف — استنتج من الاسم والمنشورات)'}\n` +
+    (recentPosts ? `\nآخر منشورات القناة (مصدر الحقيقة للهجة والنبرة والصيغة):\n${recentPosts}` : '\n(لا توجد منشورات متاحة للقراءة)');
 
   if (availableProviders().length === 0) {
     console.warn('[Onboard] no LLM provider — using rule fallback');
@@ -158,9 +199,12 @@ export async function handleBotMembershipUpdate(update: any): Promise<boolean> {
 
   console.log(`[Onboard] bot added to «${chat.title || chatId}» (${status}) — sending details to agents for classification…`);
   const description = await fetchChatDescription(chat.id);
+  const recentPosts = await fetchRecentChannelPosts(chat.username || '');
+  if (recentPosts) console.log(`[Onboard] read ${recentPosts.split('\n---\n').length} recent posts from @${chat.username}`);
   const cls = await classifyChannel(
     { id: chat.id, title: chat.title, username: chat.username },
-    description
+    description,
+    recentPosts
   );
 
   const profile = channelsStore.upsert({
@@ -171,6 +215,9 @@ export async function handleBotMembershipUpdate(update: any): Promise<boolean> {
     topics: cls.topics,
     betting_related: cls.betting_related,
     lang: cls.lang,
+    dialect: cls.dialect,
+    tone: cls.tone,
+    content_style: cls.content_style,
     daily_cap: cls.daily_cap,
     brand: {
       domain: existing?.brand?.domain || cls.brand.domain,
@@ -209,9 +256,11 @@ export async function reclassifyChannel(chatId: string): Promise<ChannelProfile 
   const existing = channelsStore.get(chatId);
   if (!existing) return null;
   const description = await fetchChatDescription(existing.chat_id);
+  const recentPosts = await fetchRecentChannelPosts(existing.username || '');
   const cls = await classifyChannel(
     { id: existing.chat_id, title: existing.title, username: existing.username },
-    description
+    description,
+    recentPosts
   );
   return channelsStore.upsert({
     chat_id: chatId,
@@ -219,6 +268,9 @@ export async function reclassifyChannel(chatId: string): Promise<ChannelProfile 
     topics: cls.topics,
     betting_related: cls.betting_related,
     lang: cls.lang,
+    dialect: cls.dialect,
+    tone: cls.tone,
+    content_style: cls.content_style,
     daily_cap: cls.daily_cap,
     brand: {
       domain: existing.brand?.domain || cls.brand.domain,

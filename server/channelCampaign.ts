@@ -9,16 +9,20 @@ import * as path from 'path';
 import { channelsStore, ChannelProfile } from './channelsStore';
 import { generateWithFailover } from './agentEngine';
 import { SOURCE_POSTS_SEED, SeedSourcePost } from './sourcePosts.seed';
+import { EXPLAINER_TOPICS, ExplainerTopic } from './explainerSeed';
+import { BOT_PROMO_DOMAINS } from './botPromo';
 
 export interface SourcePost extends SeedSourcePost {
   pulledAt?: string;
 }
 
 export type CampaignEntryStatus = 'pending' | 'posted' | 'failed';
+export type CampaignEntryKind = 'source' | 'explainer';
 
 export interface CampaignEntry {
   id: string;
-  sourceId: string;
+  kind?: CampaignEntryKind; // 'source' (default) | 'explainer'
+  sourceId: string;         // source post id OR explainer topic id
   chatId: string;
   status: CampaignEntryStatus;
   attempt: number;
@@ -150,7 +154,7 @@ function decodeEntities(s: string): string {
     .trim();
 }
 
-function parseTmePage(html: string): SourcePost[] {
+export function parseTmePage(html: string): SourcePost[] {
   const posts: SourcePost[] = [];
   const parts = html.split(/<div class="tgme_widget_message /).slice(1);
   for (const part of parts) {
@@ -232,14 +236,31 @@ function siteUrl(): string {
   return String(process.env.APP_URL || 'https://vex.deals').replace(/\/+$/, '');
 }
 
-function buildButtons(c: CompanyInfo | null, ch: ChannelProfile): Array<Array<{ text: string; url: string }>> {
+/**
+ * Rotate across the platform's five official domains so posts never lean on a
+ * single link (variety also protects against one domain getting flagged).
+ * Deterministic per seed (entry/post id) so every post picks a stable domain.
+ */
+function rotateSiteLink(seed: string): string {
+  const domains = BOT_PROMO_DOMAINS.length ? BOT_PROMO_DOMAINS : [siteUrl()];
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return domains[h % domains.length].replace(/\/+$/, '');
+}
+
+function buildButtons(c: CompanyInfo | null, ch: ChannelProfile, seed: string): Array<Array<{ text: string; url: string }>> {
   const rows: Array<Array<{ text: string; url: string }>> = [];
-  if (c?.affiliate_link) rows.push([{ text: `🏆 سجّل في ${c.name} الآن`, url: c.affiliate_link }]);
-  if (c?.app_link) rows.push([{ text: `📲 حمّل تطبيق ${c.name}`, url: c.app_link }]);
-  if (!rows.length) {
-    const url = String(ch.brand?.domain || '').trim() || siteUrl();
+  const rotating = rotateSiteLink(seed + (ch.chat_id || ''));
+  if (c) {
+    if (c.affiliate_link) rows.push([{ text: `🏆 سجّل الآن في ${c.name}${c.bonus_text ? ' — مكافأة ترحيبية' : ''}`, url: c.affiliate_link }]);
+    if (c.app_link) rows.push([{ text: `📲 تحميل تطبيق ${c.name}`, url: c.app_link }]);
+    // promo button: deep link to the branded company page which shows + copies the code
+    if (c.promo_code) rows.push([{ text: `🎁 انسخ كود الخصم: ${c.promo_code}`, url: `${rotating}/company/${c.id}` }]);
+    if (!rows.length) rows.push([{ text: `🌐 ${c.name}`, url: rotating }]);
+  } else {
     const label = String(ch.brand?.company || '').trim() || 'VEX';
-    rows.push([{ text: `🌐 زيارة ${label}`, url }]);
+    rows.push([{ text: `🏆 افتح منصة ${label} الآن`, url: rotating }]);
+    rows.push([{ text: '📱 تحميل تطبيق الموبايل', url: `${rotating}/download/apk` }]);
   }
   return rows;
 }
@@ -285,7 +306,23 @@ function dropDanglingLinkLines(text: string): string {
     .trim();
 }
 
-function fallbackAdapt(source: string, c: CompanyInfo | null): string {
+/** Drop lines that talk about a promo code we don't actually own (no real code present). */
+function removeBogusPromoLines(text: string, realCode?: string): string {
+  return text
+    .split('\n')
+    .filter((line) => {
+      const norm = line.replace(/[\u0640\u064B-\u065F]/g, '');
+      const mentionsPromo =
+        /الرمز الترويجي|كود\s*(الخصم|ترويجي|حصري|حصرى)|promo\s*code|promo\s*:|code\s*pomo/i.test(norm);
+      if (!mentionsPromo) return true;
+      return Boolean(realCode && norm.toUpperCase().includes(realCode.toUpperCase()));
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function fallbackAdapt(source: string, c: CompanyInfo | null, seed = 's'): string {
   let base = stripSourceLinks(source);
   // rebrand: source posts promote their own bookmaker — swap foreign brand names
   const target = (c?.name || 'VEX').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -297,13 +334,15 @@ function fallbackAdapt(source: string, c: CompanyInfo | null): string {
   }
   base = base.replace(new RegExp(`${target}\\s*\\.com`, 'gi'), target).trim();
   base = dropDanglingLinkLines(base);
+  base = removeBogusPromoLines(base, c?.promo_code);
+  const link = rotateSiteLink(seed);
   if (!c) {
-    return [base, '', `🌐 ${siteUrl()}`].join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return [base, '', `🌐 ${link}`].join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
   const lines = [base, ''];
-  if (c.affiliate_link) lines.push(`🌐 رابط التـسجيل في موقع ${c.name} 👇`, `🔗 ${c.affiliate_link}`, '');
-  if (c.app_link) lines.push(`🌐 رابط تحميل تطبيق ${c.name} 👇`, `🔗 ${c.app_link}`, '');
-  if (c.promo_code) lines.push(`🎁 CODE POMO: ${c.promo_code}`);
+  if (c.affiliate_link) lines.push(`🌐 سجّل في ${c.name} من هنا 👇`, `🔗 ${c.affiliate_link}`, '');
+  if (c.app_link) lines.push(`🌐 حمّل تطبيق ${c.name} 👇`, `🔗 ${c.app_link}`, '');
+  if (c.promo_code) lines.push(`🎁 CODE PROMO: ${c.promo_code}`, '', `🌐 ${link}`);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -313,16 +352,16 @@ function fallbackAdapt(source: string, c: CompanyInfo | null): string {
  * the rewrite entirely (fall back to the safe template) if it still promotes a
  * different betting company than the target one.
  */
-function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null): string | null {
+function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null, seed = 's'): string | null {
   let out = text;
   // remove every URL that literally appears in the source post
   for (const u of source.text.match(/https?:\/\/[^\s<>"']+/g) || []) {
     out = out.split(u).join('');
   }
-  // remove the source channel's promo codes and any leftover CODE POMO line
+  // remove the source channel's promo codes and any leftover code line
   out = out
     .replace(/YEXD\d*/gi, '')
-    .replace(/CODE\s*POM[OA]\s*:?\s*\S*/gi, '')
+    .replace(/CODE\s*PROM[OA]\s*:?\s*\S*/gi, '')
     .replace(/code\s*promo\s*:?\s*\S*/gi, '')
     .replace(/[ \t]+/gm, ' ')
     .replace(/\n[ \t]+\n/g, '\n\n')
@@ -342,22 +381,53 @@ function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null
   const missingApp = c?.app_link && !out.includes(c.app_link);
   if (c && (missingAffiliate || missingApp)) {
     const lines = [out, ''];
-    if (missingAffiliate) lines.push(`🌐 رابط التـسجيل في موقع ${c.name} 👇`, `🔗 ${c.affiliate_link}`, '');
-    if (missingApp) lines.push(`🌐 رابط تحميل تطبيق ${c.name} 👇`, `🔗 ${c.app_link}`, '');
-    if (c.promo_code && !out.includes(c.promo_code)) lines.push(`🎁 CODE POMO: ${c.promo_code}`);
+    if (missingAffiliate) lines.push(`🌐 سجّل في ${c.name} من هنا 👇`, `🔗 ${c.affiliate_link}`, '');
+    if (missingApp) lines.push(`🌐 حمّل تطبيق ${c.name} 👇`, `🔗 ${c.app_link}`, '');
+    if (c.promo_code && !out.includes(c.promo_code)) lines.push(`🎁 CODE PROMO: ${c.promo_code}`);
     out = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
+  out = removeBogusPromoLines(out, c?.promo_code);
   if (!c && !/https?:\/\//.test(out)) {
-    out = [out, '', `🌐 ${siteUrl()}`].join('\n');
+    out = [out, '', `🌐 ${rotateSiteLink(seed)}`].join('\n');
   }
   out = dropDanglingLinkLines(out);
   if (out.length < 40) return null;
   return out.slice(0, 3900);
 }
 
-async function adaptPost(source: SourcePost, c: CompanyInfo | null, coachNote: string | null): Promise<{ text: string; llm: boolean }> {
-  const system = 'أنت محرر محتوى عربي لقنوات مراهنات رياضية في تليجرام. أعد كتابة المنشور فقط: بلا شرح، بلا اقتباسات، بلا وسم HTML، أقصى طول 3500 حرف.';
+const DIALECT_LABEL: Record<string, string> = {
+  egyptian: 'العامية المصرية',
+  gulf: 'اللهجة الخليجية',
+  levantine: 'اللهجة الشامية',
+  maghrebi: 'اللهجة المغاربية',
+  msa: 'الفصحى المبسطة',
+};
+
+/** Voice instructions derived from the channel's own detected profile. */
+function channelVoice(ch: ChannelProfile): string {
+  const parts: string[] = [];
+  if (ch.lang === 'en') parts.push('اكتب المنشور بالإنجليزية بالكامل');
+  else parts.push(`اكتب المنشور بالعربية${ch.dialect && ch.dialect !== 'msa' ? ` بـ${DIALECT_LABEL[ch.dialect] || ch.dialect}` : ''}`);
+  if (ch.tone) parts.push(`النبرة: ${ch.tone}`);
+  if (ch.content_style) parts.push(`صيغة القناة: ${ch.content_style}`);
+  if (ch.brand?.signature) parts.push(`توقيع القناة المتوقع: ${ch.brand.signature}`);
+  return parts.join(' · ');
+}
+
+async function adaptPost(
+  source: SourcePost,
+  c: CompanyInfo | null,
+  coachNote: string | null,
+  ch: ChannelProfile,
+  seed = 's'
+): Promise<{ text: string; llm: boolean }> {
+  const system =
+    ch.lang === 'en'
+      ? 'You rewrite posts for a Telegram sports-betting channel. Output ONLY the post: no explanation, no quotes, no HTML, max 3500 chars.'
+      : 'أنت محرر محتوى لقنوات مراهنات رياضية في تليجرام. أعد كتابة المنشور فقط: بلا شرح، بلا اقتباسات، بلا وسم HTML، أقصى طول 3500 حرف.';
   const prompt = [
+    `القناة المستهدفة: «${ch.title}» — ${channelVoice(ch)}`,
+    '',
     'المصدر (منشور قناة توقعات رياضية):',
     '"""',
     source.text,
@@ -365,12 +435,12 @@ async function adaptPost(source: SourcePost, c: CompanyInfo | null, coachNote: s
     '',
     c
       ? `الشركة المستهدفة: ${c.name}${c.promo_code ? ` — بروموكود: ${c.promo_code}` : ''}${c.bonus_text ? ` — مكافأة: ${c.bonus_text}` : ''}`
-      : 'لا توجد شركة محددة — اكتب المنشور بأسلوب قناة توقعات عامة.',
+      : `اكتب باسم منصة VEX (${rotateSiteLink(seed)}) بأسلوب قناة توقعات عامة.`,
     c?.affiliate_link ? `رابط التسجيل (يجب إدراجه كما هو): ${c.affiliate_link}` : '',
     c?.app_link ? `رابط تحميل التطبيق (يجب إدراجه كما هو): ${c.app_link}` : '',
     coachNote ? `ملاحظة تحسين من مراجعات هذه القناة (طبّقها): ${coachNote}` : '',
     '',
-    'اكتب منشوراً عربياً بنفس نبرة المصدر وإيموجيه وطوله تقريباً، مع روابط التسجيل والتطبيق والبروموكود إن وجدت. لا تخترع مباريات أو نتائج أو أرقام غير واردة في المصدر.',
+    `اكتب منشوراً ${ch.lang === 'en' ? 'by the same rules in English' : 'بنفس نبرة المصدر وإيموجيه وطوله تقريباً'}، مع روابط التسجيل والتطبيق والبروموكود إن وجدت فقط. لا تخترع مباريات أو نتائج أو أرقام غير واردة في المصدر. لا تذكر أي شركة مراهنات غير الشركة المستهدفة.`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -379,7 +449,7 @@ async function adaptPost(source: SourcePost, c: CompanyInfo | null, coachNote: s
     if (out && out.trim().length > 40) {
       let text = out.trim().replace(/^```[\s\S]*?```$/m, (m) => m.replace(/```[a-z]*/g, '').trim());
       text = text.replace(/^["'«»]+|["'«»]+$/g, '').trim();
-      const sanitized = sanitizeAdapted(text, source, c);
+      const sanitized = sanitizeAdapted(text, source, c, seed);
       if (sanitized && sanitized.length > 40) {
         return { text: sanitized, llm: true };
       }
@@ -388,14 +458,73 @@ async function adaptPost(source: SourcePost, c: CompanyInfo | null, coachNote: s
   } catch (err) {
     console.error('[Campaign] LLM adapt failed, using template:', err);
   }
-  return { text: fallbackAdapt(source.text, c), llm: false };
+  return { text: fallbackAdapt(source.text, c, seed), llm: false };
 }
 
-async function reviewPost(chatId: string, source: SourcePost, adapted: string, notes: string[]): Promise<string | null> {
+/** Explainer post: teaches one platform feature, written in the channel's own voice. */
+async function adaptExplainer(
+  topic: ExplainerTopic,
+  c: CompanyInfo | null,
+  coachNote: string | null,
+  ch: ChannelProfile,
+  seed = 'e'
+): Promise<{ text: string; llm: boolean }> {
+  const link = rotateSiteLink(seed + topic.id);
+  const system =
+    ch.lang === 'en'
+      ? 'You write engaging explainer posts for a Telegram channel about a betting-rewards platform. Output ONLY the post: no explanation, max 2500 chars.'
+      : 'أنت تكتب منشورات تعريفية جذابة لقناة تليجرام عن منصة مكافآت رياضية. أخرج المنشور فقط: بلا شرح، أقصى طول 2500 حرف.';
+  const prompt = [
+    `القناة المستهدفة: «${ch.title}» — ${channelVoice(ch)}`,
+    '',
+    `اكتب منشوراً يشرح ميزة: «${topic.title}»`,
+    'النقاط الأساسية (اشرحها بأسلوبك ولا تخترع غيرها):',
+    ...topic.points.map((p) => `- ${p}`),
+    '',
+    `أضف في النهاية دعوة للتجربة مع هذا الرابط حرفياً: ${link}`,
+    c ? `اربط الشرح بالشركة ${c.name}${c.promo_code ? ` وكودها ${c.promo_code}` : ''} إن كان ذلك منطقياً فقط.` : 'لا تذكر أسماء شركات مراهنات محددة.',
+    coachNote ? `ملاحظة تحسين من مراجعات هذه القناة (طبّقها): ${coachNote}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  try {
+    const out = await generateWithFailover(prompt, system, 0.7);
+    if (out && out.trim().length > 40) {
+      let text = out.trim().replace(/^```[\s\S]*?```$/m, (m) => m.replace(/```[a-z]*/g, '').trim());
+      text = text.replace(/^["'«»]+|["'«»]+$/g, '').trim();
+      if (!text.includes(link)) text = `${text}\n\n🌐 ${link}`;
+      const otherBrand = loadCompanies()
+        .filter((x) => x.is_active !== false && (!c || x.id !== c.id && x.name.toLowerCase() !== c.name.toLowerCase()))
+        .map((x) => x.name)
+        .find((n) => n.length > 3 && new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(text));
+      if (!otherBrand) return { text: dropDanglingLinkLines(text).slice(0, 2500), llm: true };
+      console.log('[Campaign] explainer rewrite rejected (foreign brand) — using template');
+    }
+  } catch (err) {
+    console.error('[Campaign] explainer LLM failed, using template:', err);
+  }
+  const bullets = topic.points.map((p) => `✅ ${p}`).join('\n');
+  return {
+    text: [
+      `📢 ${topic.title}`,
+      '',
+      bullets,
+      '',
+      c?.promo_code ? `🎁 CODE PROMO: ${c.promo_code}` : '',
+      `🌐 ${link}`,
+    ]
+      .filter((l) => l !== '')
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n'),
+    llm: false,
+  };
+}
+
+async function reviewPost(chatId: string, originText: string, adapted: string, notes: string[]): Promise<string | null> {
   const prompt = [
     'أنت مراجع محتوى قنوات مراهنات. اقرأ المنشور الأصلي والمنشور المعدّل، ثم اكتب سطراً واحداً فقط بالعربية (≤120 حرفاً) يصف تحسيناً ملموساً يجب تطبيقه على المنشورات القادمة في نفس القناة (نبرة، بنية، عناوين، إيموجي، CTA). لا تعليقات أخرى.',
     notes.length ? `ملاحظات سابقة لهذه القناة: ${notes.slice(-5).join(' | ')}` : '',
-    `الأصلي:\n${source.text.slice(0, 600)}`,
+    `الأصلي:\n${originText.slice(0, 600)}`,
     `المعدّل:\n${adapted.slice(0, 600)}`,
   ]
     .filter(Boolean)
@@ -503,8 +632,24 @@ export function buildCampaignQueue(total = CAMPAIGN_TOTAL): { built: number; ski
   }
 
   const queue: CampaignEntry[] = [];
+  let topicIdx = 0;
   for (let i = 0; i < total; i++) {
     const ch = channels[i % channels.length];
+    // every 3rd entry is an explainer teaching one platform feature
+    const isExplainer = i % 3 === 2;
+    if (isExplainer) {
+      const topic = EXPLAINER_TOPICS[topicIdx % EXPLAINER_TOPICS.length];
+      topicIdx++;
+      queue.push({
+        id: `c${Date.now().toString(36)}_${i}`,
+        kind: 'explainer',
+        sourceId: topic.id,
+        chatId: ch.chat_id,
+        status: 'pending',
+        attempt: 0,
+      });
+      continue;
+    }
     const used = usedPerChannel.get(ch.chat_id) || new Set<string>();
     let post = posts.find((p) => !used.has(p.id));
     if (!post) {
@@ -515,6 +660,7 @@ export function buildCampaignQueue(total = CAMPAIGN_TOTAL): { built: number; ski
     usedPerChannel.set(ch.chat_id, used);
     queue.push({
       id: `c${Date.now().toString(36)}_${i}`,
+      kind: 'source',
       sourceId: post.id,
       chatId: ch.chat_id,
       status: 'pending',
@@ -576,8 +722,17 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
       }
     }
 
-    const source = ensureSourcePosts().find((p) => p.id === next.sourceId);
-    if (!source) {
+    const isExplainer = next.kind === 'explainer';
+    const source = isExplainer ? null : ensureSourcePosts().find((p) => p.id === next.sourceId);
+    const topic = isExplainer ? EXPLAINER_TOPICS.find((t) => t.id === next.sourceId) : null;
+    if (isExplainer && !topic) {
+      next.status = 'failed';
+      next.error = 'explainer topic missing';
+      state.stats.failed++;
+      saveState(state);
+      return { posted: 0, skipped: 'topic missing' };
+    }
+    if (!isExplainer && !source) {
       next.status = 'failed';
       next.error = 'source post missing';
       state.stats.failed++;
@@ -601,8 +756,11 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
 
     const notes = state.coachNotes[ch.chat_id] || [];
     const company = resolveCompany(ch);
-    const { text, llm } = await adaptPost(source, company, notes.length ? notes[notes.length - 1] : null);
-    const keyboard = buildButtons(company, ch);
+    const coach = notes.length ? notes[notes.length - 1] : null;
+    const { text, llm } = isExplainer
+      ? await adaptExplainer(topic!, company, coach, ch, next.id)
+      : await adaptPost(source!, company, coach, ch, next.id);
+    const keyboard = buildButtons(company, ch, next.id);
 
     if (dryRun) {
       next.status = 'posted';
@@ -611,8 +769,8 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
       next.postedAt = new Date().toISOString();
       state.stats.posted++;
       saveState(state);
-      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, sourceId: source.id, llm, dryRun: true, buttons: keyboard.length });
-      console.log(`[Campaign][DRY] ${ch.title} ← #${source.id} (llm=${llm}, buttons=${keyboard.length})`);
+      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, sourceId: next.sourceId, kind: next.kind, llm, dryRun: true, buttons: keyboard.length });
+      console.log(`[Campaign][DRY] ${ch.title} ← #${next.sourceId} ${next.kind || 'source'} (llm=${llm}, buttons=${keyboard.length})`);
       return { posted: 1 };
     }
 
@@ -627,13 +785,13 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
       state.stats.posted++;
       channelsStore.recordPost(ch.chat_id);
       // iterative improvement: one short coaching note per published post
-      const note = await reviewPost(ch.chat_id, source, text, notes);
+      const note = await reviewPost(ch.chat_id, isExplainer ? `📢 ${topic!.title}` : source!.text, text, notes);
       if (note) {
         notes.push(note);
         state.coachNotes[ch.chat_id] = notes.slice(-10);
       }
       saveState(state);
-      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, messageId: sent.messageId, sourceId: source.id, llm, buttons: keyboard.length, coachNote: note || undefined });
+      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, messageId: sent.messageId, sourceId: next.sourceId, kind: next.kind, llm, buttons: keyboard.length, coachNote: note || undefined });
       console.log(`[Campaign] posted to ${ch.title} (msg ${sent.messageId}, llm=${llm}, buttons=${keyboard.length})`);
       return { posted: 1 };
     }
