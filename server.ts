@@ -234,6 +234,9 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/api/predictions/*/result', // manual settlement (validated by X-API-Key / session inside the route)
     '/api/push/*', // Web Push subscribe/unsubscribe (public VAPID key, endpoint-scoped, no PII)
     '/api/growth/*', // growth brain simulator — loopback/private origins only (checked inside the route)
+    '/api/channel-campaign/tick', // campaign tick — loopback only (checked inside the route)
+    '/api/channel-campaign/build', // queue rebuild — loopback only (checked inside the route)
+    '/api/channel-campaign/pull-source', // source refresh — loopback only (checked inside the route)
     '/api/indexnow', // machine-to-machine SEO endpoint (domain-restricted inside the route + rate limited)
   ],
   redirectPath: '/auth-required',
