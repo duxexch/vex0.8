@@ -322,6 +322,30 @@ function removeBogusPromoLines(text: string, realCode?: string): string {
     .trim();
 }
 
+/** Only our official domains (any path) and the target company's exact links may survive. */
+function enforceLinkAllowlist(text: string, c: CompanyInfo | null): string {
+  const ourHosts = BOT_PROMO_DOMAINS.map((d) => {
+    try {
+      return new URL(d).hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  }).filter(Boolean);
+  const exactAllowed = new Set<string>();
+  if (c?.affiliate_link) exactAllowed.add(c.affiliate_link);
+  if (c?.app_link) exactAllowed.add(c.app_link);
+  return text.replace(/https?:\/\/[^\s<>"')]+/g, (u) => {
+    const clean = u.replace(/[).,]+$/, '');
+    if (exactAllowed.has(clean)) return u;
+    try {
+      const h = new URL(clean).hostname.replace(/^www\./, '');
+      return ourHosts.includes(h) ? u : '';
+    } catch {
+      return '';
+    }
+  });
+}
+
 function fallbackAdapt(source: string, c: CompanyInfo | null, seed = 's'): string {
   let base = stripSourceLinks(source);
   // rebrand: source posts promote their own bookmaker — swap foreign brand names
@@ -375,6 +399,8 @@ function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null
       rotateSiteLink(seed)
     );
   }
+  // hard allowlist: invented third-party shortlinks (bit.ly/...) are stripped entirely
+  out = enforceLinkAllowlist(out, c);
   if (out.length < 40) return null;
 
   // other-company guard: a rewrite that still promotes a different betting brand is rejected
@@ -500,6 +526,7 @@ async function adaptExplainer(
     if (out && out.trim().length > 40) {
       let text = out.trim().replace(/^```[\s\S]*?```$/m, (m) => m.replace(/```[a-z]*/g, '').trim());
       text = text.replace(/^["'«»]+|["'«»]+$/g, '').trim();
+      text = enforceLinkAllowlist(text, c);
       if (!text.includes(link)) text = `${text}\n\n🌐 ${link}`;
       const otherBrand = loadCompanies()
         .filter((x) => x.is_active !== false && (!c || x.id !== c.id && x.name.toLowerCase() !== c.name.toLowerCase()))
