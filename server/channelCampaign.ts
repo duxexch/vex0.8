@@ -248,22 +248,34 @@ function rotateSiteLink(seed: string): string {
   return domains[h % domains.length].replace(/\/+$/, '');
 }
 
-function buildButtons(c: CompanyInfo | null, ch: ChannelProfile, seed: string): Array<Array<{ text: string; url: string }>> {
-  const rows: Array<Array<{ text: string; url: string }>> = [];
+// Telegram Bot API 10.x adds two fields to inline buttons:
+//   style     -> paints the button: 'danger' (red) | 'success' (green) | 'primary' (blue)
+//   copy_text -> copies its text on a single tap (no link hop, no long-press)
+type BtnStyle = 'danger' | 'success' | 'primary';
+type InlineButton =
+  | { text: string; url: string; style?: BtnStyle }
+  | { text: string; copy_text: { text: string }; style?: BtnStyle };
+
+function buildButtons(c: CompanyInfo | null, ch: ChannelProfile, seed: string): InlineButton[][] {
+  const rows: InlineButton[][] = [];
   const rotating = rotateSiteLink(seed + (ch.chat_id || ''));
   if (c) {
-    // Row 1: single wide registration deep link (mirrors the source channel's layout)
-    if (c.affiliate_link) rows.push([{ text: `🏆 سجّل واربح الآن — ${c.name}${c.bonus_text ? ' 🎁' : ''}`, url: c.affiliate_link }]);
-    // Row 2: promo-code deep link (branded company page copies it) + app download
-    const row2: Array<{ text: string; url: string }> = [];
-    if (c.promo_code) row2.push({ text: `📖 كود: ${c.promo_code}`, url: `${rotating}/company/${c.id}` });
-    if (c.app_link) row2.push({ text: `📲 تحميل التطبيق`, url: c.app_link });
+    // Row 1: single wide registration deep link — red marks it as the primary CTA
+    if (c.affiliate_link) {
+      rows.push([{ text: `🏆 سجّل واربح الآن — ${c.name}${c.bonus_text ? ' 🎁' : ''}`, url: c.affiliate_link, style: 'danger' }]);
+    }
+    // Row 2: one-tap promo-code copy (green) + app download (blue)
+    const row2: InlineButton[] = [];
+    if (c.promo_code) {
+      row2.push({ text: `📋 انسخ الكود ${c.promo_code}`, copy_text: { text: c.promo_code }, style: 'success' });
+    }
+    if (c.app_link) row2.push({ text: `📲 تحميل التطبيق`, url: c.app_link, style: 'primary' });
     if (row2.length) rows.push(row2);
-    if (!rows.length) rows.push([{ text: `🌐 ${c.name}`, url: rotating }]);
+    if (!rows.length) rows.push([{ text: `🌐 ${c.name}`, url: rotating, style: 'primary' }]);
   } else {
     const label = String(ch.brand?.company || '').trim() || 'VEX';
-    rows.push([{ text: `🏆 افتح منصة ${label} الآن`, url: rotating }]);
-    rows.push([{ text: '📱 تحميل تطبيق الموبايل', url: `${rotating}/download/apk` }]);
+    rows.push([{ text: `🏆 افتح منصة ${label} الآن`, url: rotating, style: 'danger' }]);
+    rows.push([{ text: '📱 تحميل تطبيق الموبايل', url: `${rotating}/download/apk`, style: 'primary' }]);
   }
   return rows;
 }
@@ -614,24 +626,76 @@ async function checkRights(ch: ChannelProfile): Promise<{ ok: boolean; error?: s
   }
 }
 
-async function sendChannelPost(chatId: string, text: string, keyboard: Array<Array<{ text: string; url: string }>>): Promise<{ ok: boolean; messageId?: number; error?: string }> {
+// The fire loop that rides along with every post. `data/` is the compose volume, so
+// dropping a file there overrides the baked-in one without a rebuild.
+const FIRE_GIF_CANDIDATES = [
+  path.join(process.cwd(), 'data', 'fire.gif'),
+  path.join(process.cwd(), 'public', 'fire.gif'),
+];
+const FIRE_GIF_CAPTION_LIMIT = 1024; // sendAnimation caps captions here (sendMessage allows 4096)
+
+function resolveFireGif(): string | null {
+  const flag = (process.env.CAMPAIGN_FIRE_GIF || '').toLowerCase();
+  if (flag === '0' || flag === 'false' || flag === 'off') return null;
+  for (const p of FIRE_GIF_CANDIDATES) {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).size > 0) return p;
+    } catch { /* unreadable candidate — try the next one */ }
+  }
+  return null;
+}
+
+async function sendTextPost(botToken: string, chatId: string, text: string, replyMarkup?: object) {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok && !data.description) data.description = `HTTP ${res.status}`;
+  return data;
+}
+
+async function sendAnimationPost(botToken: string, chatId: string, gifPath: string, caption: string, replyMarkup?: object) {
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  form.append('animation', new Blob([await fs.promises.readFile(gifPath)], { type: 'image/gif' }), path.basename(gifPath));
+  form.append('caption', caption);
+  if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup));
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendAnimation`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(60000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok && !data.description) data.description = `HTTP ${res.status}`;
+  return data;
+}
+
+async function sendChannelPost(
+  chatId: string,
+  text: string,
+  keyboard: InlineButton[][]
+): Promise<{ ok: boolean; messageId?: number; error?: string; animated?: boolean }> {
   const publisher = channelsStore.getPublisher();
   if (!publisher.bot_token) return { ok: false, error: 'no publisher bot token' };
+  const replyMarkup = keyboard.length ? { inline_keyboard: keyboard } : undefined;
+  // Attach the fire loop only when the post fits sendAnimation's caption limit.
+  let gif = text.length <= FIRE_GIF_CAPTION_LIMIT ? resolveFireGif() : null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await fetch(`https://api.telegram.org/bot${publisher.bot_token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          ...(keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-        }),
-        signal: AbortSignal.timeout(20000),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data.ok) return { ok: true, messageId: data.result?.message_id };
-      const error = data.description || `HTTP ${res.status}`;
+      const data = gif
+        ? await sendAnimationPost(publisher.bot_token, chatId, gif, text, replyMarkup)
+        : await sendTextPost(publisher.bot_token, chatId, text, replyMarkup);
+      // An animation can fail for reasons a plain post won't (bad file, media parse).
+      // Degrade to a text post instead of burning the queue entry on a retry loop.
+      if (!data.ok && gif && !/retry after|429|500|502|503|timeout/i.test(String(data.description))) {
+        gif = null;
+        continue;
+      }
+      if (data.ok) return { ok: true, messageId: data.result?.message_id, animated: !!gif };
+      const error = data.description || 'send failed';
       const retryable = /retry after|timeout|500|502|503|429/i.test(String(error));
       if (!retryable || attempt === 3) return { ok: false, error };
       await new Promise((r) => setTimeout(r, attempt * 4000));
@@ -839,8 +903,8 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
         state.coachNotes[ch.chat_id] = notes.slice(-10);
       }
       saveState(state);
-      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, messageId: sent.messageId, sourceId: next.sourceId, kind: next.kind, llm, buttons: keyboard.length, coachNote: note || undefined });
-      console.log(`[Campaign] posted to ${ch.title} (msg ${sent.messageId}, llm=${llm}, buttons=${keyboard.length})`);
+      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, messageId: sent.messageId, sourceId: next.sourceId, kind: next.kind, llm, buttons: keyboard.length, animated: sent.animated, coachNote: note || undefined });
+      console.log(`[Campaign] posted to ${ch.title} (msg ${sent.messageId}, llm=${llm}, buttons=${keyboard.length}${sent.animated ? ', fire-gif' : ''})`);
       return { posted: 1 };
     }
     if (next.attempt >= 3) {
@@ -878,6 +942,7 @@ export function getCampaignStatus(): any {
     queue: { total: state.queue.length, pending: pending.length, posted: posted.length, failed: failed.length },
     stats: state.stats,
     scheduler: { running: !!schedulerTimer, intervalMinutes: 8 },
+    fireGif: resolveFireGif(),
     next: pending.slice(0, 3).map((e) => {
       const ch = channelsStore.get(e.chatId);
       return { entryId: e.id, sourceId: e.sourceId, channel: ch?.title || e.chatId };
