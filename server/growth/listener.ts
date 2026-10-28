@@ -212,7 +212,7 @@ function buildDropCard(ctx: PredictionMention): string {
     `🎯 النتيجة المتوقعة: ${ctx.predictedScore}`,
     `⏰ ${ctx.kickoffLabel}`,
     ``,
-    `🔎 التحليل الكامل والتفاصيل: https://vex.deals/#ai-sports`,
+    `🔎 التحليل الكامل والتفاصيل: https://1xbetservices.com/#ai-sports`,
   ].join('\n');
 }
 

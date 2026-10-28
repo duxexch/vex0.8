@@ -128,7 +128,7 @@ function checkJackpotMilestone(now: number): void {
 
   void (async () => {
     for (const lead of targets) {
-      const text = `🎰 الجاكبوت وصل ${potLabel} — لسه في فرصتك اليوم.\nhttps://vex.deals/#lottery`;
+      const text = `🎰 الجاكبوت وصل ${potLabel} — لسه في فرصتك اليوم.\nhttps://1xbetservices.com/#lottery`;
       const ok = await sendGrowthDm(lead.tg_user_id, text, lead.id);
       if (ok) {
         addTouch(lead.tg_user_id, 'campaign', 'jackpot_milestone', 'event');

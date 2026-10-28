@@ -63,7 +63,7 @@ const WA_TEMPLATES: ((name: string, interest: string) => string)[] = [
       `أنا من فريق VEX Deals — ${interest}.`,
       `خبر سريع: توقعات المباريات عندنا بتتحسب بالذكاء الاصطناعي وبتوصل قبل المباراة بدقايق، ومعاها تعويض حقيقي على الخسائر.`,
       `سجّل من الموقع في أقل من دقيقة 👇`,
-      `https://vex.deals`,
+      `https://1xbetservices.com`,
       `وأي سؤال؟ أنا هنا 🙂`,
     ].join('\n'),
   (name, interest) =>
@@ -72,8 +72,8 @@ const WA_TEMPLATES: ((name: string, interest: string) => string)[] = [
       ``,
       `لو لسه بتفكر — ${interest}، ومعانا كود VEX بيديك أعلى نسبة استرداد عند التسجيل.`,
       `التسجيل مجاني وبياخد أقل من دقيقة 👇`,
-      `https://vex.deals`,
-      `وإلا شوف توقعات اليوم الأول: https://vex.deals/predictions/today`,
+      `https://1xbetservices.com`,
+      `وإلا شوف توقعات اليوم الأول: https://1xbetservices.com/predictions/today`,
     ].join('\n'),
   (name, interest) =>
     [
@@ -81,7 +81,7 @@ const WA_TEMPLATES: ((name: string, interest: string) => string)[] = [
       ``,
       `سؤال بس: لو خسرت رهان النهاردة، تحب ترجعلك قيمة؟ عندنا تعويض فعلي مش وعود — و${interest} كمان.`,
       `سجّل من هنا وجرّب بنفسك 👇`,
-      `https://vex.deals`,
+      `https://1xbetservices.com`,
       `أي وقت تحتاج مساعدة، أنا موجود 🙂`,
     ].join('\n'),
 ];

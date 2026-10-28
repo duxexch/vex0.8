@@ -136,10 +136,10 @@ export async function classifyIntentSmart(text: string): Promise<IntentResult> {
 
 const KB = `
 VEX Deals هي منصة مراهنات رياضية ويانصيب وتعويض خسائر بالذكاء الاصطناعي.
-- توقعات رياضية مجانية: تحليلات ذكية للمباريات على https://vex.deals/#ai-sports
-- يانصيب VEX: تذاكر مجانية ومكافآت، الذهبي (GOLD) 10ج+ — https://vex.deals/#lottery
+- توقعات رياضية مجانية: تحليلات ذكية للمباريات على https://1xbetservices.com/#ai-sports
+- يانصيب VEX: تذاكر مجانية ومكافآت، الذهبي (GOLD) 10ج+ — https://1xbetservices.com/#lottery
 - تعويض الخسائر: تذاكر يانصيب مجانية حسب خسائر الباقة — متوفر في نفس الموقع
-- الموقع https://vex.deals — تطبيق قابل للتثبيت (VEX Lottery)
+- الموقع https://1xbetservices.com — تطبيق قابل للتثبيت (VEX Lottery)
 - الوكلاء: شراكة ربحية بعمولات — يتواصلون مع الإدارة عبر البوت مباشرة
 - الإيداع والسحب من صفحة المحفظة داخل الموقع — الدعم متابع مع المستخدم لو العملية وقفت
 - البوت هنا يرد على الأسئلة ويرمي تحليلات المباريات وقتها، وما بيستناش حد يسأله
@@ -181,22 +181,22 @@ function fallbackReply(name: string, intent: IntentResult, matchHint?: string): 
       return `أهلاً ${name} 👋 الشراكة مع VEX مفتوحة — العمولات وطريقة العمل موثّقة والإدارة رح تتواصل معك. تابع الرسائل الخاصة.`;
     case 'prediction_ask':
       return matchHint
-        ? `تحليل ${matchHint} كامل على الموقع 📊 https://vex.deals/#ai-sports — وفيه توقعات يومية لكل المباريات.`
-        : `كل التوقعات والتحليلات الذكية على الموقع 📊 https://vex.deals/#ai-sports — حدّد المباراة ورح تشوف التحليل.`;
+        ? `تحليل ${matchHint} كامل على الموقع 📊 https://1xbetservices.com/#ai-sports — وفيه توقعات يومية لكل المباريات.`
+        : `كل التوقعات والتحليلات الذكية على الموقع 📊 https://1xbetservices.com/#ai-sports — حدّد المباراة ورح تشوف التحليل.`;
     case 'lottery_ask':
-      return `اليانصيب مفتوح يومياً وتقدر تكسب تذاكر مجانية 🎟️ https://vex.deals/#lottery`;
+      return `اليانصيب مفتوح يومياً وتقدر تكسب تذاكر مجانية 🎟️ https://1xbetservices.com/#lottery`;
     case 'cashback_ask':
-      return `التعويض بيرجع لك تذاكر يانصيب مجانية حسب خسائر الباقة — التفاصيل على الموقع 💸 https://vex.deals`;
+      return `التعويض بيرجع لك تذاكر يانصيب مجانية حسب خسائر الباقة — التفاصيل على الموقع 💸 https://1xbetservices.com`;
     case 'deposit_ask':
-      return `الإيداع من داخل الموقع مباشرة من صفحة المحفظة 👉 https://vex.deals — ولو واجهت مشكلة رح تساعدك الإدارة.`;
+      return `الإيداع من داخل الموقع مباشرة من صفحة المحفظة 👉 https://1xbetservices.com — ولو واجهت مشكلة رح تساعدك الإدارة.`;
     case 'withdraw_ask':
-      return `طلب السحب بيتعمل من صفحة المحفظة على الموقع 👉 https://vex.deals — لو العملية وقفت رح يتواصل معاك الدعم.`;
+      return `طلب السحب بيتعمل من صفحة المحفظة على الموقع 👉 https://1xbetservices.com — لو العملية وقفت رح يتواصل معاك الدعم.`;
     case 'promo_ask':
-      return `أكواد الخصم والعروض الحالية تلاقيها داخل الموقع مباشرة 👉 https://vex.deals`;
+      return `أكواد الخصم والعروض الحالية تلاقيها داخل الموقع مباشرة 👉 https://1xbetservices.com`;
     case 'greeting':
       return `أهلاً ${name} 👋 أي خدمة؟ توقعات، يانصيب، أو تعويض — أنا معك.`;
     case 'question':
-      return `سؤالك مهم ${name} — التفاصيل كلها على https://vex.deals ولو ما لقيت جواب رح توصلك الإدارة.`;
+      return `سؤالك مهم ${name} — التفاصيل كلها على https://1xbetservices.com ولو ما لقيت جواب رح توصلك الإدارة.`;
     default:
       return `يسعدنا وجودك ${name} 🤝`;
   }
@@ -245,36 +245,36 @@ function dripTemplate(stepKey: string, name: string, ab?: string): DripCopy {
       return {
         title: v ? 'جاهز نبدأ؟ 🚀' : `أهلاً ${name} 👋`,
         body: v
-          ? 'أول خطوة: شوف تحليلات المباريات على الموقع — مجانية بالكامل.\nhttps://vex.deals/#ai-sports'
-          : `تحليلات ذكية لكل مباريات اليوم، ويانيصيب وتذاكر مجانية — كله هنا 👇\nhttps://vex.deals`,
+          ? 'أول خطوة: شوف تحليلات المباريات على الموقع — مجانية بالكامل.\nhttps://1xbetservices.com/#ai-sports'
+          : `تحليلات ذكية لكل مباريات اليوم، ويانيصيب وتذاكر مجانية — كله هنا 👇\nhttps://1xbetservices.com`,
       };
     case 'd1':
       return {
         title: v ? 'تحليلات اليوم جاهزة 📊' : 'توقعات مجانية كل يوم 📊',
         body: v
-          ? `لو تتابع مباريات، تحليلات VEX بتديك نسبة الربح قبل ما تفتح أي موقع 👇\nhttps://vex.deals/#ai-sports`
-          : `${name}، تحليلات اليوم جاهزة على الموقع — تفاصيل الفريقين والاحتمالات والنتيجة المتوقعة 👇\nhttps://vex.deals/#ai-sports`,
+          ? `لو تتابع مباريات، تحليلات VEX بتديك نسبة الربح قبل ما تفتح أي موقع 👇\nhttps://1xbetservices.com/#ai-sports`
+          : `${name}، تحليلات اليوم جاهزة على الموقع — تفاصيل الفريقين والاحتمالات والنتيجة المتوقعة 👇\nhttps://1xbetservices.com/#ai-sports`,
       };
     case 'd3':
       return {
         title: v ? 'تذكرة مجانية 🎟️' : 'اليانصيب مفتوح 🎟️',
         body: v
-          ? 'تذكرة يانصيب مجانية تنتظرك — جرب حظك اليوم 👇\nhttps://vex.deals/#lottery'
-          : `${name}، يانصيب VEX بيسحب يومياً وتقدر تبدأ بتذكرة مجانية 👇\nhttps://vex.deals/#lottery`,
+          ? 'تذكرة يانصيب مجانية تنتظرك — جرب حظك اليوم 👇\nhttps://1xbetservices.com/#lottery'
+          : `${name}، يانصيب VEX بيسحب يومياً وتقدر تبدأ بتذكرة مجانية 👇\nhttps://1xbetservices.com/#lottery`,
       };
     case 'd7':
       return {
         title: v ? 'خسرت قبل؟ 💸' : 'تعويض خسارتك 🔄',
         body: v
-          ? 'خسائر الباقة بترجعلك تذاكر يانصيب مجانية — التفاصيل على الموقع 👇\nhttps://vex.deals'
-          : `${name}، نظام التعويض بيرجعلك تذاكر مجانية حسب خسائر الباقة — شوف التفاصيل 👇\nhttps://vex.deals`,
+          ? 'خسائر الباقة بترجعلك تذاكر يانصيب مجانية — التفاصيل على الموقع 👇\nhttps://1xbetservices.com'
+          : `${name}، نظام التعويض بيرجعلك تذاكر مجانية حسب خسائر الباقة — شوف التفاصيل 👇\nhttps://1xbetservices.com`,
       };
     case 'd14':
       return {
         title: v ? 'رجعنا بشي جديد ✨' : 'وش رايك ترجع؟ ✨',
         body: v
-          ? 'تحليلات أدق ويانصيب بجوائز أكبر — تحقّق بنفسك 👇\nhttps://vex.deals'
-          : `${name}، التوقعات والجوائز جديدة اليوم — يلا نشوف 👇\nhttps://vex.deals`,
+          ? 'تحليلات أدق ويانصيب بجوائز أكبر — تحقّق بنفسك 👇\nhttps://1xbetservices.com'
+          : `${name}، التوقعات والجوائز جديدة اليوم — يلا نشوف 👇\nhttps://1xbetservices.com`,
       };
     case 'a0':
       return {

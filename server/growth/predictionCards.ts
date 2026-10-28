@@ -22,7 +22,7 @@ export interface CardMatch {
 }
 
 const CARDS_DIR = path.join(process.cwd(), 'data', 'prediction-cards');
-const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || 'https://vex.deals').replace(/\/+$/, '');
+const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || 'https://1xbetservices.com').replace(/\/+$/, '');
 
 export function escHtml(s: string): string {
   return String(s || '')

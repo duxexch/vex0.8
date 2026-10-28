@@ -61,14 +61,14 @@ export function listCampaigns(): Campaign[] {
 export async function generateCampaignCopy(seed: string, segment: string): Promise<string> {
   try {
     const raw = await generateWithFailover(
-      `اكتب رسالة تيليجرام واحدة لحملة تسويقية على مجتمع VEX Deals.\nالشريحة: ${segment}\nالفكرة من الإدارة: ${seed}\nالقواعد: عربية بسيطة، سطرين-ثلاثة، ودود بدون إزعاج، بدون وعود ربح، اختم برابط https://vex.deals — اكتب الرسالة فقط.`,
+      `اكتب رسالة تيليجرام واحدة لحملة تسويقية على مجتمع VEX Deals.\nالشريحة: ${segment}\nالفكرة من الإدارة: ${seed}\nالقواعد: عربية بسيطة، سطرين-ثلاثة، ودود بدون إزعاج، بدون وعود ربح، اختم برابط https://1xbetservices.com — اكتب الرسالة فقط.`,
       'You write short Arabic Telegram campaign messages. Reply with the message only.',
       0.8
     );
     const text = (raw || '').trim();
     if (text && text.length <= 800) return text;
   } catch {}
-  return `${seed}\nhttps://vex.deals`;
+  return `${seed}\nhttps://1xbetservices.com`;
 }
 
 export function createCampaign(input: { name: string; segment: string; text: string }): Campaign {
