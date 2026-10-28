@@ -252,10 +252,13 @@ function buildButtons(c: CompanyInfo | null, ch: ChannelProfile, seed: string): 
   const rows: Array<Array<{ text: string; url: string }>> = [];
   const rotating = rotateSiteLink(seed + (ch.chat_id || ''));
   if (c) {
-    if (c.affiliate_link) rows.push([{ text: `🏆 سجّل الآن في ${c.name}${c.bonus_text ? ' — مكافأة ترحيبية' : ''}`, url: c.affiliate_link }]);
-    if (c.app_link) rows.push([{ text: `📲 تحميل تطبيق ${c.name}`, url: c.app_link }]);
-    // promo button: deep link to the branded company page which shows + copies the code
-    if (c.promo_code) rows.push([{ text: `🎁 انسخ كود الخصم: ${c.promo_code}`, url: `${rotating}/company/${c.id}` }]);
+    // Row 1: single wide registration deep link (mirrors the source channel's layout)
+    if (c.affiliate_link) rows.push([{ text: `🏆 سجّل واربح الآن — ${c.name}${c.bonus_text ? ' 🎁' : ''}`, url: c.affiliate_link }]);
+    // Row 2: promo-code deep link (branded company page copies it) + app download
+    const row2: Array<{ text: string; url: string }> = [];
+    if (c.promo_code) row2.push({ text: `📖 كود: ${c.promo_code}`, url: `${rotating}/company/${c.id}` });
+    if (c.app_link) row2.push({ text: `📲 تحميل التطبيق`, url: c.app_link });
+    if (row2.length) rows.push(row2);
     if (!rows.length) rows.push([{ text: `🌐 ${c.name}`, url: rotating }]);
   } else {
     const label = String(ch.brand?.company || '').trim() || 'VEX';
@@ -716,9 +719,19 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
   if (ticking) return { posted: 0, busy: true };
   ticking = true;
   try {
-    const state = loadState();
+    let state = loadState();
     state.stats.lastTickAt = new Date().toISOString();
     let next = state.queue.find((e) => e.status === 'pending');
+    if (!next) {
+      // Auto-continue: when the queue drains, refill the next batch of 70
+      // (posted history preserved; daily caps still govern the pace).
+      const rebuilt = buildCampaignQueue(CAMPAIGN_TOTAL);
+      if (rebuilt.built > 0) {
+        state = loadState();
+        next = state.queue.find((e) => e.status === 'pending');
+        console.log(`[Campaign] queue refilled: +${rebuilt.built} entries`);
+      }
+    }
     if (!next) {
       saveState(state);
       return { posted: 0, skipped: 'queue empty' };

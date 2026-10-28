@@ -25,7 +25,7 @@ export interface DomainConfig {
 export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
   'vex.deals': {
     domain: 'vex.deals',
-    role: 'primary',
+    role: 'secondary_brand',
     brandName: 'VEX Deals',
     taglineAr: 'المنصة الأولى لتعويضات الخسائر وتتبع المحافظ وتوقعات المباريات بالذكاء الاصطناعي',
     taglineEn: 'Betting Deals, Loss Compensation, Wallet Tracking & AI Sports Forecasting',
@@ -92,7 +92,7 @@ export const DOMAIN_MATRIX: Record<string, DomainConfig> = {
   },
   '1xbetservices.com': {
     domain: '1xbetservices.com',
-    role: 'secondary_brand',
+    role: 'primary',
     brandName: '1xBet Agency Services',
     taglineAr: 'المركز العالمي المعتمد لخدمات وكلاء 1xBet واسترداد الخسائر والبونص الحصري',
     taglineEn: 'Global 1xBet Verified Agency Services & Instant Loss Compensation Center',

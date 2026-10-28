@@ -100,7 +100,7 @@ const LANG_MAP: Record<string, Locale> = {
 };
 
 const DOMAIN_BY_REGION: Record<string, string> = {
-  'EG': 'vex.deals',
+  'EG': '1xbetservices.com',
   'SA': 'betjam.sbs',
   'AE': 'betjam.sbs',
   'QA': 'betjam.sbs',
@@ -288,5 +288,5 @@ export async function geoLocaleMiddleware(req: Request, res: Response, next: Nex
 }
 
 export function getLocale(req: Request) { return (req as any).geoLocale?.locale || 'ar_eg'; }
-export function getSuggestedDomain(req: Request) { return (req as any).geoLocale?.suggestedDomain || 'vex.deals'; }
+export function getSuggestedDomain(req: Request) { return (req as any).geoLocale?.suggestedDomain || '1xbetservices.com'; }
 export function getGeoInfo(req: Request) { return (req as any).geoLocale; }
