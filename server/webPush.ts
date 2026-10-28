@@ -89,10 +89,19 @@ export async function sendWebPush(payload: {
   tag?: string;
   /** Per-language variants — delivered according to each subscriber's stored lang */
   translations?: Record<string, { title?: string; body?: string }>;
+  /** Optional large image shown alongside the notification (Chrome/Edge/Opera). */
+  image?: string;
 }): Promise<number> {
   if (!ensureConfigured()) return 0;
   const subs = readSubs();
   if (subs.length === 0) return 0;
+  // Push payloads require absolute image URLs — resolve a relative one against APP_URL.
+  const base = String(process.env.APP_URL || '').replace(/\/+$/, '');
+  const absImage = payload.image
+    ? /^https?:\/\//i.test(payload.image)
+      ? payload.image
+      : `${base}${payload.image.startsWith('/') ? '' : '/'}${payload.image}`
+    : undefined;
   let sent = 0;
   const stale: string[] = [];
   let firstError = '';
@@ -110,6 +119,7 @@ export async function sendWebPush(payload: {
           body: variant?.body || payload.body,
           url: payload.url || '/#ai-sports',
           tag: payload.tag || 'site-post',
+          ...(absImage ? { image: absImage } : {}),
         });
         await webpush.sendNotification(
           sub,

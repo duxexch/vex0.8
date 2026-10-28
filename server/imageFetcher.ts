@@ -121,6 +121,41 @@ async function googleImageSearch(query: string, destBase: string): Promise<strin
 }
 
 /**
+ * Google Programmable Search (Custom Search JSON API) — the official Google
+ * Images API. Only used when BOTH GOOGLE_CSE_KEY and GOOGLE_CSE_CX are set in
+ * the environment; otherwise it returns null and the keyless searches below take
+ * over, so nothing breaks while the keys are absent. Free tier: 100/day.
+ */
+async function googleCseImageSearch(query: string, destBase: string): Promise<string | null> {
+  const key = (process.env.GOOGLE_CSE_KEY || '').trim();
+  const cx = (process.env.GOOGLE_CSE_CX || '').trim();
+  if (!key || !cx) return null;
+  try {
+    const url =
+      `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(key)}` +
+      `&cx=${encodeURIComponent(cx)}&q=${encodeURIComponent(query)}` +
+      `&searchType=image&num=8&safe=active&imgType=photo&imgSize=large`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) {
+      console.warn(`[ImageFetcher] Google CSE HTTP ${res.status} — falling back to scraper`);
+      return null;
+    }
+    const data = await res.json().catch(() => ({}));
+    const items: any[] = Array.isArray(data.items) ? data.items : [];
+    for (let i = 0; i < items.length; i++) {
+      const link = items[i]?.link;
+      if (!link) continue;
+      const dest = `${destBase}_cse${i}.jpg`;
+      if (await downloadImage(link, dest)) return dest;
+    }
+    return null;
+  } catch (err: any) {
+    console.warn('[ImageFetcher] Google CSE failed:', err?.message);
+    return null;
+  }
+}
+
+/**
  * Fetch a suitable image for a post.
  * @param preferredUrl image URL already present in the article (tried first)
  * @param query search query when fallback search is needed (e.g. "Real Madrid vs Barcelona live")
@@ -134,6 +169,10 @@ export async function fetchPostImage(preferredUrl: string | undefined, query: st
     const dest = `${destBase}_src.jpg`;
     if (await downloadImage(preferredUrl, dest)) return dest;
   }
+
+  // Official Google Images API first when configured, then the keyless scrapers.
+  const viaCse = await googleCseImageSearch(query, destBase);
+  if (viaCse) return viaCse;
 
   const viaBing = await bingImageSearch(query, destBase);
   if (viaBing) return viaBing;

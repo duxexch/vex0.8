@@ -61,6 +61,7 @@ import {
 } from './server/predictionParser';
 import type { ParsedPrediction, PredictionRecord, ActualScore } from './server/predictionParser';
 import { getVapidPublicKey, addSubscription, removeSubscription, sendWebPush } from './server/webPush';
+import { NOTIFY_LANGS, NotifyCopy, composeNotification, verdictStatus } from './server/notifyTemplates';
 import { channelsStore } from './server/channelsStore';
 import {
   runPublishPipeline,
@@ -893,57 +894,38 @@ function settlePredictionByPostId(postId: string, actual: ActualScore, source: s
 
   io.emit('site_post_updated', { postId, post });
 
-  const verdictLine =
-    verdict === 'hit' ? '🎯 توقعنا تحقق!' : verdict === 'miss' ? '❌ لم يتحقق التوقع' : '➖ تعادل';
-  const verdictEn = verdict === 'hit' ? '🎯 Our prediction hit!' : verdict === 'miss' ? '❌ Prediction missed' : '➖ Draw';
-  const verdictEs = verdict === 'hit' ? '🎯 ¡Nuestro pronóstico acertó!' : verdict === 'miss' ? '❌ Pronóstico fallido' : '➖ Empate';
-  const verdictRu = verdict === 'hit' ? '🎯 Наш прогноз совпал!' : verdict === 'miss' ? '❌ Прогноз не совпал' : '➖ Ничья';
-  const notifTitle = `✅ ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`;
   const scoreStr = `${actual.home}-${actual.away}`;
+  // Hook-driven push copy for all 8 languages. Only ar/en/es/ru existed before,
+  // so a Turkish or Portuguese subscriber silently received English text.
+  const pushTranslations: Record<string, NotifyCopy> = {};
+  for (const l of NOTIFY_LANGS) {
+    pushTranslations[l] = composeNotification('result', l, {
+      match: `${pred.homeTeam} ${scoreStr} ${pred.awayTeam}`,
+      status: verdictStatus(verdict, l),
+    });
+  }
   const notif = {
     id: `NOTIF-PREDRESULT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    title: notifTitle,
-    message: lang === 'en'
-      ? `Predicted ${pred.predictedScore} — final ${actual.home}-${actual.away}`
-      : `${suffix.split('\n').filter(Boolean).slice(-1)[0] || verdictLine}`,
+    title: pushTranslations.en.title,
+    message: pushTranslations.en.body,
     category: 'ai_prediction' as const,
     timestamp: new Date().toISOString(),
     read: false,
     // Localized per user's chosen language (NotificationCenterModal prefers these)
-    translations: {
-      ar: {
-        title: notifTitle,
-        message: `${verdictLine} — توقعنا ${pred.predictedScore}، النتيجة ${scoreStr}`,
-      },
-      en: {
-        title: notifTitle,
-        message: `${verdictEn} — predicted ${pred.predictedScore}, final ${scoreStr}`,
-      },
-      es: {
-        title: notifTitle,
-        message: `${verdictEs} — predijimos ${pred.predictedScore}, final ${scoreStr}`,
-      },
-      ru: {
-        title: notifTitle,
-        message: `${verdictRu} — прогноз ${pred.predictedScore}, финал ${scoreStr}`,
-      },
-    },
+    translations: Object.fromEntries(
+      Object.entries(pushTranslations).map(([l, c]) => [l, { title: c.title, message: c.body }])
+    ),
     data: { postId, targetTab: 'ai-sports', actionUrl: '/#ai-sports', source: 'prediction_settlement' },
   };
   const savedNotif = storage.addNotification(notif);
   if (savedNotif) {
     io.emit('notification', notif);
     void sendWebPush({
-      title: notif.title,
-      body: lang === 'en' ? notif.message : `${verdictLine} ${pred.homeTeam} ${actual.home} - ${actual.away} ${pred.awayTeam}`,
+      title: pushTranslations.en.title,
+      body: pushTranslations.en.body,
       url: '/#ai-sports',
       tag: `pred-${postId}`,
-      translations: {
-        ar: { body: `${verdictLine} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
-        en: { body: `${verdictEn} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
-        es: { body: `${verdictEs} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
-        ru: { body: `${verdictRu} ${pred.homeTeam} ${scoreStr} ${pred.awayTeam}` },
-      },
+      translations: pushTranslations,
     });
   }
   console.log(`🏁 [Predictions] Settled ${postId}: ${pred.homeTeam} ${actual.home}-${actual.away} ${pred.awayTeam} (${verdict}, via ${source})`);

@@ -23,7 +23,8 @@ messaging.onBackgroundMessage((payload) => {
   const notificationOptions = {
     body: payload.notification?.body || 'Your compensation request status has been updated.',
     icon: '/icon-192.png',
-    badge: '/icon-192.png'
+    badge: '/icon-192.png',
+    ...(payload.notification?.image ? { image: payload.notification.image } : {})
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
@@ -43,6 +44,8 @@ self.addEventListener('push', (event) => {
       body: data.body || '',
       icon: data.tag && String(data.tag).indexOf('lottery') === 0 ? '/lottery-192.png' : '/icon-192.png',
       badge: '/icon-192.png',
+      // Large hero image — the single biggest lever on tap-through rate.
+      ...(data.image ? { image: data.image } : {}),
       tag: data.tag || 'vex-push',
       data: { url: data.url || '/#ai-sports' },
     })

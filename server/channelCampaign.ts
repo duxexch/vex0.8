@@ -11,6 +11,7 @@ import { generateWithFailover } from './agentEngine';
 import { SOURCE_POSTS_SEED, SeedSourcePost } from './sourcePosts.seed';
 import { EXPLAINER_TOPICS, ExplainerTopic } from './explainerSeed';
 import { BOT_PROMO_DOMAINS } from './botPromo';
+import { fetchPostImage } from './imageFetcher';
 
 export interface SourcePost extends SeedSourcePost {
   pulledAt?: string;
@@ -259,25 +260,63 @@ type InlineButton =
 function buildButtons(c: CompanyInfo | null, ch: ChannelProfile, seed: string): InlineButton[][] {
   const rows: InlineButton[][] = [];
   const rotating = rotateSiteLink(seed + (ch.chat_id || ''));
+  // The fire banner GIF is sent bottom-flush, so its flames sit directly on top of
+  // this keyboard — the buttons read as the source of the fire/money burst. The
+  // emoji anchors carry that idea into the button labels themselves.
   if (c) {
     // Row 1: single wide registration deep link — red marks it as the primary CTA
     if (c.affiliate_link) {
-      rows.push([{ text: `🏆 سجّل واربح الآن — ${c.name}${c.bonus_text ? ' 🎁' : ''}`, url: c.affiliate_link, style: 'danger' }]);
+      rows.push([{ text: `🔥 سجّل واربح الآن — ${c.name}${c.bonus_text ? ' 🎁' : ''}`, url: c.affiliate_link, style: 'danger' }]);
     }
     // Row 2: one-tap promo-code copy (green) + app download (blue)
     const row2: InlineButton[] = [];
     if (c.promo_code) {
-      row2.push({ text: `📋 انسخ الكود ${c.promo_code}`, copy_text: { text: c.promo_code }, style: 'success' });
+      row2.push({ text: `💰 انسخ الكود ${c.promo_code}`, copy_text: { text: c.promo_code }, style: 'success' });
     }
     if (c.app_link) row2.push({ text: `📲 تحميل التطبيق`, url: c.app_link, style: 'primary' });
     if (row2.length) rows.push(row2);
     if (!rows.length) rows.push([{ text: `🌐 ${c.name}`, url: rotating, style: 'primary' }]);
   } else {
     const label = String(ch.brand?.company || '').trim() || 'VEX';
-    rows.push([{ text: `🏆 افتح منصة ${label} الآن`, url: rotating, style: 'danger' }]);
-    rows.push([{ text: '📱 تحميل تطبيق الموبايل', url: `${rotating}/download/apk`, style: 'primary' }]);
+    rows.push([{ text: `🔥 افتح منصة ${label} الآن`, url: rotating, style: 'danger' }]);
+    rows.push([{ text: '💰 تحميل تطبيق الموبايل', url: `${rotating}/download/apk`, style: 'primary' }]);
   }
   return rows;
+}
+
+// ------------------------------------------------------------- post media
+
+// English search queries per explainer topic. Searches run far better in English
+// than the Arabic post titles, and the resulting photos are language-neutral.
+const EXPLAINER_IMAGE_QUERIES: Record<string, string> = {
+  'ai-predictions': 'football artificial intelligence match prediction analytics',
+  lottery: 'lottery jackpot gold tickets celebration',
+  'wallet-cashback': 'digital wallet mobile payment cashback money',
+  'companies-directory': 'sports betting bookmaker odds comparison smartphone',
+  'mobile-app': 'mobile betting app smartphone screen',
+  security: 'cyber security lock shield protection',
+  'fast-payments': 'fast online payment credit card money transfer',
+  'telegram-bot': 'telegram bot smartphone chat app',
+  bonuses: 'casino bonus gift box reward',
+  'how-to-start': 'online betting tutorial registration steps',
+  'live-commentary': 'live football stadium night match',
+  support: 'customer support headset agent',
+};
+
+/**
+ * Explainer posts teach, so they carry a real content photo fetched by topic.
+ * Promo/source posts skip this and get the fire banner instead.
+ */
+async function resolveExplainerImage(topic: ExplainerTopic | null | undefined): Promise<string | null> {
+  if (!topic) return null;
+  const query = EXPLAINER_IMAGE_QUERIES[topic.id];
+  if (!query) return null;
+  try {
+    return await fetchPostImage(undefined, query);
+  } catch (err: any) {
+    console.warn(`[Campaign] image fetch failed for ${topic.id}:`, err?.message || err);
+    return null;
+  }
 }
 
 // ------------------------------------------------------------- adaptation
@@ -673,25 +712,59 @@ async function sendAnimationPost(botToken: string, chatId: string, gifPath: stri
   return data;
 }
 
+/** Guess an image MIME type from the extension so Telegram gets the right content-type. */
+function imageContentType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  return 'image/jpeg';
+}
+
+/** Content photo for explainer posts — same multipart shape as the fire banner. */
+async function sendPhotoPost(botToken: string, chatId: string, photoPath: string, caption: string, replyMarkup?: object) {
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  form.append('photo', new Blob([await fs.promises.readFile(photoPath)], { type: imageContentType(photoPath) }), path.basename(photoPath));
+  form.append('caption', caption);
+  if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup));
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(60000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok && !data.description) data.description = `HTTP ${res.status}`;
+  return data;
+}
+
 async function sendChannelPost(
   chatId: string,
   text: string,
-  keyboard: InlineButton[][]
+  keyboard: InlineButton[][],
+  photoPath?: string | null
 ): Promise<{ ok: boolean; messageId?: number; error?: string; animated?: boolean }> {
   const publisher = channelsStore.getPublisher();
   if (!publisher.bot_token) return { ok: false, error: 'no publisher bot token' };
   const replyMarkup = keyboard.length ? { inline_keyboard: keyboard } : undefined;
-  // Attach the fire loop only when the post fits sendAnimation's caption limit.
-  let gif = text.length <= FIRE_GIF_CAPTION_LIMIT ? resolveFireGif() : null;
+  // Telegram allows one media per message, so a content photo replaces the fire
+  // banner. Promo/source posts keep the fire so its flames burst straight out of
+  // the buttons; both media types share sendAnimation's 1024-char caption limit.
+  const fitsCaption = text.length <= FIRE_GIF_CAPTION_LIMIT;
+  let photo = photoPath && fitsCaption ? photoPath : null;
+  let gif = !photo && fitsCaption ? resolveFireGif() : null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const data = gif
-        ? await sendAnimationPost(publisher.bot_token, chatId, gif, text, replyMarkup)
-        : await sendTextPost(publisher.bot_token, chatId, text, replyMarkup);
-      // An animation can fail for reasons a plain post won't (bad file, media parse).
-      // Degrade to a text post instead of burning the queue entry on a retry loop.
-      if (!data.ok && gif && !/retry after|429|500|502|503|timeout/i.test(String(data.description))) {
+      const data = photo
+        ? await sendPhotoPost(publisher.bot_token, chatId, photo, text, replyMarkup)
+        : gif
+          ? await sendAnimationPost(publisher.bot_token, chatId, gif, text, replyMarkup)
+          : await sendTextPost(publisher.bot_token, chatId, text, replyMarkup);
+      // A media send can fail for reasons a plain post won't (bad file, media
+      // parse). Degrade to a text post instead of burning the queue entry.
+      if (!data.ok && (gif || photo) && !/retry after|429|500|502|503|timeout/i.test(String(data.description))) {
         gif = null;
+        photo = null;
         continue;
       }
       if (data.ok) return { ok: true, messageId: data.result?.message_id, animated: !!gif };
@@ -886,7 +959,10 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
       return { posted: 1 };
     }
 
-    const sent = await sendChannelPost(ch.chat_id, text, keyboard);
+    // Explainers teach, so they carry a real content photo (fetched by topic).
+    // Promo/source posts skip this and get the fire banner inside sendChannelPost.
+    const mediaImage = isExplainer ? await resolveExplainerImage(topic) : null;
+    const sent = await sendChannelPost(ch.chat_id, text, keyboard, mediaImage);
     next.attempt++;
     if (sent.ok) {
       next.status = 'posted';
