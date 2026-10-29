@@ -109,6 +109,8 @@ export function GrowthTab() {
   const [simResult, setSimResult] = useState<any>(null);
   const [campForm, setCampForm] = useState({ name: '', segment: 'all', text: '', generate: false });
   const [toast, setToast] = useState('');
+  const [waSafety, setWaSafety] = useState<any>(null);
+  const [waStats, setWaStats] = useState<any>(null);
 
   const flash = (t: string) => {
     setToast(t);
@@ -118,19 +120,24 @@ export function GrowthTab() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, l, c, st] = await Promise.all([
+      const [s, l, c, st, sf] = await Promise.all([
         fetch('/api/admin/growth/stats').then((r) => r.json()),
         fetch(
           `/api/admin/growth/leads?q=${encodeURIComponent(q)}&segment=${segment}&status=${status}&limit=150`
         ).then((r) => r.json()),
         fetch('/api/admin/growth/campaigns').then((r) => r.json()),
         fetch('/api/admin/growth/settings').then((r) => r.json()),
+        fetch('/api/admin/growth/wa/safety').then((r) => r.json()).catch(() => null),
       ]);
       setStats(s.stats || null);
       setLeads(l.leads || []);
       setTotal(l.total || 0);
       setCampaigns(c.campaigns || []);
       setSettings(st.settings || null);
+      if (sf) {
+        setWaSafety(sf.safety || null);
+        setWaStats(sf.wa || null);
+      }
     } catch {
       flash('تعذر التحديث');
     }
@@ -158,6 +165,47 @@ export function GrowthTab() {
     flash('تم إيقاف ال lead — لن يتلقى أي رسالة');
     setSelected(null);
     loadAll();
+  };
+
+  // WhatsApp safety: instant halt on a ban report; resume restarts the ramp.
+  const haltWa = async () => {
+    const reason = window.prompt('سبب الإيقاف (حظر/بلاغ/شكوى):') || 'ban report';
+    const res = await fetch('/api/admin/growth/wa/halt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setWaSafety(data.safety);
+      setWaStats(data.wa);
+      flash(`🚨 تم إيقاف واتساب — ${data.reverted_today ?? 0} جهة رجعت للانتظار`);
+    } else flash('فشل الإيقاف');
+  };
+
+  const resumeWa = async () => {
+    const res = await fetch('/api/admin/growth/wa/resume', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      setWaSafety(data.safety);
+      setWaStats(data.wa);
+      flash('✅ رجع بالوضع الآمن — تسخين من اليوم الأول (3/يوم)');
+    } else flash('فشل الاستئناف');
+  };
+
+  const buildWaOutbox = async () => {
+    const res = await fetch('/api/admin/growth/wa/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: true }),
+    });
+    const data = await res.json();
+    if (data.success && data.batch) {
+      if (data.batch.halted) flash('🚨 واتساب متوقف — لا يمكن بناء صندوق جديد');
+      else if (data.batch.count === 0) flash('وصلت حد اليوم — مافيش رسايل زيادة النهارده');
+      else flash(`📱 صندوق جاهز: ${data.batch.count} رسالة (متبقّي اليوم: ${data.batch.remaining})`);
+      loadAll();
+    } else flash('فشل بناء الصندوق');
   };
 
   const sendManual = async () => {
@@ -264,6 +312,94 @@ export function GrowthTab() {
         {card('رسائل اليوم', del?.daily_dms?.count ?? 0, MessageSquare, 'bg-emerald-600')}
         {card('محظورين 403', t.dead ?? 0, Square, 'bg-red-500')}
       </div>
+
+      {/* WhatsApp safety — managed-manual outreach guardrails */}
+      {waSafety && (
+        <div
+          className={`rounded-2xl border p-4 ${
+            waSafety.halted
+              ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className={`w-5 h-5 ${waSafety.halted ? 'text-red-600' : 'text-emerald-600'}`} />
+              <span className="text-sm font-black text-slate-900 dark:text-white">
+                واتساب — إرسال يدوي مُتحكَّم فيه
+              </span>
+              <span
+                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  waSafety.halted
+                    ? 'bg-red-600 text-white'
+                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
+                }`}
+              >
+                {waSafety.halted ? '🚨 متوقف' : '🟢 آمن'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {waSafety.halted ? (
+                <button
+                  onClick={resumeWa}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
+                >
+                  استئناف + إعادة التسخين
+                </button>
+              ) : (
+                <button
+                  onClick={haltWa}
+                  className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700"
+                >
+                  إيقاف فوري (بلاغ حظر)
+                </button>
+              )}
+              <button
+                onClick={buildWaOutbox}
+                disabled={waSafety.halted}
+                className="px-3 py-1.5 rounded-xl bg-sky-600 text-white text-xs font-bold hover:bg-sky-700 disabled:opacity-40"
+              >
+                بناء صندوق اليوم
+              </button>
+            </div>
+          </div>
+
+          {waSafety.halted && (
+            <p className="mt-2 text-xs font-bold text-red-700 dark:text-red-300">
+              السبب: {waSafety.halt_reason || '—'} — الاستئناف يعيد التسخين من اليوم الأول (3/يوم) للأمان.
+            </p>
+          )}
+
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{waSafety.daily_cap}</div>
+              <div className="text-[10px] font-bold text-slate-500">حد اليوم (رسالة)</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{waSafety.warmup_day}</div>
+              <div className="text-[10px] font-bold text-slate-500">يوم التسخين</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">
+                {waSafety.min_gap_min}-{waSafety.max_gap_min}
+              </div>
+              <div className="text-[10px] font-bold text-slate-500">دقائق بين الرسايل</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{waStats?.queued ?? 0}</div>
+              <div className="text-[10px] font-bold text-slate-500">جاهزة بالصندوق</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{waStats?.sent ?? 0}</div>
+              <div className="text-[10px] font-bold text-slate-500">اتبعتت (إجمالي)</div>
+            </div>
+          </div>
+
+          <p className="mt-2 text-[10px] font-bold text-slate-400">
+            النظام لا يرسل تلقائياً أبداً — الصندوق جاهز للإرسال اليدوي، وبعد الإرسال علّمهم من رأس القائمة.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Leads table */}

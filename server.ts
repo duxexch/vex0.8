@@ -46,6 +46,10 @@ import {
   markWaContacts as growthMarkWa,
   calendarPlan as growthCalendarPlan,
   waStats as growthWaStats,
+  waSafetyState as growthWaSafetyState,
+  haltOutreach as growthHaltOutreach,
+  resumeOutreach as growthResumeOutreach,
+  resetWaBatch as growthResetWaBatch,
   mutateLeads as growthMutateLeads,
   buildCardHtml as growthBuildCardHtml,
   renderPredictionCardPng as growthRenderCard,
@@ -1539,7 +1543,52 @@ app.post('/api/admin/growth/wa/mark', (req, res) => {
       return res.status(400).json({ error: 'phones array required' });
     }
     const n = growthMarkWa(phones.map((p: any) => String(p)).slice(0, 200), status);
-    res.json({ success: true, marked: n, wa: growthWaStats() });
+    res.json({ success: true, marked: n, wa: growthWaStats(), safety: growthWaSafetyState() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// WhatsApp safety policy snapshot (warm-up ramp, daily cap, halt state)
+app.get('/api/admin/growth/wa/safety', (_req, res) => {
+  try {
+    res.json({ success: true, safety: growthWaSafetyState(), wa: growthWaStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Instant global halt — a ban/block report stops every outbox until resume.
+// Today's queued batch is reverted so no stale contact list keeps circulating.
+app.post('/api/admin/growth/wa/halt', (req, res) => {
+  try {
+    const reason = String(req.body?.reason || 'ban report').slice(0, 200);
+    const safety = growthHaltOutreach(reason);
+    const today = new Date().toISOString().slice(0, 10);
+    const reverted = growthResetWaBatch(today);
+    io.emit('notification', {
+      message: `🚨 واتساب متوقف أمنياً: ${reason} — تم ترجيع ${reverted} جهة إلى قائمة الانتظار.`,
+      type: 'warning',
+      title: 'WhatsApp Safety',
+      at: Date.now(),
+    });
+    res.json({ success: true, safety, reverted_today: reverted, wa: growthWaStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Resume after a halt — the warm-up ramp restarts from day 1 (3/day).
+app.post('/api/admin/growth/wa/resume', (_req, res) => {
+  try {
+    const safety = growthResumeOutreach();
+    io.emit('notification', {
+      message: `✅ واتساب رجع بالوضع الآمن — التسخين من اليوم الأول (3/يوم).`,
+      type: 'success',
+      title: 'WhatsApp Safety',
+      at: Date.now(),
+    });
+    res.json({ success: true, safety, wa: growthWaStats() });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

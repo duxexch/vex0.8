@@ -14,6 +14,7 @@ import {
 import { createCampaign, sendCampaign, listCampaigns, generateCampaignCopy } from './campaigns';
 import { listUpcomingPredictions } from '../forecastChain';
 import { matchToCard, renderPredictionCardPng, cardPublicUrl } from './predictionCards';
+import { waRemainingToday, waSafetyState, waSafetyTouch } from './waSafety';
 
 // =========================================================================
 // Outreach: contact-file import, WhatsApp managed-manual batches (outbox
@@ -116,23 +117,48 @@ export function waMessage(l: Lead): string {
   return WA_TEMPLATES[idx](name, interest);
 }
 
-export async function buildWaBatch(limit = 30, force = false): Promise<{ date: string; count: number; file: string; stats: object; card?: string }> {
+export async function buildWaBatch(limit = 30, force = false): Promise<{ date: string; count: number; file: string; stats: object; card?: string; halted?: boolean; cap?: number; remaining?: number }> {
   const date = new Date().toISOString().slice(0, 10);
   const file = path.join(OUTBOX_DIR, `batch_${date}.md`);
+
+  // Safety policy: a ban report halts everything — no outbox is built at all.
+  const safety = waSafetyState();
+  if (safety.halted) {
+    return { date, count: 0, file, stats: waStats(), halted: true, cap: safety.daily_cap, remaining: 0 };
+  }
+
+  // Sent-today timestamps decide the remaining allowance (ramp cap − sent).
+  const sentTimestamps = listLeads()
+    .filter((l) => l.channel === 'wa_import' && l.wa_status === 'sent' && typeof l.wa_sent_at === 'number')
+    .map((l) => l.wa_sent_at as number);
+  const remaining = waRemainingToday(sentTimestamps);
+  const effective = Math.max(0, Math.min(limit, remaining));
+  if (effective === 0) {
+    // Daily allowance exhausted — reuse/keep whatever is already queued today.
+    const todayQueued = listLeads().filter(
+      (l) => l.channel === 'wa_import' && l.wa_status === 'queued' && l.wa_batch === date
+    ).length;
+    return { date, count: todayQueued, file, stats: waStats(), cap: safety.daily_cap, remaining: 0 };
+  }
+
   // idempotent: one outbox per day — reuse it unless explicitly rebuilt
   if (!force && fs.existsSync(file)) {
     const todayQueued = listLeads().filter(
       (l) => l.channel === 'wa_import' && l.wa_status === 'queued' && l.wa_batch === date
     ).length;
-    return { date, count: todayQueued, file, stats: waStats() };
+    return { date, count: todayQueued, file, stats: waStats(), cap: safety.daily_cap, remaining };
   }
   if (force) resetWaBatch(date);
-  const picks = waQueueForBatch(limit);
+  const picks = waQueueForBatch(effective);
+  const gapNote = `⏱ فاصل ${safety.min_gap_min}-${safety.max_gap_min} دقائق بين كل رسالة والتانية — ده اللي بيمنع الحظر.`;
   const lines = [
     `# صندوق واتساب — ${date}`,
     ``,
-    `⚠️ إرسال يدوي بشرى فقط: ≤${limit} رسالة/يوم، خلي تأخير طبيعي30-90 ثانية بين كل رسالة، وبلا رسايل ليلية.`,
-    `بعد الابعت: علّم المرسل لهم هنا: POST /api/admin/growth/wa/mark`,
+    `⚠️ إرسال يدوي بشرى فقط: ≤${picks.length} رسالة اليوم (حد اليوم ${safety.daily_cap} — تسخين يوم ${safety.warmup_day}).`,
+    gapNote,
+    `🌙 بلا رسايل بين 12 بالليل و8 الصبح بتوقيت المستلم.`,
+    `🚨 لو حصلك حظر أو بلاغ: أوقف فوراً من لوحة التحكم (زر الإيقاف الفوري) أو POST /api/admin/growth/wa/halt`,
+    `بعد الإرسال: علّم المرسل لهم هنا: POST /api/admin/growth/wa/mark`,
     ``,
   ];
   let card: string | undefined;
@@ -157,7 +183,8 @@ export async function buildWaBatch(limit = 30, force = false): Promise<{ date: s
     picks.map((p) => p.id),
     date
   );
-  return { date, count: picks.length, file, stats: waStats(), card };
+  waSafetyTouch(picks.length, 0);
+  return { date, count: picks.length, file, stats: waStats(), card, cap: safety.daily_cap, remaining: Math.max(0, remaining - picks.length) };
 }
 
 export function getTodayOutbox(): { date: string; exists: boolean; content: string; stats: object } {
@@ -173,7 +200,9 @@ export function getTodayOutbox(): { date: string; exists: boolean; content: stri
 }
 
 export function markWaContacts(phones: string[], status: 'sent' | 'skipped'): number {
-  return markWa(phones, status);
+  const n = markWa(phones, status);
+  if (status === 'sent' && n > 0) waSafetyTouch(0, n);
+  return n;
 }
 
 // --------------------------- 3-month auto calendar (Telegram campaigns) ---------------------------
@@ -330,10 +359,19 @@ export function startOutreachTimers(notify: (text: string) => void): void {
     outreachTimer = setTimeout(async () => {
       try {
         const executed = await calendarTick();
-        const batch = await buildWaBatch(30);
+        const safety = waSafetyState();
+        const batch = safety.halted
+          ? { count: 0, halted: true as const }
+          : await buildWaBatch(30);
         const lines = [`📣 تقرير Outreach — ${new Date().toISOString().slice(0, 10)}`];
+        if (safety.halted) {
+          lines.push(`🚨 واتساب متوقف أمنياً (بلاغ حظر): ${safety.halt_reason || '—'}`);
+          lines.push(`الاستئناف يعيد التسخين من اليوم الأول — POST /api/admin/growth/wa/resume`);
+        } else {
+          lines.push(`🛡 حد اليوم: ${safety.daily_cap} (تسخين يوم ${safety.warmup_day})`);
+        }
         if (executed.length) lines.push(...executed.map((e) => `▸ ${e}`));
-        lines.push(`📱 صندوق واتساب: ${batch.count} رسالة جاهزة للإرسال اليدوي`);
+        if (!safety.halted) lines.push(`📱 صندوق واتساب: ${batch.count} رسالة جاهزة للإرسال اليدوي`);
         const neg = listLeads().filter((l) => l.mood === 'negative').length;
         if (neg > 0) lines.push(`⚠️ عملاء بمزاج سلبي: ${neg} — راجع التقرير`);
         notifyOutreach?.(lines.join('\n'));
