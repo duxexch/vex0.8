@@ -35,6 +35,7 @@ import { ensureWebPushSubscription } from './services/pushService';
 import { recursiveLocalizeCompanies } from './utils/companyTranslator';
 import { detectUserRegionalCurrency } from './utils/currency';
 import { requirePhoneLink } from './utils/requireLink';
+import { isWalletApp, clampWalletTab, WALLET_APP_TABS } from './walletApp';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { CompaniesTab } from './components/CompaniesTab';
@@ -81,22 +82,28 @@ export default function App() {
     return 'companies';
   };
 
+  // The wallet-only build (APK / /wallet-app) boots straight into the wallet
+  // and clamps every navigation attempt to its own three sections.
+  const walletMode = isWalletApp();
+
   const [activeTab, setActiveTabState] = useState<TabType>(() => {
     if (typeof window !== 'undefined') {
-      return getTabFromPath(window.location.pathname);
+      const fromPath = getTabFromPath(window.location.pathname);
+      return walletMode ? clampWalletTab(fromPath) : fromPath;
     }
-    return 'companies';
+    return walletMode ? 'wallets' : 'companies';
   });
 
   const setActiveTab = useCallback((newTab: TabType) => {
-    setActiveTabState(newTab);
+    const target = walletMode ? clampWalletTab(newTab) : newTab;
+    setActiveTabState(target);
     if (typeof window !== 'undefined') {
-      const targetPath = newTab === 'companies' ? '/' : `/${newTab}`;
+      const targetPath = target === 'companies' ? '/' : `/${target}`;
       if (window.location.pathname !== targetPath && !window.location.pathname.startsWith('/admin')) {
-        window.history.pushState({ tab: newTab }, '', targetPath);
+        window.history.pushState({ tab: target }, '', targetPath);
       }
     }
-  }, []);
+  }, [walletMode]);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => {
     return localStorage.getItem('vex_display_currency') || detectUserRegionalCurrency();
@@ -308,7 +315,7 @@ export default function App() {
         } else {
           setAdminDashboardOpen(false);
           const currentTab = getTabFromPath(window.location.pathname);
-          setActiveTabState(currentTab);
+          setActiveTabState(walletMode ? clampWalletTab(currentTab) : currentTab);
         }
       };
       checkAdminAndTabRoute();
@@ -319,7 +326,7 @@ export default function App() {
         window.removeEventListener('popstate', checkAdminAndTabRoute);
       };
     }
-  }, []);
+  }, [walletMode]);
 
   // Initialize FCM Push Notifications for Compensation Requests
   useEffect(() => {
@@ -718,6 +725,7 @@ export default function App() {
                 isLoading={isLoadingData}
                 displayCurrency={displayCurrency}
                 onCopyToast={showToast}
+                onTelegramLoggedIn={loadData}
               />
             )}
 
@@ -803,6 +811,7 @@ export default function App() {
         onOpenMoreSheet={() => setIsMoreSheetOpen(true)}
         lang={lang}
         pendingRequestsCount={pendingRequestsCount}
+        allowedTabs={walletMode ? WALLET_APP_TABS : undefined}
       />
 
       {/* 5. Side Drawer (single menu: sections, account, notifications, language) */}
@@ -827,6 +836,7 @@ export default function App() {
         onSelectLang={(newLang) => { setLang(newLang); syncPushLang(); }}
         unreadNotificationsCount={unreadNotificationsCount}
         pendingRequestsCount={pendingRequestsCount}
+        allowedTabs={walletMode ? WALLET_APP_TABS : undefined}
       />
 
       {/* 2-Step Account Registration Modal */}

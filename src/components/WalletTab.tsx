@@ -5,6 +5,8 @@ import { formatCurrency } from '../utils/currency';
 import { CompanyBrandLogo } from './CompanyBrandLogo';
 import { WalletTabSkeleton } from './SkeletonLoader';
 import { WalletQrCodeModal } from './WalletQrCodeModal';
+import TelegramLoginButton from './TelegramLoginButton';
+import { isWalletApp, isNativeWalletApp } from '../walletApp';
 import {
   Lock,
   Unlock,
@@ -23,6 +25,7 @@ import {
   QrCode,
   LayoutGrid,
   List,
+  Download,
 } from 'lucide-react';
 
 interface WalletTabProps {
@@ -41,6 +44,8 @@ interface WalletTabProps {
   isLoading?: boolean;
   displayCurrency: string;
   onCopyToast?: () => void;
+  /** Telegram sign-in finished — parent should reload profile/data. */
+  onTelegramLoggedIn?: () => void;
 }
 
 export const WalletTab: React.FC<WalletTabProps> = ({
@@ -59,6 +64,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
   isLoading = false,
   displayCurrency,
   onCopyToast,
+  onTelegramLoggedIn,
 }) => {
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -66,6 +72,8 @@ export const WalletTab: React.FC<WalletTabProps> = ({
   const [walletViewMode, setWalletViewMode] = useState<'grid' | 'table'>('grid');
   const t = TRANSLATIONS[lang] || TRANSLATIONS['ar'];
   const isAr = lang === 'ar';
+  // Wallet-only build (native APK or /wallet-app route) shows the sign-in card & APK link.
+  const isWalletAppMode = isWalletApp();
 
   const handleCopyWalletId = (addressOrId: string) => {
     navigator.clipboard.writeText(addressOrId);
@@ -100,6 +108,36 @@ export const WalletTab: React.FC<WalletTabProps> = ({
 
   return (
     <div className="space-y-3.5 pb-24 animate-fade-in select-none">
+      {/* Telegram sign-in — the wallet follows the Telegram account across devices */}
+      {isWalletAppMode && !userProfile?.telegram_id && (
+        <div className="bg-white p-4 rounded-2xl border border-sky-200 shadow-xs">
+          <TelegramLoginButton lang={lang} onLoggedIn={onTelegramLoggedIn} />
+        </div>
+      )}
+
+      {/* Get the native APK — only offered on the web wallet build (not inside the app itself) */}
+      {isWalletAppMode && !isNativeWalletApp() && (
+        <a
+          href="/download/apk"
+          className="flex items-center justify-between gap-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-4 rounded-2xl shadow-md hover:from-emerald-700 hover:to-teal-700 transition-colors"
+        >
+          <span className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+              <Download className="w-5 h-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-black">
+                {isAr ? 'حمّل تطبيق المحفظة' : 'Get the Wallet App'}
+              </span>
+              <span className="block text-[11px] text-emerald-100 truncate">
+                {isAr ? 'تطبيق أصلي أسرع وأأمن — APK مباشر' : 'Native app, faster & safer — direct APK'}
+              </span>
+            </span>
+          </span>
+          <Download className="w-4 h-4 shrink-0 text-emerald-100" />
+        </a>
+      )}
+
       {/* Top Total Balance Summary Card */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs text-slate-900 space-y-3.5 spotlight-surface tilt-card-3d">
         <div className="flex items-center justify-between">

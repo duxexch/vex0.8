@@ -365,6 +365,11 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
       title = `الشروط والأحكام وسياسة الخصوصية | ${config.brandName}`;
       description = `الشروط والأحكام القانونية وسياسة حماية البيانات لمستخدمي منصة ${config.brandName}.`;
       break;
+    case '/wallet-app':
+      // App shell for the wallet WebView build — no value to search engines.
+      title = `محفظة وتعويضات ${config.brandName}`;
+      description = `تطبيق المحفظة: إيداع، سحب، وطلبات تعويض في مكان واحد.`;
+      break;
   }
 
   // Global domains (titleLocale 'en') render English-first titles & descriptions
@@ -486,7 +491,7 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
     <title>${title}</title>
     <meta name="description" content="${description}" />
     <meta name="keywords" content="${config.keywords}" />
-    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="robots" content="${cleanPath === '/wallet-app' ? 'noindex, nofollow' : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'}" />
     <link rel="canonical" href="${canonicalUrl}" />
 
     <!-- OpenGraph / Social Media -->

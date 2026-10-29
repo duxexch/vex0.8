@@ -363,6 +363,11 @@ export interface UserProfile {
   phone_locked?: boolean;
   telegram_username?: string;
   telegram_id?: string;
+  /** Display name + avatar from the Telegram Login Widget. */
+  telegram_name?: string;
+  telegram_photo_url?: string;
+  /** When the customer signed in with their Telegram account. */
+  telegram_login_at?: string;
   pin_set: boolean;
   failed_pin_attempts: number;
   pin_lock_until?: number;

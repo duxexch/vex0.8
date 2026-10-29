@@ -4236,6 +4236,143 @@ app.get('/api/telegram/session-status/:sessionId', (req, res) => {
   });
 });
 
+  // ---------------------------------------------------------------- Login Widget
+  // "Sign in with a normal Telegram account" — Telegram's own OAuth popup, which
+  // is different from the bot contact-share flow below. The user authorizes once
+  // and we receive their id/name/photo, HMAC-signed with the bot token, so the
+  // signature is verified server-side rather than trusted from the client.
+  function validateTelegramLoginWidget(data: Record<string, string>, botToken: string): boolean {
+    const received = String(data.hash || '');
+    if (!/^[0-9a-f]{64}$/.test(received)) return false;
+    const authDate = Number(data.auth_date || 0);
+    // Reject stale payloads — a widget result is only good for a short window.
+    if (!authDate || Math.abs(Date.now() / 1000 - authDate) > 3600) return false;
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const dataCheck = Object.keys(data)
+      .filter((k) => k !== 'hash')
+      .sort()
+      .map((k) => `${k}=${data[k]}`)
+      .join('\n');
+    return crypto.createHmac('sha256', secret).update(dataCheck).digest('hex') === received;
+  }
+
+  // Config the client needs to mount the widget on the right origin.
+  app.get('/api/telegram/auth-url', async (req, res) => {
+    if (!telegramConfig.bot_token || !telegramConfig.is_active) {
+      return res.status(503).json({ error: 'BOT_NOT_CONFIGURED' });
+    }
+    // The widget mounts by numeric bot id. Configs saved before bot_id existed
+    // (or set via env only) resolve it once through getMe and persist it.
+    if (!telegramConfig.bot_id) {
+      try {
+        const infoRes = await fetch(`https://api.telegram.org/bot${telegramConfig.bot_token}/getMe`);
+        const info = await infoRes.json();
+        if (info.ok && info.result?.id) {
+          telegramConfig.bot_id = info.result.id;
+          if (!telegramConfig.bot_username) telegramConfig.bot_username = info.result.username || '';
+          saveTelegramConfigToFile();
+        }
+      } catch (err: any) {
+        console.warn('[Telegram] getMe for bot_id failed:', err?.message || err);
+      }
+    }
+    if (!telegramConfig.bot_id) {
+      return res.status(503).json({ error: 'BOT_ID_UNAVAILABLE' });
+    }
+    const origin = String(req.headers.origin || req.query.origin || `${req.protocol}://${req.get('host')}`)
+      .replace(/\/+$/, '');
+    res.json({
+      success: true,
+      bot_username: telegramConfig.bot_username,
+      bot_id: telegramConfig.bot_id,
+      widget_origin: 'https://oauth.telegram.org/auth',
+      origin,
+    });
+  });
+
+  app.post('/api/telegram/login', (req, res) => {
+    const body = req.body || {};
+    const telegram = body.telegram;
+    if (!telegram || typeof telegram !== 'object') {
+      return res.status(400).json({ error: 'TELEGRAM_DATA_MISSING' });
+    }
+    if (!telegramConfig.bot_token) return res.status(503).json({ error: 'BOT_NOT_CONFIGURED' });
+
+    const data: Record<string, string> = {};
+    for (const [k, v] of Object.entries(telegram as Record<string, unknown>)) {
+      if (v !== undefined && v !== null) data[k] = String(v);
+    }
+    if (!validateTelegramLoginWidget(data, telegramConfig.bot_token)) {
+      return res.status(401).json({ error: 'TELEGRAM_HASH_INVALID' });
+    }
+    const tgId = String(data.id || '');
+    if (!/^\d{3,20}$/.test(tgId)) return res.status(400).json({ error: 'TELEGRAM_ID_INVALID' });
+
+    // Identity key: the Telegram account id — it never changes, so the same wallet
+    // follows the user across devices without them needing to remember a phone.
+    // Exception: a phone-verified profile keeps the phone as its ownership key
+    // (that's what sync/restore is keyed on) — the widget login just attaches
+    // the Telegram identity to it instead of re-keying the profile.
+    const tgRef = `tg${tgId}`;
+    const legacyId = typeof body.userId === 'string' ? body.userId.trim() : '';
+    let identityRef = tgRef;
+    let attachToProfile = tgRef;
+
+    const profiles = storage.getUserProfiles();
+    const legacyIdx = legacyId && legacyId !== tgRef ? profiles.findIndex((p: any) => p && p.user_id === legacyId) : -1;
+    if (legacyIdx >= 0) {
+      const legacy = profiles[legacyIdx];
+      const legacyPhoneDigits = String(legacy.phone_number || '').replace(/[^0-9]/g, '');
+      if (legacy.is_phone_verified && legacyPhoneDigits.length >= 7) {
+        // Phone-verified: phone stays the ownership key, telegram rides along.
+        identityRef = legacyId;
+        attachToProfile = legacyId;
+      } else {
+        // Guest profile: re-key it to the stable Telegram id.
+        const dupIdx = profiles.findIndex((p: any) => p && p.user_id === tgRef);
+        if (dupIdx >= 0 && dupIdx !== legacyIdx) profiles.splice(legacyIdx, 1);
+        else profiles[legacyIdx].user_id = tgRef;
+        storage.saveUserProfiles(profiles);
+      }
+    }
+
+    const sessionId = crypto.randomBytes(24).toString('hex');
+    const tgUsername = (data.username || '').slice(0, 64);
+    const tgName = [data.first_name, data.last_name].filter(Boolean).join(' ').slice(0, 120);
+    const photoUrl = (data.photo_url || '').slice(0, 500);
+    TELEGRAM_SESSIONS.set(sessionId, {
+      session_id: sessionId,
+      status: 'verified',
+      user_id: identityRef,
+      telegram_username: tgUsername,
+      telegram_id: Number(tgId),
+      expires_at: Date.now() + SESSION_TTL_MS,
+      created_at: new Date().toISOString(),
+    } as any);
+
+    // Issue the HttpOnly session cookie so the session guard admits this browser.
+    const isSecure =
+      req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+    res.setHeader('Set-Cookie', buildSessionCookie(sessionId, isSecure));
+
+    const profile = storage.getUserProfile(attachToProfile);
+    profile.telegram_id = tgId;
+    if (tgUsername) profile.telegram_username = tgUsername;
+    if (tgName) profile.telegram_name = tgName;
+    if (photoUrl) profile.telegram_photo_url = photoUrl;
+    // The Telegram account IS the registration — no phone OTP needed on top.
+    profile.is_phone_verified = true;
+    profile.telegram_login_at = new Date().toISOString();
+    storage.saveUserProfile(profile);
+
+    res.json({
+      success: true,
+      session_id: sessionId,
+      user_id: identityRef,
+      telegram: { id: tgId, username: tgUsername, name: tgName, photo_url: photoUrl },
+    });
+  });
+
 // 6. Verify 6-Digit Code (User pastes in web app)
 app.post('/api/telegram/verify-code', (req, res) => {
   const { code, sessionId, userId } = req.body;
@@ -7620,7 +7757,7 @@ ${secsHtml}
       }
       // Real 404 for unknown paths (soft-404s hurt SEO): homepage, admin panel and the
       // vex0.9 SPA tab routes serve index.html — every other unknown URL gets a proper 404
-      const SPA_TAB_PATHS = ['/wallets', '/ai-sports', '/referrals', '/transfers', '/activity', '/unlucky-wall', '/lottery', '/legal'];
+      const SPA_TAB_PATHS = ['/wallets', '/ai-sports', '/referrals', '/transfers', '/activity', '/unlucky-wall', '/lottery', '/legal', '/wallet-app'];
       const isSpaTab = SPA_TAB_PATHS.includes(req.path);
       if (!isSpaTab && req.path !== '/' && req.path !== '/admin' && !req.path.startsWith('/admin/')) {
         return send404(res, profile);

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, User, X, ArrowLeft } from 'lucide-react';
+import { Bot, User, X, ArrowLeft, MessageCircle } from 'lucide-react';
 import type { Language } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 
 export const TELEGRAM_BOT_URL = 'https://t.me/Vex_wallet_bot';
 export const TELEGRAM_ACCOUNT_URL = 'https://t.me/doitxman';
+export const WHATSAPP_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 عايز أتواصل معاكم');
 
 interface TelegramContactButtonProps {
   lang: Language;
@@ -15,9 +16,9 @@ interface TelegramContactButtonProps {
 }
 
 /**
- * Telegram contact trigger: instead of opening a single hardcoded target it
- * shows a chooser dialog so the client picks between the official bot
- * (@Vex_wallet_bot) and the direct account (@doitxman).
+ * Contact trigger: instead of opening a single hardcoded target it shows a
+ * chooser dialog so the client picks WhatsApp, the official Telegram bot
+ * (@Vex_wallet_bot) or the direct account (@doitxman).
  */
 export const TelegramContactButton: React.FC<TelegramContactButtonProps> = ({ lang, className, children }) => {
   const [open, setOpen] = useState(false);
@@ -71,6 +72,30 @@ export const TelegramContactButton: React.FC<TelegramContactButtonProps> = ({ la
               </div>
 
               <div className="space-y-2">
+                <a
+                  href={WHATSAPP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    close();
+                  }}
+                  className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-emerald-400 to-green-600 px-4 py-3 text-white shadow-md transition-all active:scale-[0.98]"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20">
+                    <MessageCircle className="w-5 h-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-black">
+                      {isAr ? 'واتساب' : 'WhatsApp'}
+                    </span>
+                    <span className="block truncate text-[11px] font-bold text-white/85">
+                      {isAr ? 'ردود فورية على مدار الساعة' : 'Instant replies, around the clock'} · +20 109 684 9170
+                    </span>
+                  </span>
+                  <ArrowLeft className="w-4 h-4 shrink-0 opacity-80" />
+                </a>
+
                 <a
                   href={TELEGRAM_BOT_URL}
                   target="_blank"

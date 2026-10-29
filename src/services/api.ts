@@ -945,6 +945,68 @@ class VexMobileApiService {
     }
   }
 
+  /**
+   * Sign in with a normal Telegram account (official Login Widget payload).
+   * The server verifies the HMAC, issues the session cookie, and returns the
+   * ownership key — this device then adopts it so wallets/requests follow the
+   * Telegram account across devices.
+   */
+  public async loginWithTelegram(telegram: Record<string, unknown>): Promise<{
+    success: boolean;
+    user_id: string;
+    session_id: string;
+    telegram: { id: string; username: string; name: string; photo_url: string };
+  }> {
+    const res = await fetch('/api/telegram/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram, userId: this.userId }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'TELEGRAM_LOGIN_FAILED');
+    }
+
+    // Store the session number for header-based auth (x-session-id)
+    try {
+      if (data.session_id) localStorage.setItem('vex_session_id', data.session_id);
+    } catch {
+      // ignore — cookie auth still works
+    }
+
+    // Adopt the server's ownership key (phone-verified users keep their phone key;
+    // guests become tg<id> so the same wallet follows the Telegram account).
+    const newRef = typeof data.user_id === 'string' ? data.user_id : '';
+    if (newRef && newRef !== this.userId) {
+      const phoneRef = localStorage.getItem(STORAGE_KEYS.PHONE_REF) || '';
+      // Never steal a phone-keyed identity — server keeps it in that case anyway.
+      if (!phoneRef || phoneRef === newRef) {
+        migrateLocalRecordsToUid(newRef, this.userId);
+        localStorage.setItem(STORAGE_KEYS.UID, newRef);
+        this.userId = newRef;
+      }
+    }
+
+    // Mirror the Telegram identity into the local profile store.
+    try {
+      const profile = await this.getUserProfile();
+      profile.user_id = this.userId;
+      profile.is_phone_verified = true;
+      if (data.telegram) {
+        if (data.telegram.id) profile.telegram_id = String(data.telegram.id);
+        if (data.telegram.username) profile.telegram_username = data.telegram.username;
+        if ((data.telegram as any).name) profile.telegram_name = (data.telegram as any).name;
+        if ((data.telegram as any).photo_url) profile.telegram_photo_url = (data.telegram as any).photo_url;
+        profile.telegram_login_at = new Date().toISOString();
+      }
+      localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    } catch {
+      // local profile mirror is best-effort
+    }
+
+    return data;
+  }
+
   public async simulateTelegramContact(
     sessionId?: string,
     phone?: string,
