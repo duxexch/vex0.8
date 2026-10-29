@@ -9,6 +9,8 @@ services:
       - "3000:3000"
     volumes:
       - ./data:/app/data
+      # Wallet WebView APK served by /download/apk (cwd lookup)
+      - ./VEX-Deals.apk:/app/VEX-Deals.apk:ro
     environment:
       - NODE_ENV=production
       - PORT=3000

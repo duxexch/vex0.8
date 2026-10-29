@@ -4,7 +4,9 @@
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "url": "https://vex.deals/wallet-app",
+    "allowNavigation": ["vex.deals", "*.vex.deals"]
   },
   "plugins": {
     "SplashScreen": {
