@@ -539,6 +539,23 @@ export function renderSeoMetaHead(req: Request, rawHtml: string): string {
     );
   }
 
+  // Replace Robots meta — /wallet-app must never be indexed (app shell, no SEO value)
+  const robotsContent =
+    cleanPath === '/wallet-app'
+      ? 'noindex, nofollow'
+      : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
+  if (updatedHtml.includes('<meta name="robots"')) {
+    updatedHtml = updatedHtml.replace(
+      /<meta\s+name="robots"\s+content=".*?"\s*\/?>/i,
+      `<meta name="robots" content="${robotsContent}" />`
+    );
+  } else {
+    updatedHtml = updatedHtml.replace(
+      /<title>.*?<\/title>/i,
+      `<title>${title}</title>\n    <meta name="robots" content="${robotsContent}" />`
+    );
+  }
+
   // Insert structured data before </head>
   updatedHtml = updatedHtml.replace(
     /<\/head>/i,
