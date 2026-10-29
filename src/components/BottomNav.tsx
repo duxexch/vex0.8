@@ -7,7 +7,6 @@ import {
   TrendingUp,
   Trophy,
   Grid,
-  History,
 } from 'lucide-react';
 
 interface BottomNavProps {
@@ -16,8 +15,6 @@ interface BottomNavProps {
   onOpenMoreSheet: () => void;
   lang: Language;
   pendingRequestsCount?: number;
-  /** Wallet-app mode: only these sections are reachable from the bar. */
-  allowedTabs?: TabType[];
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -26,7 +23,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenMoreSheet,
   lang,
   pendingRequestsCount = 0,
-  allowedTabs,
 }) => {
   const isAr = lang === 'ar';
 
@@ -78,22 +74,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       },
     },
     {
-      // Wallet-app home: the activity/claims log lives one tap away instead of
-      // behind the hub sheet, since claims are the whole point of this build.
-      // Only added when a restricted bar (wallet mode) is requested — the full
-      // site keeps its original five cells with activity inside the hub sheet.
-      id: 'activity' as TabType,
-      label: isAr ? 'السجل' : lang === 'es' ? 'Historial' : lang === 'ru' ? 'История' : 'Activity',
-      icon: History,
-      isActive: activeTab === 'activity',
-      badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined,
-      onClick: () => {
-        triggerHaptic('light');
-        onChangeTab('activity');
-      },
-      walletOnly: true,
-    },
-    {
       id: 'more' as any,
       label: isAr ? 'المزيد' : lang === 'es' ? 'Más' : lang === 'ru' ? 'Ещё' : 'Hub',
       icon: Grid,
@@ -104,13 +84,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         onOpenMoreSheet();
       },
     },
-  ].filter((item) => {
-    // The hub sheet stays reachable in wallet mode — it carries contact,
-    // settings and account items the wallet needs. Only real sections clamp.
-    if (item.id === 'more') return true;
-    if ((item as any).walletOnly && !allowedTabs) return false;
-    return !allowedTabs || allowedTabs.includes(item.id as TabType);
-  });
+  ];
 
   return (
     <nav

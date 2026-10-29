@@ -1,19 +1,16 @@
 // =========================================================================
-// VEX Wallet App mode — the wallet-only WebView build.
+// VEX Wallet App mode — the wallet WebView build.
 //
 // The customer receives a single download link. That link opens either:
-//   • /wallet-app        — the web version of the wallet-only experience, or
+//   • /wallet-app        — the web entry that boots into the wallet, or
 //   • the Capacitor APK  — same bundle, detected via window.Capacitor.
 //
-// In this mode the app boots straight into the wallet (compensation dashboard
-// first), the bottom navigation only exposes wallet-owned sections, and every
-// attempt to wander off to other sections is clamped back to the wallet.
+// The app is a full mirror of the website: every section stays reachable
+// exactly as on the web. The only difference is where it opens — straight
+// on the wallet (compensation dashboard) instead of the companies home.
 // =========================================================================
 
 import type { TabType } from './types';
-
-/** Sections the wallet app is allowed to show. */
-export const WALLET_APP_TABS: TabType[] = ['wallets', 'companies', 'activity'];
 
 let cached: boolean | null = null;
 
@@ -49,12 +46,7 @@ export function isNativeWalletApp(): boolean {
   }
 }
 
-/** Clamp any tab to one the wallet app exposes (wallet is the home base). */
-export function clampWalletTab(tab: TabType): TabType {
-  return (WALLET_APP_TABS as string[]).includes(tab) ? tab : 'wallets';
-}
-
-/** Route the wallet app should boot into. */
+/** Section the wallet app should boot into (compensation dashboard). */
 export function walletHomeTab(): TabType {
   return 'wallets';
 }

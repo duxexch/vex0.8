@@ -48,8 +48,6 @@ interface SideDrawerProps {
   onSelectLang: (lang: Language) => void;
   unreadNotificationsCount?: number;
   pendingRequestsCount?: number;
-  /** Wallet-app mode: only these sections are offered in the menu. */
-  allowedTabs?: TabType[];
 }
 
 /**
@@ -77,7 +75,6 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onSelectLang,
   unreadNotificationsCount = 0,
   pendingRequestsCount = 0,
-  allowedTabs,
 }) => {
   const isAr = lang === 'ar';
   const isRtl = lang === 'ar';
@@ -118,7 +115,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     </span>
   );
 
-  const allTabItems: {
+  const tabItems: {
     id: TabType;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
@@ -134,8 +131,6 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     { id: 'activity', label: isAr ? 'سجل النشاط وطلبات التعويض' : 'Activity & Claims', icon: History, tile: 'text-sky-600 bg-sky-50 border-sky-200', badge: pendingRequestsCount },
     { id: 'unlucky-wall', label: isAr ? 'مجتمع المنحوسين 😭' : 'Unlucky Wall 😭', icon: TrendingDown, tile: 'text-rose-600 bg-rose-50 border-rose-200' },
   ];
-  // Wallet app build shows only its own sections; "more" stays reachable everywhere.
-  const tabItems = allowedTabs ? allTabItems.filter((item) => allowedTabs.includes(item.id)) : allTabItems;
 
   const accountItems: {
     id: string;
