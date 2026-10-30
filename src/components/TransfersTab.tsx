@@ -57,6 +57,9 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
   }>({ checking: false });
   const [amount, setAmount] = useState('');
   const [pin, setPin] = useState('');
+  // Transfer path: 'frozen' (10%/max $100/30-day rules, arrives frozen) or
+  // 'available' (liquid funds, anytime, arrives available).
+  const [balanceType, setBalanceType] = useState<'frozen' | 'available'>('frozen');
 
   // OTP Step states
   const [pendingTransferId, setPendingTransferId] = useState<string | null>(null);
@@ -72,7 +75,23 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
   const t = TRANSLATIONS[lang] || TRANSLATIONS['ar'];
   const currentWallet = wallets.find((w) => w.company_id === selectedCompanyId);
   const frozenBal = currentWallet ? Number(currentWallet.frozen) : 0;
-  const maxTransferAllowed = Math.floor(frozenBal * 0.1 * 100) / 100;
+  const availableBal = currentWallet ? Number(currentWallet.available) : 0;
+  // Frozen path (mirrors the server): 10% of frozen per transfer, hard-capped at $100,
+  // refreshed every 30 rolling days. Available path: full available balance, no monthly cap.
+  const maxTransferAllowed =
+    balanceType === 'frozen'
+      ? Math.min(Math.floor(frozenBal * 0.1 * 100) / 100, 100)
+      : Math.floor(availableBal * 100) / 100;
+  // 30-day rolling cooldown state (frozen path only; mirrors last_transfer_at rule).
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const lastTransferTs = currentWallet?.last_transfer_at
+    ? Date.parse(currentWallet.last_transfer_at)
+    : 0;
+  const inTransferCooldown =
+    balanceType === 'frozen' && lastTransferTs > 0 && Date.now() - lastTransferTs < THIRTY_DAYS_MS;
+  const transferCooldownDaysLeft = inTransferCooldown
+    ? Math.ceil((THIRTY_DAYS_MS - (Date.now() - lastTransferTs)) / (24 * 60 * 60 * 1000))
+    : 0;
 
   // Real-time recipient check
   useEffect(() => {
@@ -83,7 +102,7 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
 
     const timer = setTimeout(async () => {
       setRecipientStatus({ checking: true });
-      const res = await vexApi.validateRecipient(selectedCompanyId, friendAccount);
+      const res = await vexApi.validateRecipient(selectedCompanyId, friendAccount, balanceType);
       setRecipientStatus({
         checking: false,
         valid: res.valid,
@@ -94,7 +113,7 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [selectedCompanyId, friendAccount]);
+  }, [selectedCompanyId, friendAccount, balanceType]);
 
   // Cooldown countdown
   useEffect(() => {
@@ -148,13 +167,21 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
 
     if (numAmount > maxTransferAllowed) {
       setError(
-        lang === 'ar'
-          ? `الحد الأقصى للتحويل هو 10% من رصيدك المجمد (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
+        balanceType === 'frozen'
+          ? lang === 'ar'
+            ? `الحد الأقصى للتحويل من المجمد هو 10% من رصيدك المجمد بحد أقصى $100 (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
+            : lang === 'es'
+            ? `El límite máximo desde el saldo congelado es 10%, con un tope de $100 (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
+            : lang === 'ru'
+            ? `Максимальный перевод из заморозки — 10%, максимум $100 (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
+            : `Maximum frozen transfer is 10% of your frozen balance, capped at $100 (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
+          : lang === 'ar'
+          ? `رصيدك المتاح للتحويل هو ${formatCurrency(availableBal, displayCurrency)} فقط.`
           : lang === 'es'
-          ? `El límite máximo es 10% de tu saldo bloqueado (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
+          ? `Tu saldo disponible es solo ${formatCurrency(availableBal, displayCurrency)}.`
           : lang === 'ru'
-          ? `Максимальный перевод — 10% от замороженного баланса (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
-          : `Maximum transfer is 10% of frozen balance (${formatCurrency(maxTransferAllowed, displayCurrency)}).`
+          ? `Ваш доступный баланс — только ${formatCurrency(availableBal, displayCurrency)}.`
+          : `Your available balance is only ${formatCurrency(availableBal, displayCurrency)}.`
       );
       return;
     }
@@ -178,7 +205,8 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
         selectedCompanyId,
         friendAccount.trim(),
         numAmount,
-        pin
+        pin,
+        balanceType
       );
       setPendingTransferId(res.transferId);
       setOtpPhone(res.otpPhone);
@@ -248,12 +276,12 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
               </h2>
               <p className="text-xs text-slate-500">
                 {lang === 'ar'
-                  ? 'تحويل حتى 10% من الرصيد المجمد لحساب صديق موثق'
+                  ? 'من المجمد: 10% (حتى $100) كل 30 يوماً ويصله مجمداً — ومن المتاح: بلا قيود ويصله متاحاً'
                   : lang === 'es'
-                  ? 'Transfiere hasta 10% del saldo congelado a amigos'
+                  ? 'Desde congelado: 10% (máx. $100) cada 30 días y llega congelado — desde disponible: sin límites y llega disponible'
                   : lang === 'ru'
-                  ? 'Перевод до 10% замороженного баланса другу'
-                  : 'Transfer up to 10% of frozen balance to a friend'}
+                  ? 'Из заморозки: 10% (макс. $100) каждые 30 дн., придёт в заморозку — из доступного: без лимитов, придёт в доступный'
+                  : 'From frozen: 10% (max $100) every 30 days, arrives frozen — from available: no limits, arrives available'}
               </p>
             </div>
           </div>
@@ -267,12 +295,12 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
           <span>
             {lang === 'ar'
-              ? 'الحد الأقصى 10% لمرة واحدة فقط لكل صديق مع منع التدوير. التحويل محمي برمز OTP فوري.'
+              ? 'من المجمد: 10% (بحد أقصى $100) كل 30 يوماً ولكل صديق مرة كل شهر — ويصله مجمداً. من المتاح: بلا قيود شهرية ويصله المستلم متاحاً. كلا المسارين محمي بـ OTP.'
               : lang === 'es'
-              ? 'Máximo 10% por amigo con verificación instantánea OTP.'
+              ? 'Desde congelado: 10% (máx. $100) cada 30 días, una vez por amigo al mes, llega congelado. Desde disponible: sin límites mensuales, llega disponible. Ambos protegidos por OTP.'
               : lang === 'ru'
-              ? 'Максимум 10% с мгновенным подтверждением по OTP.'
-              : 'Max 10% per friend with instant OTP protection.'}
+              ? 'Из заморозки: 10% (макс. $100) каждые 30 дн., раз в месяц на друга, придёт в заморозку. Из доступного: без месячных лимитов, придёт в доступный. Оба пути защищены OTP.'
+              : 'From frozen: 10% (max $100) every 30 days, once per friend per month, arrives frozen. From available: no monthly limits, arrives available. Both OTP-protected.'}
           </span>
         </div>
       </div>
@@ -347,25 +375,98 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
             </select>
           </div>
 
-          {/* Frozen balance display & Max limit */}
+          {/* 2. Balance path selector: frozen (monthly rules, arrives frozen) vs available (arrives available) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              {lang === 'ar' ? 'مصدر التحويل:' : lang === 'es' ? 'Origen de la transferencia:' : lang === 'ru' ? 'Источник перевода:' : 'Transfer source:'}
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBalanceType('frozen');
+                  setAmount('');
+                  setError(null);
+                }}
+                className={`h-auto min-h-11 px-2.5 py-2 rounded-xl text-[11px] font-bold border transition-all cursor-pointer active:scale-95 text-center leading-snug ${
+                  balanceType === 'frozen'
+                    ? 'bg-amber-50 border-amber-400 text-amber-800 shadow-xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                <span className="block">
+                  {lang === 'ar' ? 'من المجمد' : lang === 'es' ? 'Desde congelado' : lang === 'ru' ? 'Из заморозки' : 'From frozen'}
+                </span>
+                <span className="block text-[9px] font-bold opacity-75 mt-0.5">
+                  {lang === 'ar' ? '10% · حتى $100 · كل 30 يوماً · يصله مجمداً'
+                    : lang === 'es' ? '10% · máx. $100 · cada 30 días · llega congelado'
+                    : lang === 'ru' ? '10% · макс. $100 · каждые 30 дн. · придёт в заморозку'
+                    : '10% · max $100 · every 30 days · arrives frozen'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBalanceType('available');
+                  setAmount('');
+                  setError(null);
+                }}
+                className={`h-auto min-h-11 px-2.5 py-2 rounded-xl text-[11px] font-bold border transition-all cursor-pointer active:scale-95 text-center leading-snug ${
+                  balanceType === 'available'
+                    ? 'bg-emerald-50 border-emerald-400 text-emerald-800 shadow-xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                <span className="block">
+                  {lang === 'ar' ? 'من المتاح' : lang === 'es' ? 'Desde disponible' : lang === 'ru' ? 'Из доступного' : 'From available'}
+                </span>
+                <span className="block text-[9px] font-bold opacity-75 mt-0.5">
+                  {lang === 'ar' ? 'بلا قيود شهرية · يصله متاحاً'
+                    : lang === 'es' ? 'Sin límites mensuales · llega disponible'
+                    : lang === 'ru' ? 'Без месячных лимитов · придёт в доступный'
+                    : 'No monthly limits · arrives available'}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Source balance display & Max limit */}
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
             <div>
               <span className="text-slate-500 text-[11px] block">
-                {t.frozenBalance}:
+                {balanceType === 'frozen' ? `${t.frozenBalance}:` : `${t.availableBalance}:`}
               </span>
-              <span className="text-amber-700 font-extrabold text-sm">
-                {formatCurrency(frozenBal, displayCurrency)}
+              <span className={`font-extrabold text-sm ${balanceType === 'frozen' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                {formatCurrency(balanceType === 'frozen' ? frozenBal : availableBal, displayCurrency)}
               </span>
             </div>
             <div className="text-right rtl:text-left">
               <span className="text-slate-500 text-[11px] block">
-                {lang === 'ar' ? 'الحد الأقصى (10%):' : lang === 'es' ? 'Máximo (10%):' : lang === 'ru' ? 'Максимум (10%):' : 'Max Limit (10%):'}
+                {balanceType === 'frozen'
+                  ? lang === 'ar' ? 'الحد الأقصى (10% · حتى $100):' : lang === 'es' ? 'Máximo (10% · hasta $100):' : lang === 'ru' ? 'Максимум (10% · до $100):' : 'Max Limit (10% · up to $100):'
+                  : lang === 'ar' ? 'الحد الأقصى (المتاح كله):' : lang === 'es' ? 'Máximo (todo el disponible):' : lang === 'ru' ? 'Максимум (весь доступный):' : 'Max Limit (all available):'}
               </span>
               <span className="text-emerald-700 font-extrabold text-sm">
                 {formatCurrency(maxTransferAllowed, displayCurrency)}
               </span>
             </div>
           </div>
+
+          {/* 30-day monthly cooldown notice */}
+          {inTransferCooldown && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-800">
+              <Clock className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+              <span>
+                {lang === 'ar'
+                  ? `تم استخدام حد التحويل الشهري لهذا الحساب. يتجدد الحد بعد ${transferCooldownDaysLeft} يوماً.`
+                  : lang === 'es'
+                  ? `Límite mensual de transferencia utilizado. Se renueva en ${transferCooldownDaysLeft} días.`
+                  : lang === 'ru'
+                  ? `Месячный лимит перевода использован. Обновится через ${transferCooldownDaysLeft} дн.`
+                  : `Monthly transfer limit used. It renews in ${transferCooldownDaysLeft} days.`}
+              </span>
+            </div>
+          )}
 
           {/* 2. Friend Account Number with live validation */}
           <div>
@@ -441,7 +542,8 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
               <button
                 type="button"
                 onClick={() => setAmount(maxTransferAllowed.toString())}
-                className="h-6 px-2 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold border border-emerald-200"
+                disabled={inTransferCooldown}
+                className="h-6 px-2 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold border border-emerald-200 disabled:opacity-50"
               >
                 {lang === 'ar' ? 'الحد الأقصى' : 'Max'} (${maxTransferAllowed})
               </button>
@@ -477,7 +579,7 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading || maxTransferAllowed <= 0 || !recipientStatus.valid}
+            disabled={loading || maxTransferAllowed <= 0 || !recipientStatus.valid || inTransferCooldown}
             className="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-98"
           >
             {loading ? (
@@ -571,9 +673,51 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
               <span>{lang === 'ar' ? 'معايير الأمان والتحويل الفوري' : 'Security & Transfer Rules'}</span>
             </h3>
             <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside leading-relaxed">
-              <li>{lang === 'ar' ? 'التحويل يتم فورياً بين المحافظ المسجلة على نفس الشركة.' : 'Instant transfer between registered wallets.'}</li>
-              <li>{lang === 'ar' ? 'الحد الأقصى المسموح هو 10% من إجمالي الرصيد المجمد.' : 'Up to 10% of frozen balance can be transferred.'}</li>
-              <li>{lang === 'ar' ? 'تأكيد العملية يتطلب رقم هاتف مفعل مع كود OTP سري.' : 'Requires verified phone and confidential OTP code.'}</li>
+              <li>
+                {lang === 'ar'
+                  ? 'التحويل يتم فورياً بين المحافظ المسجلة على نفس الشركة.'
+                  : lang === 'es'
+                  ? 'Transferencia instantánea entre billeteras registradas en la misma empresa.'
+                  : lang === 'ru'
+                  ? 'Мгновенный перевод между кошельками одной компании.'
+                  : 'Instant transfer between registered wallets on the same company.'}
+              </li>
+              <li>
+                {lang === 'ar'
+                  ? 'من المجمد: الحد الأقصى 10% (بحد أقصى $100) كل 30 يوماً، ولكل صديق مرة كل شهر — ويصله مجمداً.'
+                  : lang === 'es'
+                  ? 'Desde congelado: límite del 10% (máx. $100) cada 30 días, una vez por amigo al mes; llega congelado.'
+                  : lang === 'ru'
+                  ? 'Из заморозки: лимит 10% (макс. $100) каждые 30 дн., раз в месяц на друга; придёт в заморозку.'
+                  : 'From frozen: limit is 10% (max $100) every 30 days, once per friend per month; arrives frozen.'}
+              </li>
+              <li>
+                {lang === 'ar'
+                  ? 'من المتاح: تحويل بأي مبلغ متاح، في أي وقت ولأي صديق — ويصله المستلم متاحاً فوراً.'
+                  : lang === 'es'
+                  ? 'Desde disponible: cualquier monto disponible, siempre y a cualquier amigo; llega disponible al instante.'
+                  : lang === 'ru'
+                  ? 'Из доступного: любая доступная сумма, в любое время, любому другу; придёт в доступный сразу.'
+                  : 'From available: any available amount, any time, any registered friend; arrives available instantly.'}
+              </li>
+              <li>
+                {lang === 'ar'
+                  ? 'يُضاف المنقول من المجمد إلى مجمد الصديق وينتقل من مجمدك إلى متاحك.'
+                  : lang === 'es'
+                  ? 'Lo enviado desde congelado se suma al congelado de tu amigo y pasa a tu disponible.'
+                  : lang === 'ru'
+                  ? 'Переведённое из заморозки добавляется в заморозку друга и переходит в ваш доступный.'
+                  : 'Frozen-path transfers add to your friend’s frozen and move to your available.'}
+              </li>
+              <li>
+                {lang === 'ar'
+                  ? 'الحساب المستلم يجب أن يكون مسجَّلاً في المنصة، والتأكيد يتطلب هاتفاً مفعّلاً وكود OTP سري.'
+                  : lang === 'es'
+                  ? 'La cuenta destino debe estar registrada; requiere teléfono verificado y código OTP.'
+                  : lang === 'ru'
+                  ? 'Получатель должен быть зарегистрирован; требуется подтверждённый телефон и OTP.'
+                  : 'The recipient account must be registered; requires verified phone and confidential OTP.'}
+              </li>
             </ul>
           </div>
 
@@ -602,13 +746,26 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
                     className="bg-white border border-slate-200 rounded-2xl p-3.5 flex items-center justify-between text-xs shadow-xs"
                   >
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-slate-900">
                           {tx.company_name}
                         </span>
                         <span className="text-[11px] text-slate-500 font-mono">
                           {lang === 'ar' ? 'إلى:' : 'To:'} {tx.to_account}
                         </span>
+                        {tx.balance_type ? (
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                              tx.balance_type === 'available'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            {tx.balance_type === 'available'
+                              ? (lang === 'ar' ? 'من المتاح' : lang === 'es' ? 'Disponible' : lang === 'ru' ? 'Из доступного' : 'Available')
+                              : (lang === 'ar' ? 'من المجمد' : lang === 'es' ? 'Congelado' : lang === 'ru' ? 'Из заморозки' : 'Frozen')}
+                          </span>
+                        ) : null}
                       </div>
                       <span className="text-[10px] text-slate-400">
                         {new Date(tx.created_at).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')}

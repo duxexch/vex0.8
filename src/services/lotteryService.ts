@@ -396,7 +396,34 @@ class LotteryService {
       return { success: false, error: 'Numbers must be distinct' };
     }
 
-    // Handle free ticket deduction
+    // Compute price + generate the ticket id, then RECORD THE PURCHASE SERVER-SIDE FIRST.
+    // The server authoritatively deducts from AVAILABLE and stores the ticket; if it fails
+    // we abort before mutating any local state (free counter / draw metrics).
+    const ticketPrice = paymentMethod === 'compassion_free_ticket' ? 0 : draw.ticketPrice;
+    const ticketId = `TCK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    try {
+      const res = await fetch('/api/wallets/lottery-purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: companyId,
+          price: ticketPrice,
+          ticket_id: ticketId,
+          draw_id: drawId,
+          main_numbers: mainNumbers,
+          lucky_numbers: luckyNumbers,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        return { success: false, error: data?.error || 'فشل شراء التذكرة على السيرفر.' };
+      }
+    } catch {
+      return { success: false, error: 'تعذر الاتصال بالسيرفر لإتمام شراء التذكرة.' };
+    }
+
+    // Handle free ticket deduction (local counter) — only after the server record succeeded.
     if (paymentMethod === 'compassion_free_ticket') {
       const freeCount = this.getFreeCompassionTicketsCount(userId);
       if (freeCount <= 0) {
@@ -405,10 +432,6 @@ class LotteryService {
       this.setFreeCompassionTicketsCount(userId, freeCount - 1);
     }
 
-    const ticketPrice = paymentMethod === 'compassion_free_ticket' ? 0 : draw.ticketPrice;
-
-    // Create ticket
-    const ticketId = `TCK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const newTicket: LotteryTicket = {
       id: ticketId,
       drawId: draw.id,
@@ -569,6 +592,35 @@ class LotteryService {
     draw.totalPaidOut = totalPayout;
     this.saveDraws();
     this.saveTickets();
+
+    // Server-authoritative prize settlement: the server recomputes each ticket's tier
+    // from the winning numbers and credits winners' AVAILABLE balance (idempotent).
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      try {
+        const tok = sessionStorage.getItem('vex_admin_api_token') || '';
+        if (tok) headers['x-admin-token'] = tok;
+      } catch {
+        // sessionStorage unavailable
+      }
+      const settleRes = await fetch('/api/admin/lottery/settle-draw', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          draw_id: drawId,
+          winning_main: winningMain,
+          winning_lucky: winningLucky,
+          jackpot_amount: draw.jackpotAmount,
+          total_pool: draw.totalPool,
+        }),
+      });
+      if (!settleRes.ok) {
+        const errData = await settleRes.json().catch(() => ({} as any));
+        console.warn('Lottery settlement on server failed:', errData?.error || settleRes.status);
+      }
+    } catch (e) {
+      console.debug('Server lottery settlement skipped:', e);
+    }
 
     // Sync to Firestore
     try {

@@ -18,7 +18,7 @@ import { GUIDES, getGuide } from './server/i18nGuides';
 import { STATIC_PAGES, STATIC_PAGE_SLUGS, TRUST_NAV } from './server/staticPages';
 import type { Company, SportsNewsItem } from './src/types';
 import { geoLocaleMiddleware } from './server/geoLocale';
-import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS } from './server/sessionGuard';
+import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS, getCurrentUserId } from './server/sessionGuard';
 import { buildBotPromoMessage } from './server/botPromo';
 import {
   initGrowth,
@@ -3344,12 +3344,343 @@ app.get('/api/compensation/requests', (req, res) => {
   });
 });
 
-// Approve Request (Admin)
+// Admin-only guard for money-crediting endpoints (compensation approvals, lottery
+// settlements…). Fail-closed: if ADMIN_TOKEN is not configured, these endpoints refuse
+// to run so a misconfigured deploy can never be exploited for self-crediting.
+// The client admin panel sends the token as an `x-admin-token` header (stored only in
+// the admin's browser after they unlock the dashboard) — normal users never have it.
+function requireAdmin(req: any, res: any): boolean {
+  const configured = String(process.env.ADMIN_TOKEN || '').trim();
+  if (!configured) {
+    res.status(503).json({
+      error: 'ADMIN_TOKEN_NOT_CONFIGURED',
+      message: 'لم يتم ضبط مفتاح أدمن المنصة على السيرفر. أضف متغيّر البيئة ADMIN_TOKEN لتفعيل الإجراءات المالية.',
+    });
+    return false;
+  }
+  const raw = String(req.headers['x-admin-token'] || req.headers['authorization'] || '').trim();
+  const provided = raw.replace(/^Bearer\s+/i, '').trim();
+  // Constant-time-ish compare to blunt timing probes.
+  if (provided.length !== configured.length) {
+    res.status(403).json({ error: 'ADMIN_FORBIDDEN', message: 'صلاحيات غير كافية لإجراء هذا الإجراء المالي.' });
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < configured.length; i++) diff |= configured.charCodeAt(i) ^ provided.charCodeAt(i);
+  if (diff !== 0) {
+    res.status(403).json({ error: 'ADMIN_FORBIDDEN', message: 'صلاحيات غير كافية لإجراء هذا الإجراء المالي.' });
+    return false;
+  }
+  return true;
+}
+
+// Server-authoritative friend transfer (two paths):
+//   • balance_type='frozen'   → 10% (max $100), 30-day cooldown, per-friend monthly rule; arrives frozen.
+//   • balance_type='available' → any time, any registered friend, no monthly cap; arrives available.
+// Sender identity comes from the verified session (never trusted from the body).
+app.post('/api/wallets/transfer', (req, res) => {
+  try {
+    const senderId = getCurrentUserId(req);
+    if (!senderId) {
+      return res.status(401).json({ error: 'SESSION_REQUIRED', message: 'يجب تسجيل الدخول أولاً.' });
+    }
+    const { company_id, to_account, amount, client_transfer_id } = req.body || {};
+    const balanceType = String((req.body || {}).balance_type || 'frozen') === 'available' ? 'available' : 'frozen';
+    const transferId = `TXF-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+
+    const result = storage.executeTransfer({
+      fromUserId: senderId,
+      companyId: String(company_id || '').trim(),
+      toAccount: String(to_account || '').trim(),
+      amount: Number(amount),
+      transferId,
+      clientTransferId: typeof client_transfer_id === 'string' ? client_transfer_id.trim() : undefined,
+      balanceType,
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    io.emit('wallets_updated', { user_id: senderId });
+    io.emit('wallets_updated', { user_id: result.recipientUserId });
+    res.json({
+      success: true,
+      transfer: result.transfer,
+      senderWallet: result.senderWallet,
+      message:
+        balanceType === 'frozen'
+          ? `تم تحويل $${result.transfer.amount} بنجاح. انتقل المبلغ من رصيدك المجمد إلى المتاح وأُضيف إلى مجمد المستلم.`
+          : `تم تحويل $${result.transfer.amount} من رصيدك المتاح بنجاح، ووصل المبلغ إلى المتاح لدى المستلم.`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Server-authoritative referral unfreeze: 10% of the caller's frozen → available.
+// 24h anti-drain cooldown is enforced here (single source of truth).
+app.post('/api/wallets/referral-unfreeze', (req, res) => {
+  try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'SESSION_REQUIRED', message: 'يجب تسجيل الدخول أولاً.' });
+    }
+    const companyId = String((req.body || {}).company_id || '').trim();
+    if (!companyId) {
+      return res.status(400).json({ error: 'الشركة غير محددة.' });
+    }
+
+    const wallets = storage.getWallets(userId);
+    const wallet = wallets.find((w: any) => w && w.company_id === companyId);
+    const frozen = wallet ? wallet.frozen || 0 : 0;
+
+    // 24-hour anti-Sybil cooldown
+    if (wallet?.last_unfreeze_at) {
+      const last = Date.parse(wallet.last_unfreeze_at);
+      const hours = (Date.now() - last) / (1000 * 60 * 60);
+      if (hours < 24) {
+        const left = Math.ceil(24 - hours);
+        return res.status(400).json({
+          error: `حماية ضد الاستنزاف السريع: يسمح بفك التجميد مرة واحدة كل 24 ساعة. تبقى ${left} ساعة.`,
+        });
+      }
+    }
+
+    const unlockAmount = Math.floor(frozen * 0.1 * 100) / 100;
+    if (!wallet || unlockAmount <= 0) {
+      return res.status(400).json({ error: 'لا يوجد رصيد مجمد كافٍ لفك التجميد.' });
+    }
+
+    wallet.frozen = Math.max(0, Math.round((frozen - unlockAmount) * 100) / 100);
+    wallet.available = Math.round(((wallet.available || 0) + unlockAmount) * 100) / 100;
+    wallet.last_unfreeze_at = new Date().toISOString();
+    storage.saveWallets(userId, wallets);
+
+    io.emit('wallets_updated', { user_id: userId });
+    res.json({ success: true, unlockedAmount: unlockAmount, wallet });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Server-authoritative company-API payout: deduct strictly from AVAILABLE balance.
+app.post('/api/wallets/company-api-transfer', (req, res) => {
+  try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'SESSION_REQUIRED', message: 'يجب تسجيل الدخول أولاً.' });
+    }
+    const body = req.body || {};
+    const companyId = String(body.company_id || '').trim();
+    const amt = Number(body.amount);
+    if (!companyId) return res.status(400).json({ error: 'الشركة غير محددة.' });
+    if (!amt || isNaN(amt) || amt <= 0) return res.status(400).json({ error: 'المبلغ غير صالح.' });
+
+    const accounts = storage.getUserSyncCollection(userId, 'accounts');
+    const myAccount = accounts.find((a: any) => a && a.company_id === companyId);
+    if (!myAccount) {
+      return res.status(400).json({ error: 'يجب ربط وتسجيل رقم حسابك في هذه الشركة أولاً.' });
+    }
+
+    const comp = storage.getCompanies().find((c: any) => c.id === companyId);
+    if (!comp) return res.status(400).json({ error: 'الشركة غير موجودة في النظام.' });
+    if (!comp.api_config || !comp.api_config.enabled) {
+      return res.status(400).json({ error: `ربط الـ API المباشر مع ${comp.name} غير مفعل حالياً.` });
+    }
+
+    const wallets = storage.getWallets(userId);
+    const wallet = wallets.find((w: any) => w && w.company_id === companyId);
+    if (!wallet) return res.status(400).json({ error: 'لا توجد محفظة لهذه الشركة.' });
+    const availableBal = Number(wallet.available) || 0;
+    const frozenBal = Number(wallet.frozen) || 0;
+
+    if (amt > availableBal) {
+      return res.status(400).json({
+        error:
+          `الرصيد المتاح للتحويل لتطبيق ${comp.name} هو $${availableBal.toFixed(2)} فقط. ` +
+          `تنبيه: الرصيد المجمد ($${frozenBal.toFixed(2)}) محمي وغير قابل للتحويل المباشر.`,
+      });
+    }
+    const minAmount = comp.api_config.min_transfer_amount || 1;
+    if (amt < minAmount) return res.status(400).json({ error: `الحد الأدنى للتحويل عبر API هو $${minAmount}.` });
+    if (comp.api_config.max_transfer_amount && amt > comp.api_config.max_transfer_amount) {
+      return res.status(400).json({ error: `الحد الأقصى للتحويل للعملية الواحدة هو $${comp.api_config.max_transfer_amount}.` });
+    }
+
+    // Deduct strictly from AVAILABLE (server-authoritative).
+    wallet.available = Math.round((availableBal - amt) * 100) / 100;
+    storage.saveWallets(userId, wallets);
+
+    const integrationType = comp.api_config.integration_type || 'api';
+    const txId = `TX-${Date.now().toString(36).toUpperCase()}`;
+    const apiRef = `API-${String(integrationType).toUpperCase().slice(0, 4)}-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const now = new Date().toISOString();
+    const apiResponse = {
+      httpStatus: 200,
+      protocol: integrationType,
+      endpoint: comp.api_config.endpoint_url,
+      accountParam: comp.api_config.account_id_param || 'player_id',
+      accountValue: myAccount.account_number,
+      depositedAmount: amt,
+      currency: 'USD',
+      apiReference: apiRef,
+      transactionId: txId,
+      timestamp: now,
+      balanceType: 'available_only',
+      message: `Deposit of $${amt} successfully credited to account #${myAccount.account_number} via ${comp.name} API Gateway`,
+    };
+    const newTransfer = {
+      id: txId,
+      from_user: userId,
+      to_account: myAccount.account_number,
+      to_account_owner_name: `حسابك في ${comp.name} (${myAccount.account_number})`,
+      company_id: companyId,
+      company_name: comp.name,
+      amount: amt,
+      status: 'completed',
+      created_at: now,
+      transfer_type: 'company_api_payout',
+      api_reference: apiRef,
+      api_integration_type: integrationType,
+      api_response_message: apiResponse.message,
+    };
+    const transfers = storage.getUserSyncCollection(userId, 'transfers');
+    transfers.unshift(newTransfer);
+    storage.setUserSyncCollection(userId, 'transfers', transfers.slice(0, 200));
+
+    io.emit('wallets_updated', { user_id: userId });
+    res.json({ success: true, transfer: newTransfer, apiResponse, remainingAvailable: wallet.available });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Server-authoritative lottery ticket purchase: deduct from AVAILABLE + record the ticket.
+// Free (compassion) tickets pass price=0 → only recorded (no deduction).
+app.post('/api/wallets/lottery-purchase', (req, res) => {
+  try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'SESSION_REQUIRED', message: 'يجب تسجيل الدخول أولاً.' });
+    }
+    const body = req.body || {};
+    const companyId = String(body.company_id || '').trim();
+    const price = Number(body.price);
+    const ticketId = String(body.ticket_id || '').trim();
+    const drawId = String(body.draw_id || '').trim();
+    if (!ticketId || !drawId) return res.status(400).json({ error: 'بيانات التذكرة غير مكتملة.' });
+    if (isNaN(price) || price < 0) return res.status(400).json({ error: 'سعر التذكرة غير صالح.' });
+
+    const tickets = storage.getLotteryTickets();
+    if (tickets.some((t) => t && t.id === ticketId)) {
+      return res.status(409).json({ error: 'التذكرة مسجَّلة مسبقاً.' });
+    }
+
+    let remaining: number | undefined;
+    if (price > 0) {
+      if (!companyId) return res.status(400).json({ error: 'الشركة غير محددة لخصم قيمة التذكرة.' });
+      const wallets = storage.getWallets(userId);
+      const wallet = wallets.find((w: any) => w && w.company_id === companyId);
+      const availableBal = wallet ? Number(wallet.available) || 0 : 0;
+      if (price > availableBal) {
+        return res.status(400).json({
+          error: `رصيدك المتاح ($${availableBal.toFixed(2)}) غير كافٍ لشراء التذكرة ($${price.toFixed(2)}).`,
+        });
+      }
+      wallet.available = Math.round((availableBal - price) * 100) / 100;
+      storage.saveWallets(userId, wallets);
+      remaining = wallet.available;
+      io.emit('wallets_updated', { user_id: userId });
+    }
+
+    tickets.unshift({
+      id: ticketId,
+      user_id: userId,
+      company_id: companyId,
+      draw_id: drawId,
+      price_paid: price,
+      main_numbers: Array.isArray(body.main_numbers) ? body.main_numbers : [],
+      lucky_numbers: Array.isArray(body.lucky_numbers) ? body.lucky_numbers : [],
+      prize_won: 0,
+      is_claimed: false,
+      created_at: new Date().toISOString(),
+    });
+    storage.saveLotteryTickets(tickets);
+
+    res.json({ success: true, remainingAvailable: remaining });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin settlement: the SERVER recomputes each ticket's tier from the winning numbers
+// (never trusts a client-provided prize) and credits winners' AVAILABLE balance.
+// Idempotent — tickets already settled (is_claimed) are skipped.
+app.post('/api/admin/lottery/settle-draw', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const body = req.body || {};
+    const drawId = String(body.draw_id || '').trim();
+    const winningMain: number[] = Array.isArray(body.winning_main) ? body.winning_main.map(Number) : [];
+    const winningLucky: number[] = Array.isArray(body.winning_lucky) ? body.winning_lucky.map(Number) : [];
+    const jackpotAmount = Number(body.jackpot_amount) || 0;
+    const totalPool = Number(body.total_pool) || 0;
+    if (!drawId || winningMain.length !== 5 || winningLucky.length !== 2) {
+      return res.status(400).json({ error: 'بيانات السحب غير مكتملة (5 أرقام رئيسية + 2 نجمة حظ).' });
+    }
+
+    const tickets = storage.getLotteryTickets();
+    const drawTickets = tickets.filter((t) => t && t.draw_id === drawId);
+
+    const settled: any[] = [];
+    let credited = 0;
+    for (const t of drawTickets) {
+      if (t.is_claimed) continue;
+      const matchedMain = (Array.isArray(t.main_numbers) ? t.main_numbers : []).filter((n: number) =>
+        winningMain.includes(n)
+      ).length;
+      const matchedLucky = (Array.isArray(t.lucky_numbers) ? t.lucky_numbers : []).filter((n: number) =>
+        winningLucky.includes(n)
+      ).length;
+
+      let prize = 0;
+      if (matchedMain === 5 && matchedLucky === 2) prize = jackpotAmount;
+      else if (matchedMain === 5 && matchedLucky >= 1) prize = Math.round(totalPool * 0.2);
+      else if (matchedMain === 4 && matchedLucky >= 1) prize = Math.round(totalPool * 0.1);
+      else if (matchedMain >= 3) prize = 25.0;
+      else if (matchedMain >= 2 && matchedLucky >= 1) prize = 2.5;
+
+      t.prize_won = prize;
+      t.is_claimed = true;
+      if (prize > 0 && t.user_id) {
+        storage.creditPrize(t.user_id, prize, t.company_id);
+        credited++;
+        settled.push({ ticket_id: t.id, user_id: t.user_id, prize });
+        io.emit('wallets_updated', { user_id: t.user_id });
+      }
+    }
+    storage.saveLotteryTickets(tickets);
+
+    res.json({ success: true, settledCount: settled.length, credited, settled });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Approve Request (Admin) — server-authoritative: credits the user's ledger.
 app.post('/api/compensation/approve', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { requestId, adminName } = req.body;
   if (!requestId) {
     return res.status(400).json({ error: 'معرف الطلب مطلوب.' });
   }
+
+  const current = storage.getCompensationRequests().find((r) => r.id === requestId);
+  if (!current) {
+    return res.status(404).json({ error: 'الطلب غير موجود في النظام.' });
+  }
+  const alreadyApproved = current.status === 'approved';
 
   const updated = storage.updateCompensationRequest(requestId, {
     status: 'approved',
@@ -3361,8 +3692,22 @@ app.post('/api/compensation/approve', (req, res) => {
     return res.status(404).json({ error: 'الطلب غير موجود في النظام.' });
   }
 
+  const isUnfreeze = updated.id.startsWith('DEP-UNF-') || (updated.bet_slip_id || '').startsWith('DEPOSIT-');
+
+  // Ledger credit (idempotent — only on the FIRST approval to avoid double-crediting).
+  if (!alreadyApproved && updated.user_id && updated.company_id && Number(updated.amount) > 0) {
+    const amt = Number(updated.amount);
+    if (isUnfreeze) {
+      // Deposit unfreeze: frozen → available 1:1.
+      storage.applyWalletDelta(updated.user_id, updated.company_id, -amt, amt, updated.company_name);
+    } else {
+      // Loss compensation: credit to the frozen balance.
+      storage.applyWalletDelta(updated.user_id, updated.company_id, amt, 0, updated.company_name);
+    }
+    io.emit('wallets_updated', { user_id: updated.user_id });
+  }
+
   // Broadcast approval notification
-  const isUnfreeze = updated.id.startsWith('DEP-UNF-') || updated.bet_slip_id.startsWith('DEPOSIT-');
   const notif = {
     id: `NOTIF-APP-${Date.now()}`,
     title: isUnfreeze ? '✅ تم فك تجميد رصيدك بنجاح!' : '✅ تم اعتماد طلب التعويض!',
@@ -3388,6 +3733,7 @@ app.post('/api/compensation/approve', (req, res) => {
 
 // Reject Request (Admin)
 app.post('/api/compensation/reject', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { requestId, reason, adminName } = req.body;
   if (!requestId) {
     return res.status(400).json({ error: 'معرف الطلب مطلوب.' });
@@ -3415,6 +3761,7 @@ app.post('/api/compensation/reject', (req, res) => {
 
 // Bulk Approve Requests (Admin)
 app.post('/api/compensation/bulk-approve', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { requestIds, adminName } = req.body;
     if (!Array.isArray(requestIds) || requestIds.length === 0) {
@@ -3425,6 +3772,8 @@ app.post('/api/compensation/bulk-approve', (req, res) => {
     const timestamp = new Date().toISOString();
 
     for (const id of requestIds) {
+      const current = storage.getCompensationRequests().find((r) => r.id === id);
+      const alreadyApproved = current?.status === 'approved';
       const updated = storage.updateCompensationRequest(id, {
         status: 'approved',
         reviewed_at: timestamp,
@@ -3433,6 +3782,16 @@ app.post('/api/compensation/bulk-approve', (req, res) => {
       if (updated) {
         approvedList.push(updated);
         const isUnfreeze = updated.id.startsWith('DEP-UNF-') || updated.bet_slip_id?.startsWith('DEPOSIT-');
+        // Server-authoritative ledger credit (idempotent — first approval only).
+        if (!alreadyApproved && updated.user_id && updated.company_id && Number(updated.amount) > 0) {
+          const amt = Number(updated.amount);
+          if (isUnfreeze) {
+            storage.applyWalletDelta(updated.user_id, updated.company_id, -amt, amt, updated.company_name);
+          } else {
+            storage.applyWalletDelta(updated.user_id, updated.company_id, amt, 0, updated.company_name);
+          }
+          io.emit('wallets_updated', { user_id: updated.user_id });
+        }
         const notif = {
           id: `NOTIF-APP-${Date.now()}-${id}`,
           title: isUnfreeze ? '✅ تم فك تجميد رصيدك بنجاح!' : '✅ تم اعتماد طلب التعويض!',
@@ -3463,6 +3822,7 @@ app.post('/api/compensation/bulk-approve', (req, res) => {
 
 // Bulk Reject Requests (Admin)
 app.post('/api/compensation/bulk-reject', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { requestIds, reason, adminName } = req.body;
     if (!Array.isArray(requestIds) || requestIds.length === 0) {

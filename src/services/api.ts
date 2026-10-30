@@ -202,6 +202,50 @@ class VexMobileApiService {
     return this.userId;
   }
 
+  // ---- Admin API token: entered once when the owner unlocks the admin dashboard.
+  //      Stored only in this browser's sessionStorage and sent as `x-admin-token`
+  //      on money-crediting calls. Normal users never hold it.
+  public setAdminToken(token: string): void {
+    try {
+      if (token) sessionStorage.setItem('vex_admin_api_token', token);
+      else sessionStorage.removeItem('vex_admin_api_token');
+    } catch {
+      // ignore (storage unavailable)
+    }
+  }
+  public getAdminToken(): string {
+    try {
+      return sessionStorage.getItem('vex_admin_api_token') || '';
+    } catch {
+      return '';
+    }
+  }
+  private adminHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = this.getAdminToken();
+    if (token) headers['x-admin-token'] = token;
+    return headers;
+  }
+  /** Throws a clear Arabic message when the server rejects an admin money action. */
+  private static async throwAdminError(res: Response, fallback: string): Promise<never> {
+    let data: any = {};
+    try {
+      data = await res.json();
+    } catch {
+      // ignore
+    }
+    if (res.status === 503 && data?.error === 'ADMIN_TOKEN_NOT_CONFIGURED') {
+      throw new Error(data.message || 'مفتاح أدمن المنصة غير مضبوط على السيرفر.');
+    }
+    if (res.status === 403 || res.status === 401) {
+      throw new Error(
+        data?.message ||
+          'صلاحيات غير كافية. أدخل مفتاح أدمن المنصة الصحيح في لوحة التحكم لتنفيذ هذا الإجراء المالي.'
+      );
+    }
+    throw new Error(data?.error || fallback);
+  }
+
   // --------------------------------------------------------------------------
   // Sync: persist ALL local user datasets server-side keyed by the phone
   // reference, and restore them when the same number is linked anywhere.
@@ -295,7 +339,16 @@ class VexMobileApiService {
         }
       };
 
-      merge(STORAGE_KEYS.WALLETS, sync.wallets);
+      // Wallets are server-authoritative: take the server copy wholesale — but ONLY when
+      // the server actually has wallets. (An empty array = first-ever phone link; we must
+      // keep the local balance so the subsequent push can upload it, not wipe it.)
+      if (Array.isArray(sync.wallets) && sync.wallets.length > 0) {
+        try {
+          localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(sync.wallets));
+        } catch {
+          // ignore
+        }
+      }
       merge(STORAGE_KEYS.ACCOUNTS, sync.accounts);
       merge(STORAGE_KEYS.TRANSFERS, sync.transfers);
       merge(STORAGE_KEYS.REFERRALS, sync.referrals);
@@ -1823,31 +1876,25 @@ class VexMobileApiService {
       throw new Error('تم تسجيل هذا الحساب مسبقاً عبر كود إحالة.');
     }
 
-    const wallets = await this.getWallets();
-    const wallet = wallets.find((w) => w.company_id === myCompanyId);
-    const currentFrozen = wallet ? wallet.frozen : 0;
-
-    // Security Check 3: Anti-Sybil / Anti-Farming 24-hour unfreeze cooldown
-    if (wallet?.last_unfreeze_at) {
-      const lastTime = new Date(wallet.last_unfreeze_at).getTime();
-      const hoursDiff = (Date.now() - lastTime) / (1000 * 60 * 60);
-      if (hoursDiff < 24) {
-        const remainingHours = Math.ceil(24 - hoursDiff);
-        throw new Error(
-          `حماية ضد الاستنزاف السريع: يسمح بفك التجميد مرة واحدة كل 24 ساعة لكل محفظة. تبقى ${remainingHours} ساعة.`
-        );
+    // Server-authoritative unfreeze: 10% of frozen → available (24h cooldown enforced server-side).
+    let unlockedAmount = 0;
+    try {
+      const res = await fetch('/api/wallets/referral-unfreeze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: myCompanyId }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'فشل فك التجميد على السيرفر.');
       }
+      unlockedAmount = Number(data.unlockedAmount) || 0;
+    } catch (err: any) {
+      throw new Error(err?.message || 'تعذر الاتصال بالسيرفر لفك التجميد.');
     }
 
-    // Calculate 10% unlock
-    const unlockAmount = Math.floor(currentFrozen * 0.1 * 100) / 100;
-
-    if (wallet && unlockAmount > 0) {
-      wallet.frozen = Math.max(0, Math.round((wallet.frozen - unlockAmount) * 100) / 100);
-      wallet.available = Math.round((wallet.available + unlockAmount) * 100) / 100;
-      wallet.last_unfreeze_at = new Date().toISOString();
-      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
-    }
+    // Refresh cached wallets from the authoritative ledger.
+    await this.refreshWalletsFromServer();
 
     const companies = await this.getCompanies();
     const comp = companies.find((c) => c.id === myCompanyId);
@@ -1862,15 +1909,17 @@ class VexMobileApiService {
       referred_account: myAccountNumber,
       status: 'registered',
       created_at: new Date().toISOString(),
-      unlocked_amount: unlockAmount,
+      unlocked_amount: unlockedAmount,
     };
 
     list.unshift(newRef);
     localStorage.setItem(STORAGE_KEYS.REFERRALS, JSON.stringify(list));
+    // Keep the server-side referral record in sync (non-balance).
+    this.pushUserDataToServer().catch(() => undefined);
 
     return {
       success: true,
-      unlockedAmount: unlockAmount,
+      unlockedAmount,
     };
   }
 
@@ -1884,13 +1933,16 @@ class VexMobileApiService {
   }
 
   /**
-   * Real-time recipient check before transfer:
-   * 1. Checks if recipient is not the user's own account.
-   * 2. Checks if user hasn't already sent a transfer to this friend (Strict Limit: 1 transfer per friend).
+   * Real-time recipient check before transfer.
+   * Rules by path:
+   * 1. Recipient must not be the user's own account (both paths).
+   * 2. Frozen path only: at most ONE frozen transfer per friend per 30 days.
+   * 3. Frozen path only: anti-circular-transfer collusion lock.
    */
   public async validateRecipient(
     companyId: string,
-    toAccount: string
+    toAccount: string,
+    balanceType: 'frozen' | 'available' = 'frozen'
   ): Promise<{ valid: boolean; error?: string; recipientName?: string; referralUrl?: string }> {
     const trimmed = toAccount.trim();
     if (!trimmed || trimmed.length < 4) {
@@ -1903,40 +1955,50 @@ class VexMobileApiService {
       return { valid: false, error: 'لا يمكن تحويل الرصيد إلى حسابك الشخصي لنفس الشركة.' };
     }
 
-    // Check if transfer was already made to this recipient account
-    const transfers = await this.getTransfers();
-    const alreadySent = transfers.some(
-      (t) => t.company_id === companyId && t.to_account === trimmed && t.status === 'completed'
-    );
-    if (alreadySent) {
-      return {
-        valid: false,
-        error: 'تم إجراء تحويل سابق لهذا الحساب بالفعل. النظام يتيح تحويلاً واحداً فقط لكل صديق.',
-      };
+    // Frozen path only: at most one frozen transfer per friend per 30 days.
+    if (balanceType === 'frozen') {
+      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+      const transfers = await this.getTransfers();
+      const sentToFriend = transfers.find(
+        (t) =>
+          t.company_id === companyId &&
+          t.to_account === trimmed &&
+          t.status === 'completed' &&
+          (!t.balance_type || t.balance_type === 'frozen') &&
+          Date.now() - Date.parse(t.created_at) < THIRTY_DAYS
+      );
+      if (sentToFriend) {
+        return {
+          valid: false,
+          error: 'تم إجراء تحويل سابق لهذا الصديق خلال الشهر الحالي. يمكنك التحويل له مجدداً بعد 30 يوماً.',
+        };
+      }
     }
 
-    // Security Check: Anti-Circular Transfer Graph Lock (منع الحلقات التواطئية المغلقة)
-    const rawAllTransfers = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
-    const allTransfers: Transfer[] = rawAllTransfers ? JSON.parse(rawAllTransfers) : [];
-    const myAccountNumbers = myAccounts
-      .filter((a) => a.company_id === companyId)
-      .map((a) => a.account_number);
+    // Security Check (frozen path): Anti-Circular Transfer Graph Lock (منع الحلقات التواطئية المغلقة)
+    if (balanceType === 'frozen') {
+      const rawAllTransfers = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
+      const allTransfers: Transfer[] = rawAllTransfers ? JSON.parse(rawAllTransfers) : [];
+      const myAccountNumbers = myAccounts
+        .filter((a) => a.company_id === companyId)
+        .map((a) => a.account_number);
 
-    // If recipient account has transferred to current user in this company, block reverse loop
-    const reverseLoop = allTransfers.some(
-      (t) =>
-        t.company_id === companyId &&
-        t.status === 'completed' &&
-        t.to_account &&
-        myAccountNumbers.includes(t.to_account) &&
-        t.from_user !== this.userId
-    );
-    if (reverseLoop) {
-      return {
-        valid: false,
-        error:
-          'حماية ضد التحويل الدائري (Anti-Loop Collusion): لا يمكن إجراء تحويل عكسي متبادل بين نفس الحسابين.',
-      };
+      // If recipient account has transferred to current user in this company, block reverse loop
+      const reverseLoop = allTransfers.some(
+        (t) =>
+          t.company_id === companyId &&
+          t.status === 'completed' &&
+          t.to_account &&
+          myAccountNumbers.includes(t.to_account) &&
+          t.from_user !== this.userId
+      );
+      if (reverseLoop) {
+        return {
+          valid: false,
+          error:
+            'حماية ضد التحويل الدائري (Anti-Loop Collusion): لا يمكن إجراء تحويل عكسي متبادل بين نفس الحسابين.',
+        };
+      }
     }
 
     // Look up recipient in accounts DB
@@ -2041,20 +2103,23 @@ class VexMobileApiService {
   }
 
   /**
-   * Step 1: Initiate Transfer. Validates PIN, locks frozen balance, generates OTP,
+   * Step 1: Initiate Transfer. Validates PIN, reserves the balance, generates OTP,
    * sends OTP via Telegram bot/SMS gateway.
+   * balanceType='frozen'   → 10% (max $100), 30-day cooldown, once per friend per month; arrives frozen.
+   * balanceType='available' → any amount up to available, any time; arrives available.
    */
   public async initiateTransfer(
     companyId: string,
     toAccount: string,
     amount: number,
-    pin: string
+    pin: string,
+    balanceType: 'frozen' | 'available' = 'frozen'
   ): Promise<{ transferId: string; otpPhone: string; debugOtp?: string }> {
     // 1. Verify PIN (with brute force protection)
     await this.verifyPin(pin);
 
     // 2. Validate Recipient
-    const recipientValidation = await this.validateRecipient(companyId, toAccount);
+    const recipientValidation = await this.validateRecipient(companyId, toAccount, balanceType);
     if (!recipientValidation.valid) {
       throw new Error(recipientValidation.error);
     }
@@ -2067,31 +2132,51 @@ class VexMobileApiService {
       );
     }
 
-    // 4. Validate Amount & 10% Limit
+    // 4. Validate Amount against the selected balance path
     const wallets = await this.getWallets();
     const wallet = wallets.find((w) => w.company_id === companyId);
     if (!wallet) {
       throw new Error('لا توجد محفظة لهذه الشركة.');
     }
 
-    const availableFrozen = wallet.frozen - (wallet.pending_locked || 0);
-    const maxTransferAllowed = Math.floor(wallet.frozen * 0.1 * 100) / 100;
-
     if (amount <= 0) {
       throw new Error('مبلغ التحويل يجب أن يكون أكبر من 0.');
     }
-    if (amount > maxTransferAllowed) {
-      throw new Error(
-        `الحد الأقصى للتحويل هو 10% من الرصيد المجمد (${maxTransferAllowed}$). المبلغ المدخل (${amount}$) يتجاوز الحد المسموح.`
-      );
-    }
-    if (amount > availableFrozen) {
-      throw new Error('الرصيد المجمد غير كافٍ أو يوجد مبلغ معلق قيد التحويل حالياً.');
-    }
 
-    // 5. Apply Concurrency Lock on Wallet
-    wallet.pending_locked = (wallet.pending_locked || 0) + amount;
-    localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
+    if (balanceType === 'frozen') {
+      const availableFrozen = wallet.frozen - (wallet.pending_locked || 0);
+      // Business rule: 10% of frozen per transfer, hard-capped at $100, refreshed every 30 days.
+      const maxTransferAllowed = Math.min(Math.floor(wallet.frozen * 0.1 * 100) / 100, 100);
+      // 30-day rolling cooldown (mirrors the authoritative server rule).
+      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+      const lastTs = wallet.last_transfer_at ? Date.parse(wallet.last_transfer_at) : 0;
+      if (lastTs && Date.now() - lastTs < THIRTY_DAYS) {
+        const daysLeft = Math.ceil((THIRTY_DAYS - (Date.now() - lastTs)) / (24 * 60 * 60 * 1000));
+        throw new Error(
+          `تم استخدام حد التحويل الشهري (10% من المجمد، بحد أقصى $100). يتجدد بعد ${daysLeft} يوم.`
+        );
+      }
+      if (amount > maxTransferAllowed + 0.001) {
+        throw new Error(
+          `الحد الأقصى للتحويل هو 10% من رصيدك المجمد وبحد أقصى $100 (${maxTransferAllowed}$). المبلغ المدخل (${amount}$) يتجاوز الحد المسموح.`
+        );
+      }
+      if (amount > availableFrozen + 0.001) {
+        throw new Error('الرصيد المجمد غير كافٍ أو يوجد مبلغ معلق قيد التحويل حالياً.');
+      }
+
+      // 5. Apply Concurrency Lock on Wallet (frozen path only)
+      wallet.pending_locked = (wallet.pending_locked || 0) + amount;
+      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
+    } else {
+      // Available path: liquid balance, no monthly constraints (server re-validates at confirm).
+      const availableBal = Number(wallet.available) || 0;
+      if (amount > availableBal + 0.001) {
+        throw new Error(
+          `الرصيد المتاح للتحويل هو ${availableBal.toFixed(2)}$ فقط. المبلغ المدخل (${amount}$) يتجاوزه.`
+        );
+      }
+    }
 
     // 6. Generate 4-digit OTP
     const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
@@ -2121,6 +2206,7 @@ class VexMobileApiService {
       company_id: companyId,
       company_name: comp?.name || 'Company',
       amount,
+      balance_type: balanceType,
       status: 'otp_pending',
       otp_phone: profile.phone_number,
       created_at: new Date().toISOString(),
@@ -2192,7 +2278,7 @@ class VexMobileApiService {
       throw new Error(`رمز التحقق غير صحيح. متبقي ${3 - session.attempts} محاولات.`);
     }
 
-    // OTP Verified Successfully!
+    // OTP Verified Successfully! — perform the authoritative move on the server.
     const transfersRaw = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
     const transfers: Transfer[] = transfersRaw ? JSON.parse(transfersRaw) : [];
     const tx = transfers.find((t) => t.id === transferId);
@@ -2200,23 +2286,61 @@ class VexMobileApiService {
       throw new Error('العملية غير موجودة.');
     }
 
-    // Deduct frozen balance and release lock
-    const wallets = await this.getWallets();
-    const wallet = wallets.find((w) => w.company_id === tx.company_id);
-    if (wallet) {
-      wallet.frozen = Math.max(0, Math.round((wallet.frozen - tx.amount) * 100) / 100);
-      wallet.pending_locked = Math.max(0, (wallet.pending_locked || 0) - tx.amount);
-      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
+    let serverResult: any;
+    try {
+      const res = await fetch('/api/wallets/transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: tx.company_id,
+          to_account: tx.to_account,
+          amount: tx.amount,
+          client_transfer_id: tx.id,
+          balance_type: tx.balance_type === 'available' ? 'available' : 'frozen',
+        }),
+      });
+      serverResult = await res.json();
+    } catch {
+      await this.cancelTransfer(transferId);
+      throw new Error('تعذر الاتصال بالسيرفر لإتمام التحويل. تم إلغاء العملية.');
     }
 
+    if (!serverResult?.success) {
+      await this.cancelTransfer(transferId);
+      throw new Error(serverResult?.error || 'فشل تنفيذ التحويل على السيرفر.');
+    }
+
+    // Mark local record complete, clear OTP, and refresh wallets from the authoritative ledger.
     tx.status = 'completed';
     localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(transfers));
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_OTP);
+    await this.refreshWalletsFromServer();
 
     return {
       success: true,
-      message: `تم تحويل مبلغ $${tx.amount} بنجاح إلى حساب ${tx.to_account}`,
+      message:
+        serverResult?.message ||
+        `تم تحويل مبلغ $${tx.amount} بنجاح إلى حساب ${tx.to_account}`,
     };
+  }
+
+  /** Server-authoritative: replace local wallets with the server ledger copy. */
+  public async refreshWalletsFromServer(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    const phoneRef = localStorage.getItem(STORAGE_KEYS.PHONE_REF);
+    if (!phoneRef) return false;
+    try {
+      const res = await fetch(`/api/users/${phoneRef}/sync`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data?.success || !data.sync || !Array.isArray(data.sync.wallets)) return false;
+      // Never clobber local wallets with an empty server copy (first-link edge case).
+      if (data.sync.wallets.length === 0) return false;
+      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(data.sync.wallets));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -2231,11 +2355,14 @@ class VexMobileApiService {
       tx.status = 'failed';
       localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(transfers));
 
-      const wallets = await this.getWallets();
-      const wallet = wallets.find((w) => w.company_id === tx.company_id);
-      if (wallet && wallet.pending_locked) {
-        wallet.pending_locked = Math.max(0, wallet.pending_locked - tx.amount);
-        localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
+      // Only the frozen path takes a pending lock at initiation — only it may release one.
+      if (!tx.balance_type || tx.balance_type === 'frozen') {
+        const wallets = await this.getWallets();
+        const wallet = wallets.find((w) => w.company_id === tx.company_id);
+        if (wallet && wallet.pending_locked) {
+          wallet.pending_locked = Math.max(0, wallet.pending_locked - tx.amount);
+          localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
+        }
       }
     }
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_OTP);
@@ -2745,64 +2872,29 @@ class VexMobileApiService {
 
     if (!target) throw new Error('طلب التعويض غير موجود');
 
+    // Server-authoritative: the ledger credit happens on the server (idempotent).
+    const res = await fetch('/api/compensation/approve', {
+      method: 'POST',
+      headers: this.adminHeaders(),
+      body: JSON.stringify({ requestId: target.id, adminName: 'ADMIN-SUPER' }),
+    });
+    if (!res.ok) {
+      await VexMobileApiService.throwAdminError(res, 'فشل اعتماد الطلب على السيرفر.');
+    }
+
+    // Local status mirror for the admin UI (the balance was already credited server-side).
     target.status = 'approved';
     target.reviewed_at = new Date().toISOString();
     target.reviewed_by = 'ADMIN-SUPER';
     target.verification_stage = 'admin_approved';
     localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
 
+    // Refresh our cached wallets from the authoritative ledger.
+    await this.refreshWalletsFromServer();
+
     const isUnfreeze = target.id.startsWith('DEP-UNF-') || target.bet_slip_id?.startsWith('DEPOSIT-');
-    const wallets = await this.getWallets();
-    let wallet = wallets.find((w) => w.company_id === target.company_id);
-
     if (isUnfreeze) {
-      // 1:1 Deposit Unfreeze: deduct from frozen balance and credit to available balance
-      if (!wallet) {
-        wallet = {
-          user_id: target.user_id,
-          company_id: target.company_id,
-          company_name: target.company_name,
-          frozen: 0,
-          available: target.amount,
-          created_at: new Date().toISOString(),
-        };
-        wallets.push(wallet);
-      } else {
-        wallet.frozen = Math.max(0, Math.round((wallet.frozen - target.amount) * 100) / 100);
-        wallet.available = Math.round((wallet.available + target.amount) * 100) / 100;
-        wallet.last_unfreeze_at = new Date().toISOString();
-      }
-    } else {
-      // Loss Compensation: adds to frozen balance
-      if (!wallet) {
-        wallet = {
-          user_id: target.user_id,
-          company_id: target.company_id,
-          company_name: target.company_name,
-          frozen: target.amount,
-          available: 0,
-          created_at: new Date().toISOString(),
-        };
-        wallets.push(wallet);
-      } else {
-        wallet.frozen = Math.round((wallet.frozen + target.amount) * 100) / 100;
-      }
-    }
-    localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
-
-    // Background sync with server API
-    try {
-      if (typeof fetch !== 'undefined') {
-        fetch('/api/compensation/approve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requestId: target.id, adminName: 'ADMIN-SUPER' }),
-        }).catch(() => {});
-      }
-    } catch {}
-
-    // Add immediate notification
-    if (isUnfreeze) {
+      // 1:1 Deposit Unfreeze: frozen → available on the server ledger.
       await this.broadcastNotification(
         '🔓 تم فك تجميد رصيدك 1:1 بنجاح!',
         `تم التحقق من إيداعك بقيمة $${target.amount} وفك تجميد الرصيد المقابل له ليصبح متاحاً للسحب الفوري في محفظة ${target.company_name}.`,
@@ -2810,6 +2902,7 @@ class VexMobileApiService {
         { amount: target.amount, companyName: target.company_name, isUnfreeze: true }
       );
     } else {
+      // Loss Compensation: credited to the frozen balance on the server ledger.
       await this.broadcastNotification(
         '💰 تم اعتماد طلب التعويض في محفظتك بنجاح!',
         `وافق المشرف على طلب تعويض الخسارة الخاص بك في ${target.company_name} بمبلغ $${target.amount}. أضيف المبلغ للرصيد المجمد.`,
@@ -2826,22 +2919,21 @@ class VexMobileApiService {
 
     if (!target) throw new Error('طلب التعويض غير موجود');
 
+    // Server-authoritative status change (admin-gated).
+    const res = await fetch('/api/compensation/reject', {
+      method: 'POST',
+      headers: this.adminHeaders(),
+      body: JSON.stringify({ requestId: target.id, reason, adminName: 'ADMIN-SUPER' }),
+    });
+    if (!res.ok) {
+      await VexMobileApiService.throwAdminError(res, 'فشل رفض الطلب على السيرفر.');
+    }
+
     target.status = 'rejected';
     target.note = reason;
     target.reviewed_at = new Date().toISOString();
     target.reviewed_by = 'ADMIN-SUPER';
     localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
-
-    // Background sync with server API
-    try {
-      if (typeof fetch !== 'undefined') {
-        fetch('/api/compensation/reject', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requestId: target.id, reason, adminName: 'ADMIN-SUPER' }),
-        }).catch(() => {});
-      }
-    } catch {}
 
     const isUnfreeze = target.id.startsWith('DEP-UNF-') || target.bet_slip_id?.startsWith('DEPOSIT-');
     await this.broadcastNotification(
@@ -2854,45 +2946,62 @@ class VexMobileApiService {
   public async bulkApproveCompensationRequests(requestIds: string[]): Promise<void> {
     if (!requestIds || requestIds.length === 0) return;
 
-    for (const id of requestIds) {
-      try {
-        await this.approveCompensationRequest(id);
-      } catch (e) {
-        console.error(`Failed to approve request ${id} during bulk approve`, e);
-      }
+    // Single server-side call credits every ledger (idempotent) — no per-item loop,
+    // which previously caused double approval.
+    const res = await fetch('/api/compensation/bulk-approve', {
+      method: 'POST',
+      headers: this.adminHeaders(),
+      body: JSON.stringify({ requestIds, adminName: 'ADMIN-SUPER' }),
+    });
+    if (!res.ok) {
+      await VexMobileApiService.throwAdminError(res, 'فشل الاعتماد الجماعي على السيرفر.');
     }
 
-    try {
-      if (typeof fetch !== 'undefined') {
-        fetch('/api/compensation/bulk-approve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requestIds, adminName: 'ADMIN-SUPER' }),
-        }).catch(() => {});
+    // Mirror statuses locally for the admin UI.
+    const rawReqs = localStorage.getItem(STORAGE_KEYS.REQUESTS);
+    const requests: CompensationRequest[] = rawReqs ? JSON.parse(rawReqs) : [];
+    const now = new Date().toISOString();
+    let changed = false;
+    for (const r of requests) {
+      if (requestIds.includes(r.id) && r.status !== 'approved') {
+        r.status = 'approved';
+        r.reviewed_at = now;
+        r.reviewed_by = 'ADMIN-SUPER';
+        r.verification_stage = 'admin_approved';
+        changed = true;
       }
-    } catch {}
+    }
+    if (changed) localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
+
+    await this.refreshWalletsFromServer();
   }
 
   public async bulkRejectCompensationRequests(requestIds: string[], reason: string): Promise<void> {
     if (!requestIds || requestIds.length === 0) return;
 
-    for (const id of requestIds) {
-      try {
-        await this.rejectCompensationRequest(id, reason);
-      } catch (e) {
-        console.error(`Failed to reject request ${id} during bulk reject`, e);
-      }
+    const res = await fetch('/api/compensation/bulk-reject', {
+      method: 'POST',
+      headers: this.adminHeaders(),
+      body: JSON.stringify({ requestIds, reason, adminName: 'ADMIN-SUPER' }),
+    });
+    if (!res.ok) {
+      await VexMobileApiService.throwAdminError(res, 'فشل الرفض الجماعي على السيرفر.');
     }
 
-    try {
-      if (typeof fetch !== 'undefined') {
-        fetch('/api/compensation/bulk-reject', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requestIds, reason, adminName: 'ADMIN-SUPER' }),
-        }).catch(() => {});
+    const rawReqs = localStorage.getItem(STORAGE_KEYS.REQUESTS);
+    const requests: CompensationRequest[] = rawReqs ? JSON.parse(rawReqs) : [];
+    const now = new Date().toISOString();
+    let changed = false;
+    for (const r of requests) {
+      if (requestIds.includes(r.id) && r.status !== 'rejected') {
+        r.status = 'rejected';
+        r.note = reason;
+        r.reviewed_at = now;
+        r.reviewed_by = 'ADMIN-SUPER';
+        changed = true;
       }
-    } catch {}
+    }
+    if (changed) localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
   }
 
   public async updateCompany(company: Company): Promise<void> {
@@ -3094,94 +3203,37 @@ class VexMobileApiService {
       );
     }
 
-    // 4. Validate Amount and Available Balance (STRICT: available only, frozen is locked!)
-    const wallets = await this.getWallets();
-    const wallet = wallets.find((w) => w.company_id === companyId);
-    if (!wallet) {
-      throw new Error('لا توجد محفظة لهذه الشركة في حسابك.');
+    // 4. Server-authoritative debit: strict available-only validation + deduction happen on the server.
+    let result: any;
+    try {
+      const res = await fetch('/api/wallets/company-api-transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: companyId, amount }),
+      });
+      result = await res.json().catch(() => ({} as any));
+      if (!res.ok || !result?.success) {
+        throw new Error(result?.error || 'فشل تنفيذ التحويل عبر الـ API على السيرفر.');
+      }
+    } catch (err: any) {
+      throw new Error(err?.message || 'تعذر الاتصال بالسيرفر لتنفيذ التحويل.');
     }
 
-    const availableBal = Number(wallet.available) || 0;
-    const frozenBal = Number(wallet.frozen) || 0;
-
-    if (amount <= 0) {
-      throw new Error('مبلغ التحويل يجب أن يكون أكبر من 0.');
-    }
-
-    // Strict constraint check
-    if (amount > availableBal) {
-      throw new Error(
-        `الرصيد المتاح للتحويل لتطبيق الشركة هو $${availableBal.toFixed(2)} فقط. ` +
-        `تنبيه أمني: الرصيد المجمد ($${frozenBal.toFixed(2)}) محمي وغير قابل للتحويل المباشر لتطبيق الشركة حتى يتم فك تجميده عبر المكافآت أو النشاط.`
-      );
-    }
-
-    const minAmount = comp.api_config.min_transfer_amount || 1;
-    if (amount < minAmount) {
-      throw new Error(`الحد الأدنى للتحويل عبر API لشركة ${comp.name} هو $${minAmount}.`);
-    }
-
-    if (comp.api_config.max_transfer_amount && amount > comp.api_config.max_transfer_amount) {
-      throw new Error(`الحد الأقصى للتحويل للعملية الواحدة هو $${comp.api_config.max_transfer_amount}.`);
-    }
-
-    // 5. Deduct strictly from AVAILABLE balance
-    wallet.available = Math.round((wallet.available - amount) * 100) / 100;
-    localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(wallets));
-
-    // 6. Generate API transaction and reference
-    const integrationType = comp.api_config.integration_type;
-    const txId = `TX-${Date.now().toString(36).toUpperCase()}`;
-    const apiRef = `API-${integrationType.toUpperCase().slice(0, 4)}-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const apiResponse = {
-      httpStatus: 200,
-      protocol: integrationType,
-      endpoint: comp.api_config.endpoint_url,
-      accountParam: comp.api_config.account_id_param || 'player_id',
-      accountValue: myAccount.account_number,
-      depositedAmount: amount,
-      currency: 'USD',
-      apiReference: apiRef,
-      transactionId: txId,
-      timestamp: new Date().toISOString(),
-      balanceType: 'available_only',
-      message: `Deposit of $${amount} successfully credited to account #${myAccount.account_number} via ${comp.name} API Gateway`,
-    };
-
-    const newTransfer: Transfer = {
-      id: txId,
-      from_user: this.userId,
-      to_account: myAccount.account_number,
-      to_account_owner_name: `حسابك في ${comp.name} (${myAccount.account_number})`,
-      company_id: companyId,
-      company_name: comp.name,
-      amount,
-      status: 'completed',
-      created_at: new Date().toISOString(),
-      transfer_type: 'company_api_payout',
-      api_reference: apiRef,
-      api_integration_type: integrationType,
-      api_response_message: apiResponse.message,
-    };
-
-    const transfersRaw = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
-    const transfers: Transfer[] = transfersRaw ? JSON.parse(transfersRaw) : [];
-    transfers.unshift(newTransfer);
-    localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(transfers));
+    // Refresh cached wallets from the authoritative ledger.
+    await this.refreshWalletsFromServer();
 
     // Add in-app notification
     await this.broadcastNotification(
       `تم تحويل $${amount} إلى تطبيق ${comp.name}`,
-      `تم إيداع المبلغ بنجاح في حسابك #${myAccount.account_number} عبر ربط الـ API المباشر. رقم المرجع: ${apiRef}`,
+      `تم إيداع المبلغ بنجاح في حسابك عبر ربط الـ API المباشر. رقم المرجع: ${result.apiResponse?.apiReference || ''}`,
       'transfer'
     );
 
     return {
       success: true,
-      transfer: newTransfer,
-      remainingAvailable: wallet.available,
-      apiResponse,
+      transfer: result.transfer,
+      remainingAvailable: result.remainingAvailable,
+      apiResponse: result.apiResponse,
     };
   }
 }

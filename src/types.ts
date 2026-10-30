@@ -128,6 +128,7 @@ export interface Wallet {
   available: number;
   pending_locked?: number; // Concurrency anti-double-spend lock
   last_unfreeze_at?: string; // Anti-Sybil daily cooldown
+  last_transfer_at?: string; // Monthly (30-day) frozen→friend transfer cooldown
   created_at: string;
 }
 
@@ -221,6 +222,8 @@ export interface Transfer {
   otp_phone?: string;
   created_at: string;
   transfer_type?: 'friend_transfer' | 'company_api_payout';
+  /** Which source balance the friend transfer moved: frozen (arrives frozen) or available (arrives available). */
+  balance_type?: 'frozen' | 'available';
   api_reference?: string;
   api_integration_type?: CompanyApiIntegrationType;
   api_response_message?: string;

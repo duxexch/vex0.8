@@ -489,8 +489,8 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                             <span>{formatCurrency(Number(wallet.frozen), displayCurrency)}</span>
                           </div>
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 inline-block">
-                            {isAr ? 'متاح تحويل 10%: ' : '10% quota: '}
-                            {formatCurrency(wallet.frozen * 0.1, displayCurrency)}
+                            {isAr ? 'متاح تحويل 10% (حتى $100): ' : '10% quota (max $100): '}
+                            {formatCurrency(Math.min(wallet.frozen * 0.1, 100), displayCurrency)}
                           </span>
                         </div>
                       </td>
@@ -607,7 +607,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                       ) : null}
                       <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                         {lang === 'ar' ? 'متاح: ' : 'Transfer: '}
-                        {formatCurrency(wallet.frozen * 0.1, displayCurrency)}
+                        {formatCurrency(Math.min(wallet.frozen * 0.1, 100), displayCurrency)}
                       </span>
                     </div>
                   </div>

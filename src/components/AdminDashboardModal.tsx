@@ -222,6 +222,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  const [adminTokenInput, setAdminTokenInput] = useState<string>(() => vexApi.getAdminToken());
   const [standaloneMode, setStandaloneMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.location.pathname === '/admin' || Boolean(isStandalone);
@@ -269,6 +270,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       setIsAdminUnlocked(true);
       setPinError(false);
       sessionStorage.setItem('vex_admin_unlocked', 'true');
+      // Store the Admin API token so money-crediting calls carry `x-admin-token`.
+      vexApi.setAdminToken(adminTokenInput.trim());
     } else {
       setPinError(true);
       setTimeout(() => setPinError(false), 3000);
@@ -278,6 +281,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const handleLockAdmin = () => {
     setIsAdminUnlocked(false);
     setPinInput('');
+    vexApi.setAdminToken('');
     sessionStorage.removeItem('vex_admin_unlocked');
   };
 
@@ -1692,6 +1696,23 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         </span>
                       </p>
                     )}
+
+                    <div className="relative">
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-500">
+                        <KeyRound className="w-4 h-4" />
+                      </div>
+                      <input
+                        type={showPin ? 'text' : 'password'}
+                        value={adminTokenInput}
+                        onChange={(e) => setAdminTokenInput(e.target.value)}
+                        placeholder={t(
+                          'مفتاح أدمن المنصة (ADMIN_TOKEN) للإجراءات المالية',
+                          'Admin API token (ADMIN_TOKEN) for financial actions',
+                          'Токен администратора (ADMIN_TOKEN)'
+                        )}
+                        className="w-full h-11 bg-slate-900 border rounded-2xl pr-10 pl-4 text-center font-mono text-sm font-bold tracking-wide text-white transition-all focus:outline-none border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
 
                     <div className="flex gap-2">
                       <button

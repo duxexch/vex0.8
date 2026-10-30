@@ -961,6 +961,277 @@ export const storage = {
     all[userId] = Array.isArray(items) ? items : [];
     writeJsonFile(`user_${kind}.json`, all);
   },
+
+  // ---------------------------------------------------------------------
+  // 10. WALLET LEDGER (server-authoritative balances, keyed by phoneRef).
+  //     Reuses the per-user 'wallets' sync collection so every existing
+  //     synced balance becomes the source of truth with zero migration.
+  //     All mutating helpers below use synchronous read-modify-write, and
+  //     Node runs a single request's sync block without interleaving, so
+  //     each operation is effectively atomic (no double-spend windows).
+  // ---------------------------------------------------------------------
+  getWallets(userId: string): any[] {
+    return this.getUserSyncCollection(userId, 'wallets');
+  },
+  saveWallets(userId: string, wallets: any[]): void {
+    this.setUserSyncCollection(userId, 'wallets', wallets);
+  },
+
+  // Which platform user owns a registered company account? (recipient lookup)
+  findAccountOwner(companyId: string, accountNumber: string): string | null {
+    const clean = String(accountNumber || '').trim();
+    if (!companyId || !clean) return null;
+    const all = readJsonFile<Record<string, any[]>>('user_accounts.json', {});
+    for (const uid of Object.keys(all)) {
+      const accounts = all[uid];
+      if (!Array.isArray(accounts)) continue;
+      const hit = accounts.find(
+        (a: any) =>
+          a && a.company_id === companyId && String(a.account_number || '').trim() === clean
+      );
+      if (hit) return uid;
+    }
+    return null;
+  },
+
+  // Credit/debit one wallet atomically (creates the wallet if the user has none yet).
+  applyWalletDelta(
+    userId: string,
+    companyId: string,
+    deltaFrozen: number,
+    deltaAvailable: number,
+    companyName?: string
+  ): any | null {
+    if (!userId || !companyId) return null;
+    const wallets = this.getWallets(userId);
+    let wallet = wallets.find((w: any) => w && w.company_id === companyId);
+    if (!wallet) {
+      wallet = {
+        user_id: userId,
+        company_id: companyId,
+        company_name: companyName || '',
+        frozen: 0,
+        available: 0,
+        pending_locked: 0,
+        created_at: new Date().toISOString(),
+      };
+      wallets.push(wallet);
+    }
+    wallet.frozen = Math.max(0, Math.round(((wallet.frozen || 0) + deltaFrozen) * 100) / 100);
+    wallet.available = Math.max(0, Math.round(((wallet.available || 0) + deltaAvailable) * 100) / 100);
+    this.saveWallets(userId, wallets);
+    return wallet;
+  },
+
+  // Friend transfers — server-authoritative, two paths:
+  //
+  //   A) balanceType='frozen' (business rules, strong but not off-putting):
+  //        • 10% of the sender's current frozen balance per transfer
+  //        • hard cap of $100 per transfer
+  //        • sender-level cooldown: refreshed every 30 rolling days (last_transfer_at)
+  //        • per-recipient rule: at most ONE frozen transfer per friend per 30 days
+  //        • movement: sender.frozen ↓ + sender.available ↑ ; recipient.frozen ↑
+  //
+  //   B) balanceType='available' (liquid funds, no monthly constraints):
+  //        • any amount up to the sender's available balance, any time, any registered friend
+  //        • movement: sender.available ↓ ; recipient.available ↑
+  executeTransfer(params: {
+    fromUserId: string;
+    companyId: string;
+    toAccount: string;
+    amount: number;
+    transferId: string;
+    clientTransferId?: string;
+    balanceType?: 'frozen' | 'available';
+  }): {
+    success: boolean;
+    error?: string;
+    transfer?: any;
+    senderWallet?: any;
+    recipientWallet?: any;
+    recipientUserId?: string;
+  } {
+    const { fromUserId, companyId, toAccount, amount, transferId, clientTransferId } = params;
+    const balanceType: 'frozen' | 'available' = params.balanceType === 'available' ? 'available' : 'frozen';
+    const cleanAccount = String(toAccount || '').trim();
+    if (!companyId || !cleanAccount) {
+      return { success: false, error: 'بيانات التحويل غير مكتملة.' };
+    }
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return { success: false, error: 'المبلغ غير صالح، يجب أن يكون أكبر من 0.' };
+    }
+
+    const senderWallets = this.getWallets(fromUserId);
+    const sender = senderWallets.find((w: any) => w && w.company_id === companyId);
+    if (!sender) {
+      return { success: false, error: 'لا توجد محفظة مسجلة لهذه الشركة.' };
+    }
+
+    const rounded = Math.round(amount * 100) / 100;
+    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+
+    if (balanceType === 'frozen') {
+      const frozen = sender.frozen || 0;
+      const pending = sender.pending_locked || 0;
+      const transferable = Math.max(0, Math.round((frozen - pending) * 100) / 100);
+
+      // 10% of current frozen, hard-capped at $100.
+      const maxAllowed = Math.min(Math.round(frozen * 10) / 100, 100);
+      if (rounded > maxAllowed + 0.001) {
+        return {
+          success: false,
+          error: `الحد الأقصى للتحويل الآن هو $${maxAllowed.toFixed(2)} (10% من رصيدك المجمد، بحد أقصى $100 في التحويل الواحد).`,
+        };
+      }
+      if (rounded > transferable + 0.001) {
+        return { success: false, error: 'رصيدك المجمد المتاح للتحويل غير كافٍ.' };
+      }
+
+      // Sender-level 30-day rolling cooldown between frozen transfers.
+      const last = sender.last_transfer_at ? Date.parse(sender.last_transfer_at) : 0;
+      if (last && Date.now() - last < THIRTY_DAYS) {
+        const daysLeft = Math.ceil((THIRTY_DAYS - (Date.now() - last)) / (24 * 60 * 60 * 1000));
+        return {
+          success: false,
+          error: `تم استخدام حد التحويل الشهري. يتجدد بعد ${daysLeft} يوم.`,
+        };
+      }
+    } else {
+      // Available path: liquid balance only, no monthly constraints.
+      const available = Number(sender.available) || 0;
+      if (rounded > available + 0.001) {
+        return {
+          success: false,
+          error: `رصيدك المتاح للتحويل هو $${available.toFixed(2)} فقط.`,
+        };
+      }
+    }
+
+    // Recipient must be a registered platform user owning this account.
+    const recipientId = this.findAccountOwner(companyId, cleanAccount);
+    if (!recipientId) {
+      return {
+        success: false,
+        error: 'الحساب المستلم غير مسجَّل لدى المنصة. يجب أن يكون الحساب مرتبطاً بحساب منصّة فعّال قبل التحويل.',
+      };
+    }
+    if (recipientId === fromUserId) {
+      return { success: false, error: 'لا يمكنك التحويل إلى حسابك الخاص.' };
+    }
+
+    // Per-recipient frozen rule: at most one frozen transfer per friend per 30 days.
+    if (balanceType === 'frozen') {
+      const senderTransfers = this.getUserSyncCollection(fromUserId, 'transfers');
+      const nowMs = Date.now();
+      const recentToFriend = senderTransfers.some((t: any) => {
+        if (!t || t.direction === 'incoming') return false;
+        if (t.status !== 'completed') return false;
+        if (t.balance_type && t.balance_type !== 'frozen') return false;
+        if (t.company_id !== companyId) return false;
+        if (String(t.to_account || '').trim() !== cleanAccount) return false;
+        const ts = Date.parse(t.completed_at || t.created_at || '');
+        return ts > 0 && nowMs - ts < THIRTY_DAYS;
+      });
+      if (recentToFriend) {
+        return {
+          success: false,
+          error: 'لقد حوّلت بالفعل إلى هذا الصديق خلال الشهر الحالي. يمكنك التحويل له مجدداً بعد 30 يوماً.',
+        };
+      }
+    }
+
+    const recipientWallets = this.getWallets(recipientId);
+    let recipient = recipientWallets.find((w: any) => w && w.company_id === companyId);
+    if (!recipient) {
+      recipient = {
+        user_id: recipientId,
+        company_id: companyId,
+        company_name: sender.company_name || '',
+        frozen: 0,
+        available: 0,
+        pending_locked: 0,
+        created_at: new Date().toISOString(),
+      };
+      recipientWallets.push(recipient);
+    }
+
+    // Apply the movement on both ledgers.
+    const now = new Date().toISOString();
+    if (balanceType === 'frozen') {
+      const frozen = sender.frozen || 0;
+      const pending = sender.pending_locked || 0;
+      sender.frozen = Math.max(0, Math.round((frozen - rounded) * 100) / 100);
+      sender.available = Math.round(((sender.available || 0) + rounded) * 100) / 100;
+      sender.pending_locked = Math.max(0, Math.round((pending - rounded) * 100) / 100);
+      sender.last_transfer_at = now;
+      recipient.frozen = Math.round(((recipient.frozen || 0) + rounded) * 100) / 100;
+    } else {
+      const available = Number(sender.available) || 0;
+      sender.available = Math.max(0, Math.round((available - rounded) * 100) / 100);
+      recipient.available = Math.round(((recipient.available || 0) + rounded) * 100) / 100;
+    }
+
+    this.saveWallets(fromUserId, senderWallets);
+    this.saveWallets(recipientId, recipientWallets);
+
+    const transfer = {
+      // `id` matches the client's transfer so a later sync merge dedupes cleanly
+      // instead of showing both a local TX- and a server TXF- record.
+      id: clientTransferId || transferId,
+      transfer_id: transferId,
+      from_user: fromUserId,
+      to_user: recipientId,
+      to_account: cleanAccount,
+      company_id: companyId,
+      company_name: sender.company_name || '',
+      amount: rounded,
+      balance_type: balanceType,
+      transfer_type: 'friend_transfer',
+      status: 'completed',
+      created_at: now,
+      completed_at: now,
+    };
+
+    const senderTransfers = this.getUserSyncCollection(fromUserId, 'transfers');
+    senderTransfers.unshift(transfer);
+    this.setUserSyncCollection(fromUserId, 'transfers', senderTransfers.slice(0, 200));
+
+    const recipientTransfers = this.getUserSyncCollection(recipientId, 'transfers');
+    recipientTransfers.unshift({ ...transfer, direction: 'incoming' });
+    this.setUserSyncCollection(recipientId, 'transfers', recipientTransfers.slice(0, 200));
+
+    return {
+      success: true,
+      transfer,
+      senderWallet: sender,
+      recipientWallet: recipient,
+      recipientUserId: recipientId,
+    };
+  },
+
+  // ---------------------------------------------------------------------
+  // 11. Lottery tickets (server-authoritative purchases + prize settlement)
+  // ---------------------------------------------------------------------
+  getLotteryTickets(): any[] {
+    return readJsonFile<any[]>('lottery_tickets.json', []);
+  },
+  saveLotteryTickets(tickets: any[]): void {
+    writeJsonFile('lottery_tickets.json', tickets);
+  },
+
+  // Credit a lottery prize to the winner's AVAILABLE balance.
+  // Prefers the company wallet used to buy; falls back to the user's first wallet.
+  creditPrize(userId: string, amount: number, preferredCompanyId?: string): any | null {
+    if (!userId || !amount || amount <= 0) return null;
+    const wallets = this.getWallets(userId);
+    if (wallets.length === 0) {
+      return this.applyWalletDelta(userId, preferredCompanyId || 'LOTTERY', 0, amount, 'Lottery');
+    }
+    const target =
+      (preferredCompanyId && wallets.find((w: any) => w && w.company_id === preferredCompanyId)) ||
+      wallets[0];
+    return this.applyWalletDelta(userId, target.company_id, 0, amount, target.company_name);
+  },
 };
 
 // Initial verification and seed on boot

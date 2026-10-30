@@ -512,17 +512,25 @@ export const SecurityAndSettingsModal: React.FC<SecurityAndSettingsModalProps> =
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   {isAr ? (
                     <>
-                      • تبلغ نسبة فك تجميد الرصيد 10% لكل إحالة نشطة مسجلة وموثقة.
+                      • تبلغ نسبة فك تجميد الرصيد 10% لكل إحالة نشطة مسجلة وموثقة (كل 24 ساعة).
                       <br />
-                      • يحق للمستخدم تحويل رصيد مجمد بحد أقصى 10% لمرة واحدة فقط لكل صديق مسجل في نفس
-                      الشركة لتفادي التواطؤ الدوري.
+                      • التحويل من المجمد: حتى 10% (بحد أقصى $100) كل 30 يوماً ولكل صديق مرة كل شهر —
+                      ينتقل المنقول من مجمدك إلى متاحك ويُضاف إلى مجمد الصديق.
+                      <br />
+                      • التحويل من المتاح: بأي مبلغ متاح ولأي صديق مسجَّل في أي وقت — ويصله المستلم
+                      متاحاً فوراً.
                       <br />• جميع طلبات التعويض تخضع للمراجعة والتدقيق برقم قسيمة رهان معتمد.
                     </>
                   ) : (
                     <>
-                      • 10% unfreeze rate per active referral registration.
+                      • 10% unfreeze rate per active referral registration (every 24h).
                       <br />
-                      • Max 10% frozen balance transfer per friend with anti-collusion safeguards.
+                      • Frozen transfers: up to 10% (max $100) every 30 days, once per friend per
+                      month — the sent part moves to your available and is added to your friend’s
+                      frozen.
+                      <br />
+                      • Available transfers: any available amount to any registered friend, anytime —
+                      the recipient receives it as available instantly.
                       <br />• All compensation requests undergo verification with official bet slip ID.
                     </>
                   )}

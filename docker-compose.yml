@@ -18,6 +18,9 @@ services:
       - APP_URL=${APP_URL}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      # Secret required by admin money-crediting endpoints (compensation approve,
+      # lottery settlement). Fail-closed on the server if unset.
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
     env_file:
       - .env
     healthcheck:
