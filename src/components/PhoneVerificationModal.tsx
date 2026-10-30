@@ -275,9 +275,9 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                   {isAr ? 'رقم الهاتف المعتمد والموثق:' : 'Verified Phone Number:'}
                 </label>
-                <div className="px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-between font-mono font-bold text-sm text-slate-900 dark:text-white">
-                  <span dir="ltr">{userProfile.phone_number}</span>
-                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                <div className="px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-between gap-2 flex-wrap font-mono font-bold text-sm text-slate-900 dark:text-white">
+                  <span dir="ltr" className="min-w-0 break-all">{userProfile.phone_number}</span>
+                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800 shrink-0 whitespace-nowrap">
                     {isAr ? 'موثق ومقفل' : 'Verified & Locked'}
                   </span>
                 </div>
@@ -331,16 +331,16 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
 
               {/* Step 1: Open Telegram Bot Card */}
               <div className="p-4 rounded-2xl bg-sky-50/70 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/50 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-sky-600 text-white text-xs font-black flex items-center justify-center">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-6 h-6 rounded-full bg-sky-600 text-white text-xs font-black flex items-center justify-center shrink-0">
                       1
                     </span>
-                    <h4 className="text-xs font-black text-sky-950 dark:text-sky-200">
+                    <h4 className="text-xs font-black text-sky-950 dark:text-sky-200 min-w-0 truncate">
                       {isAr ? 'فتح البوت ومشاركة جهة الاتصال' : 'Open Bot & Share Contact'}
                     </h4>
                   </div>
-                  <span className="text-[10px] font-mono text-sky-700 dark:text-sky-300 font-bold">
+                  <span className="text-[10px] font-mono text-sky-700 dark:text-sky-300 font-bold shrink-0 whitespace-nowrap" dir="ltr">
                     @{botUsername}
                   </span>
                 </div>
@@ -473,8 +473,8 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
               </form>
 
               {/* Instant Test Simulator Mode (for fast testing / demo preview) */}
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 font-medium">
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] text-slate-400 font-medium shrink-0 whitespace-nowrap">
                   {isAr ? 'وضع الفحص السريع:' : 'Testing Mode:'}
                 </span>
 
@@ -482,14 +482,14 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
                   type="button"
                   onClick={handleSimulateContact}
                   disabled={simulating}
-                  className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 min-w-0 text-right rtl:text-left"
                 >
                   {simulating ? (
-                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
                   ) : (
-                    <Sparkles className="w-3 h-3" />
+                    <Sparkles className="w-3 h-3 shrink-0" />
                   )}
-                  <span>{isAr ? 'تجربة فورية: محاكاة مشاركة جهة الاتصال' : 'Simulate Contact Sharing'}</span>
+                  <span className="min-w-0">{isAr ? 'تجربة فورية: محاكاة مشاركة جهة الاتصال' : 'Simulate Contact Sharing'}</span>
                 </button>
               </div>
             </div>

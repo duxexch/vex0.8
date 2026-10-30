@@ -267,21 +267,21 @@ export const SecurityAndSettingsModal: React.FC<SecurityAndSettingsModalProps> =
               </div>
 
               {/* Linked Phone Badge */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-emerald-700 shadow-2xs">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-emerald-700 shadow-2xs shrink-0">
                     <Phone className="w-5 h-5" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-xs font-bold text-slate-800">{ts.linkedPhone}</h4>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h4 className="text-xs font-bold text-slate-800 min-w-0">{ts.linkedPhone}</h4>
                       {userProfile?.is_phone_verified && (
-                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0 whitespace-nowrap">
                           {isAr ? '🔒 مقفل' : '🔒 Locked'}
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-500 font-mono font-bold">
+                    <p className="text-[11px] text-slate-500 font-mono font-bold break-all">
                       {userProfile?.phone_number ? userProfile.phone_number : ts.noPhoneLinked}
                     </p>
                   </div>
@@ -297,7 +297,7 @@ export const SecurityAndSettingsModal: React.FC<SecurityAndSettingsModalProps> =
                         onOpenPhoneModal();
                       }
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold hover:bg-amber-100 transition-colors shadow-xs"
+                    className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold hover:bg-amber-100 transition-colors shadow-xs shrink-0 whitespace-nowrap"
                   >
                     {isAr ? 'طلب تغيير من الإدارة' : 'Request Admin Change'}
                   </button>
@@ -307,7 +307,7 @@ export const SecurityAndSettingsModal: React.FC<SecurityAndSettingsModalProps> =
                       onClose();
                       onOpenPhoneModal();
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition-colors shadow-xs"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition-colors shadow-xs shrink-0 whitespace-nowrap"
                   >
                     {isAr ? 'ربط الهاتف (مرة واحدة)' : ts.linkPhoneNow}
                   </button>
@@ -316,9 +316,9 @@ export const SecurityAndSettingsModal: React.FC<SecurityAndSettingsModalProps> =
 
               {/* Linked Telegram Badge */}
               {userProfile?.telegram_username && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-medium">{ts.linkedTelegram}</span>
-                  <span className="font-mono text-blue-600 font-bold">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500 font-medium min-w-0 truncate">{ts.linkedTelegram}</span>
+                  <span className="font-mono text-blue-600 font-bold min-w-0 max-w-[55%] truncate" dir="ltr">
                     @{userProfile.telegram_username}
                   </span>
                 </div>

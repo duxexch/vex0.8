@@ -101,27 +101,27 @@ export const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({
 
           {/* Promo Code Card */}
           <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                <Gift className="w-4 h-4 text-emerald-600" />
-                {t.promoCode} {t.officialPromoForComp}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
+                <Gift className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="min-w-0">{t.promoCode} {t.officialPromoForComp}</span>
               </span>
               <button
                 onClick={handleCopy}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all shadow-xs cursor-pointer"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all shadow-xs cursor-pointer shrink-0 whitespace-nowrap"
               >
                 {copiedPromo ? (
                   <>
-                    <Check className="w-3.5 h-3.5" /> {t.copied}
+                    <Check className="w-3.5 h-3.5 shrink-0" /> {t.copied}
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5" /> {t.copyPromo}
+                    <Copy className="w-3.5 h-3.5 shrink-0" /> {t.copyPromo}
                   </>
                 )}
               </button>
             </div>
-            <p className="font-mono text-xl font-black text-emerald-700 dark:text-emerald-400 tracking-wider">
+            <p className="font-mono text-xl font-black text-emerald-700 dark:text-emerald-400 tracking-wider break-all">
               {company.promo_code}
             </p>
             <p className="text-[11px] text-slate-500 leading-relaxed">

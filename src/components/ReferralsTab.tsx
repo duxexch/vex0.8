@@ -177,13 +177,13 @@ export const ReferralsTab: React.FC<ReferralsTabProps> = ({
             <div className="space-y-3 pt-1">
               {/* Link Box */}
               <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-600 font-bold">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-600 font-bold min-w-0 truncate">
                     {t.yourRefLinkFor} {activeCompany?.name}:
                   </span>
                   <button
                     onClick={handleCopyLink}
-                    className="h-6 px-2.5 rounded-md bg-white border border-slate-200 text-emerald-700 hover:bg-slate-50 font-bold flex items-center gap-1 text-[11px] cursor-pointer shadow-2xs"
+                    className="h-6 px-2.5 rounded-md bg-white border border-slate-200 text-emerald-700 hover:bg-slate-50 font-bold flex items-center gap-1 text-[11px] cursor-pointer shadow-2xs shrink-0 whitespace-nowrap"
                   >
                     {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     <span>{copiedLink ? t.copied : t.copyText}</span>
@@ -330,12 +330,12 @@ export const ReferralsTab: React.FC<ReferralsTabProps> = ({
                     key={ref.id}
                     className="bg-white border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between text-xs shadow-xs"
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="font-bold text-slate-900 truncate">
                           {ref.company_name}
                         </span>
-                        <span className="text-[11px] text-slate-500 font-mono">
+                        <span className="text-[11px] text-slate-500 font-mono break-all">
                           {t.codeLabel} {ref.referral_code}
                         </span>
                       </div>
@@ -344,7 +344,7 @@ export const ReferralsTab: React.FC<ReferralsTabProps> = ({
                       </span>
                     </div>
 
-                    <div className="text-left rtl:text-right">
+                    <div className="text-left rtl:text-right shrink-0 whitespace-nowrap">
                       {ref.unlocked_amount && ref.unlocked_amount > 0 ? (
                         <span className="font-bold text-emerald-700 text-xs block font-mono">
                           +${ref.unlocked_amount.toFixed(2)} {t.unlockedSuffix}

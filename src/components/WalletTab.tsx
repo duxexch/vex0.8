@@ -140,26 +140,26 @@ export const WalletTab: React.FC<WalletTabProps> = ({
 
       {/* Top Total Balance Summary Card */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs text-slate-900 space-y-3.5 spotlight-surface tilt-card-3d">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
-            <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-bold text-slate-700 flex items-center gap-2 min-w-0">
+            <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
               <Wallet2 className="w-4 h-4" />
             </span>
-            <span>
+            <span className="min-w-0 truncate">
               {t.totalWalletsPrefix} ({PLATFORM_DOMAIN})
             </span>
           </span>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => handleOpenQrModal('master')}
-              className="h-7 text-[11px] font-bold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 px-2.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-95"
+              className="h-7 text-[11px] font-bold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 px-2.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap shrink-0"
               title={isAr ? 'عرض رمز QR لعنوان المحفظة' : 'Show Wallet QR Code'}
             >
               <QrCode className="w-3.5 h-3.5 text-emerald-600" />
               <span>{isAr ? 'رمز QR للمحفظة' : 'Wallet QR'}</span>
             </button>
-            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
+            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md whitespace-nowrap">
               {getActiveWalletsText(wallets.length)}
             </span>
           </div>
@@ -243,11 +243,11 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                 <Send className="w-5 h-5" />
               </div>
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs sm:text-sm font-black text-slate-900 min-w-0">
                     {isAr ? 'إضافة رقم هاتف المحفظة (مرة واحدة فقط)' : 'Link Wallet Phone (One-Time Only)'}
                   </h4>
-                  <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
+                  <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200 shrink-0 whitespace-nowrap">
                     {isAr ? 'توثيق عبر تيليجرام' : 'Telegram Bot'}
                   </span>
                 </div>
@@ -274,11 +274,11 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-xs sm:text-sm font-black text-slate-900 min-w-0">
                       {isAr ? 'رقم هاتف المحفظة المعتمد' : 'Verified Wallet Phone'}
                     </h4>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0 whitespace-nowrap">
                       <Lock className="w-3 h-3" />
                       <span>{isAr ? 'مقفل لمرة واحدة' : 'Permanently Locked'}</span>
                     </span>
@@ -291,8 +291,8 @@ export const WalletTab: React.FC<WalletTabProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto">
-                <div className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800" dir="ltr">
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                <div className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 min-w-0 break-all" dir="ltr">
                   {userProfile.phone_number}
                 </div>
                 <button
@@ -329,17 +329,17 @@ export const WalletTab: React.FC<WalletTabProps> = ({
       </div>
 
       {/* Per Company Wallets Header */}
-      <div className="flex items-center justify-between px-1">
-        <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
+      <div className="flex items-center justify-between px-1 gap-2 flex-wrap">
+        <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2 min-w-0">
           <span>
             {t.companyWalletsTitle}
           </span>
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => handleOpenQrModal(wallets[0]?.company_id)}
-            className="h-8 text-xs font-bold text-slate-700 hover:text-emerald-700 flex items-center gap-1.5 px-2.5 rounded-lg bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            className="h-8 text-xs font-bold text-slate-700 hover:text-emerald-700 flex items-center gap-1.5 px-2.5 rounded-lg bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 shadow-2xs active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
             title={isAr ? 'مشاركة عناوين المحافظ عبر QR' : 'Share Wallet Address via QR'}
           >
             <QrCode className="w-3.5 h-3.5 text-emerald-600" />
@@ -347,21 +347,21 @@ export const WalletTab: React.FC<WalletTabProps> = ({
           </button>
           <button
             onClick={onOpenDepositUnfreeze}
-            className="h-8 text-xs font-bold text-emerald-700 flex items-center gap-1 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            className="h-8 text-xs font-bold text-emerald-700 flex items-center gap-1 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
           >
             <ArrowUpRight className="w-3.5 h-3.5" />
             <span>{lang === 'ar' ? 'إيداع لفك التجميد' : 'Deposit Unfreeze'}</span>
           </button>
           <button
             onClick={() => onRequestComp(wallets[0]?.company_id || '')}
-            className="h-8 text-xs font-bold text-emerald-700 flex items-center gap-1 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            className="h-8 text-xs font-bold text-emerald-700 flex items-center gap-1 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
           >
             <DollarSign className="w-3.5 h-3.5" />
             <span>{t.requestCompensation}</span>
           </button>
 
           {/* Grid vs Table View Mode Switcher */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 ml-auto sm:ml-0">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 ml-auto sm:ml-0 shrink-0">
             <button
               type="button"
               onClick={() => setWalletViewMode('grid')}

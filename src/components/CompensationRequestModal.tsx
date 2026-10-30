@@ -483,12 +483,12 @@ export const CompensationRequestModal: React.FC<CompensationRequestModalProps> =
 
               {/* Bet Slip ID (Mandatory for Fraud Prevention) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Ticket className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{t.betSlipLabel}:</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1 min-w-0">
+                    <Ticket className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="min-w-0 truncate">{t.betSlipLabel}:</span>
                   </span>
-                  <span className="text-[10px] text-rose-600 font-bold">
+                  <span className="text-[10px] text-rose-600 font-bold shrink-0 whitespace-nowrap">
                     {lang === 'ar' ? 'إلزامي' : 'Required'}
                   </span>
                 </label>
@@ -534,7 +534,7 @@ export const CompensationRequestModal: React.FC<CompensationRequestModalProps> =
                 </label>
                 <label className="border border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-3 flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors group">
                   <UploadCloud className="w-5 h-5 text-slate-400 group-hover:text-emerald-600 transition-colors" />
-                  <span className="text-xs text-slate-500 group-hover:text-slate-800 font-medium text-center">
+                  <span className="text-xs text-slate-500 group-hover:text-slate-800 font-medium text-center max-w-full break-all">
                     {screenshotName
                       ? screenshotName
                       : lang === 'ar'

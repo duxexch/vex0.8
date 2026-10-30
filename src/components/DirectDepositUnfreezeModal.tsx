@@ -377,20 +377,20 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
                   {/* Selected Gateway Details & Instructions Card */}
                   {selectedPm && (
                     <div className="mt-2 p-3 bg-gradient-to-br from-emerald-50/60 to-slate-50 border border-emerald-200 rounded-2xl space-y-2 shadow-2xs animate-fade-in">
-                      <div className="flex items-center justify-between border-b border-emerald-100 pb-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <CreditCard className="w-4 h-4 text-emerald-700" />
-                          <span className="font-bold text-xs text-emerald-950">
+                      <div className="flex items-center justify-between gap-2 border-b border-emerald-100 pb-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <CreditCard className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span className="font-bold text-xs text-emerald-950 min-w-0 truncate">
                             {lang === 'ar' ? selectedPm.nameAr || selectedPm.name : selectedPm.nameEn || selectedPm.name}
                           </span>
                         </div>
                         {selectedPm.badge && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0 whitespace-nowrap">
                             {selectedPm.badge}
                           </span>
                         )}
                         <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700"
+                          className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 shrink-0 whitespace-nowrap"
                           title={scopeLabel(selectedPm)}
                         >
                           {formatScopeBadge(selectedPm.scope, selectedPm.countries)}
@@ -398,19 +398,19 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
                       </div>
 
                       {/* Account Number & 1-Click Copy */}
-                      <div className="flex items-center justify-between bg-white border border-emerald-100 p-2.5 rounded-xl">
-                        <div className="space-y-0.5">
+                      <div className="flex items-center justify-between gap-2 bg-white border border-emerald-100 p-2.5 rounded-xl">
+                        <div className="space-y-0.5 min-w-0">
                           <span className="text-[10px] text-slate-500 block">
                             {getLocalizedText('transfer_to', 'رقم المحفظة / الحساب للتحويل إليه:', 'Transfer to Wallet / Account:', 'Transferir a:', 'Перевести на:')}
                           </span>
-                          <span className="font-mono font-bold text-sm text-slate-900 tracking-wide select-all">
+                          <span className="font-mono font-bold text-sm text-slate-900 tracking-wide select-all block min-w-0 break-all" dir="ltr">
                             {selectedPm.accountNumber}
                           </span>
                         </div>
                         <button
                           type="button"
                           onClick={() => handleCopy(selectedPm.accountNumber)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 transition-all cursor-pointer shadow-xs shrink-0 whitespace-nowrap"
                           title="نسخ رقم الحساب"
                         >
                           {copiedField ? (

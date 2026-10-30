@@ -582,14 +582,14 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                 >
                   <div className="pt-2 border-t border-slate-200/70 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                     {/* Category Filter Segments */}
-                    <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200 text-[11px] font-bold">
+                    <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200 text-[11px] font-bold overflow-x-auto shrink min-w-0">
                       <button
                         type="button"
                         onClick={() => {
                           triggerHaptic('light');
                           setFilterCategory('all');
                         }}
-                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                           filterCategory === 'all'
                             ? 'bg-white text-emerald-800 shadow-2xs font-extrabold'
                             : 'text-slate-600 hover:text-slate-900'
@@ -603,7 +603,7 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                           triggerHaptic('light');
                           setFilterCategory('registered');
                         }}
-                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 ${
                           filterCategory === 'registered'
                             ? 'bg-white text-emerald-800 shadow-2xs font-extrabold'
                             : 'text-slate-600 hover:text-slate-900'
@@ -622,7 +622,7 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                           triggerHaptic('light');
                           setFilterCategory('apps');
                         }}
-                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 ${
                           filterCategory === 'apps'
                             ? 'bg-white text-emerald-800 shadow-2xs font-extrabold'
                             : 'text-slate-600 hover:text-slate-900'
@@ -639,10 +639,10 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
 
             {/* Active Query or Filter Feedback Bar */}
             {(search.trim().length > 0 || filterCategory !== 'all') && (
-              <div className="flex items-center justify-between text-xs bg-emerald-50/90 text-emerald-900 px-3 py-1.5 rounded-xl border border-emerald-200 backdrop-blur-xs animate-fade-in">
-                <span className="font-bold flex items-center gap-1.5">
-                  <Search className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>
+              <div className="flex items-center justify-between gap-2 text-xs bg-emerald-50/90 text-emerald-900 px-3 py-1.5 rounded-xl border border-emerald-200 backdrop-blur-xs animate-fade-in">
+                <span className="font-bold flex items-center gap-1.5 min-w-0">
+                  <Search className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="min-w-0 truncate">
                     {isAr
                       ? `عثرنا على ${filtered.length} منصة مطابقة${search ? ` لـ "${search}"` : ''}`
                       : `Found ${filtered.length} partners matching${search ? ` "${search}"` : ''}`}
@@ -655,7 +655,7 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                     setSearch('');
                     setFilterCategory('all');
                   }}
-                  className="text-emerald-700 hover:text-emerald-950 font-bold underline cursor-pointer text-[11px]"
+                  className="text-emerald-700 hover:text-emerald-950 font-bold underline cursor-pointer text-[11px] shrink-0 whitespace-nowrap"
                 >
                   {isAr ? 'إلغاء التصفية' : 'Reset filters'}
                 </button>
@@ -671,16 +671,16 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
       {(!exclusiveCompany || showAllPartners) && (
         <>
           {/* View mode switcher — always visible */}
-          <div className="flex items-center justify-between gap-2 bg-white/80 backdrop-blur-md border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
-            <span className="text-[11px] font-black text-slate-500 tracking-tight">
+          <div className="flex items-center justify-between gap-2 bg-white/80 backdrop-blur-md border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs flex-wrap">
+            <span className="text-[11px] font-black text-slate-500 tracking-tight shrink-0 whitespace-nowrap">
               {isAr ? 'طريقة العرض' : 'View mode'}
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap justify-end min-w-0">
               <a
                 href={WA_CONTACT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-br from-[#25D366] to-[#0f8f5a] text-white text-[10px] font-black shadow-xs [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-br from-[#25D366] to-[#0f8f5a] text-white text-[10px] font-black shadow-xs [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer shrink-0 whitespace-nowrap"
                 title={isAr ? 'تواصل عبر واتساب' : 'Contact via WhatsApp'}
               >
                 <MessageCircle className="w-3.5 h-3.5 shrink-0" />
@@ -688,12 +688,12 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
               </a>
               <TelegramContactButton
                 lang={lang}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 text-white text-[10px] font-black shadow-xs [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 text-white text-[10px] font-black shadow-xs [text-shadow:0_1px_1px_rgba(0,0,0,0.18)] transition-all active:scale-95 hover:brightness-110 cursor-pointer shrink-0 whitespace-nowrap"
               >
                 <Send className="w-3.5 h-3.5 shrink-0" />
                 <span>{isAr ? 'تيليجرام' : 'Telegram'}</span>
               </TelegramContactButton>
-              <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-1 bg-slate-100/90 backdrop-blur-md p-1 rounded-xl border border-slate-200 shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -810,15 +810,15 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                         </div>
                         <p className="text-[11px] text-slate-400 truncate font-medium mt-0.5">{loc.description}</p>
                         {userAccount && (
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <span className="font-mono font-bold text-[10px] text-slate-300">{userAccount.account_number}</span>
+                          <div className="flex items-center gap-1.5 mt-1 min-w-0">
+                            <span className="font-mono font-bold text-[10px] text-slate-300 min-w-0 truncate">{userAccount.account_number}</span>
                             {isRegistered ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
                                 <ShieldCheck className="w-3 h-3" />
                                 <span>{t.registeredBadge}</span>
                               </span>
                             ) : isPending ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
                                 <Clock className="w-3 h-3" />
                                 <span>{t.pendingBadge}</span>
                               </span>
@@ -854,20 +854,20 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                       )}
                     </button>
 
-                    {/* Actions */}
-                    <div className="grid grid-cols-2 sm:flex items-center gap-1.5 relative shrink-0">
+                    {/* Actions — always a 2-col grid so long RU/AR labels wrap instead of clipping */}
+                    <div className="grid grid-cols-2 items-center gap-1.5 relative min-w-0">
                       <a
                         href={company.affiliate_link || '#'}
                         target="_blank"
                         rel="noreferrer"
-                        className="h-8 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 active:scale-95 shadow-md cursor-pointer"
+                        className="h-8 min-w-0 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 active:scale-95 shadow-md cursor-pointer"
                         style={{
                           background: `linear-gradient(135deg, ${company.color}, ${company.color}d0)`,
                           color: readableText(company.color),
                         }}
                       >
                         <ExternalLink className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{t.registerAndSite}</span>
+                        <span className="truncate min-w-0">{t.registerAndSite}</span>
                       </a>
 
                       {company.app_link && (
@@ -875,27 +875,27 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                           href={company.app_link}
                           target="_blank"
                           rel="noreferrer"
-                          className="h-8 px-3 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer"
+                          className="h-8 min-w-0 px-3 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer"
                         >
                           <Download className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{t.appBtn}</span>
+                          <span className="truncate min-w-0">{t.appBtn}</span>
                         </a>
                       )}
 
                       <button
                         type="button"
                         onClick={() => (isRegistered ? onRequestComp(company.id) : onOpenRegister(company))}
-                        className="h-8 px-3 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                        className="h-8 min-w-0 px-3 rounded-xl text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
                       >
                         {isRegistered ? (
                           <>
                             <PlusCircle className="w-3 h-3 text-emerald-400" />
-                            <span className="truncate">{t.requestCompensation}</span>
+                            <span className="truncate min-w-0">{t.requestCompensation}</span>
                           </>
                         ) : (
                           <>
                             <Edit3 className="w-3 h-3" />
-                            <span className="truncate">{t.linkAccount}</span>
+                            <span className="truncate min-w-0">{t.linkAccount}</span>
                           </>
                         )}
                       </button>
@@ -903,10 +903,10 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
                       <button
                         type="button"
                         onClick={() => onOpenDetails(company)}
-                        className="h-8 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-white/10 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        className="h-8 min-w-0 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-white/10 transition-colors flex items-center justify-center gap-1 cursor-pointer"
                       >
                         <Info className="w-3 h-3" />
-                        <span className="truncate">{t.detailsBtn}</span>
+                        <span className="truncate min-w-0">{t.detailsBtn}</span>
                       </button>
                     </div>
                   </div>

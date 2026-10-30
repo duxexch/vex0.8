@@ -114,21 +114,21 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             background: `linear-gradient(135deg, ${company.color}15 0%, #ffffff 100%)`,
           }}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
               <CompanyBrandLogo
                 companyName={company.name}
                 size="md"
-                className="shadow-xs rounded-xl"
+                className="shadow-xs rounded-xl shrink-0"
               />
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                  <span>{company.name}</span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-wrap min-w-0">
+                  <span className="min-w-0 break-words">{company.name}</span>
                   {company.name_ar && (
-                    <span className="text-xs font-normal text-slate-500">({company.name_ar})</span>
+                    <span className="text-xs font-normal text-slate-500 min-w-0 break-words">({company.name_ar})</span>
                   )}
                 </h3>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-slate-500 truncate">
                   {step === 1 ? t.step1Title : t.step2Title}
                 </p>
               </div>
@@ -136,7 +136,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
             <button
               onClick={handleClose}
-              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center"
+              className="w-8 h-8 shrink-0 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center"
             >
               <X className="w-4 h-4" />
             </button>
@@ -182,16 +182,16 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               </p>
 
               {/* Promo Code Box */}
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                <div>
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                <div className="min-w-0">
                   <span className="text-[10px] text-slate-500 block font-bold">{t.promoCode}</span>
-                  <span className="text-sm font-mono font-black text-emerald-700 tracking-wider">
+                  <span className="text-sm font-mono font-black text-emerald-700 tracking-wider block min-w-0 break-all">
                     {company.promo_code}
                   </span>
                 </div>
                 <button
                   onClick={handleCopyPromo}
-                  className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all active:scale-95 shadow-2xs flex items-center gap-1.5"
+                  className="h-8 px-3 shrink-0 whitespace-nowrap rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all active:scale-95 shadow-2xs flex items-center gap-1.5"
                 >
                   {copiedPromo ? (
                     <>
@@ -211,11 +211,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   href={company.app_link}
                   target="_blank"
                   rel="noreferrer"
-                  className="h-10 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-200 transition-colors flex items-center justify-center gap-2 w-full"
+                  className="h-10 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-200 transition-colors flex items-center justify-center gap-2 w-full min-w-0"
                 >
-                  <Download className="w-4 h-4 text-emerald-600" />
-                  <span>{t.appBtn} ({company.name})</span>
-                  <ExternalLink className="w-3.5 h-3.5 opacity-50" />
+                  <Download className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="min-w-0 truncate">{t.appBtn} ({company.name})</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-50 shrink-0" />
                 </a>
               )}
 
@@ -270,13 +270,27 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
               {/* PIN Code */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-slate-700">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 min-w-0 truncate">
                     {t.pinPlaceholder}
                   </label>
-                  <span className="text-[10px] text-emerald-700 flex items-center gap-1 font-mono font-bold">
-                    <ShieldCheck className="w-3 h-3" />
-                    {hasExistingPin ? 'الرمز المحدد مسبقاً' : 'تعيين رمز سري جديد'}
+                  <span className="text-[10px] text-emerald-700 flex items-center gap-1 font-mono font-bold shrink-0 whitespace-nowrap">
+                    <ShieldCheck className="w-3 h-3 shrink-0" />
+                    {hasExistingPin
+                      ? lang === 'ar'
+                        ? 'الرمز المحدد مسبقاً'
+                        : lang === 'es'
+                        ? 'Código ya establecido'
+                        : lang === 'ru'
+                        ? 'Код уже задан'
+                        : 'Pre-set code'
+                      : lang === 'ar'
+                      ? 'تعيين رمز سري جديد'
+                      : lang === 'es'
+                      ? 'Crear código nuevo'
+                      : lang === 'ru'
+                      ? 'Задать новый код'
+                      : 'Set a new secret code'}
                   </span>
                 </div>
                 <input

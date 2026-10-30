@@ -294,13 +294,13 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
                           {/* Action Pill if prediction data is attached */}
                           {n.data?.predictionText && (
-                            <div className="mt-2 flex items-center justify-between bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 rounded-xl px-2.5 py-1.5 text-xs text-purple-800 dark:text-purple-300 font-bold">
-                              <span className="flex items-center gap-1">
-                                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                            <div className="mt-2 flex items-center justify-between gap-2 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 rounded-xl px-2.5 py-1.5 text-xs text-purple-800 dark:text-purple-300 font-bold">
+                              <span className="flex items-center gap-1 min-w-0 truncate">
+                                <Sparkles className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                                 {n.data.predictionText}
                               </span>
                               {n.data.confidence && (
-                                <span className="bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded-md font-mono">
+                                <span className="bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded-md font-mono shrink-0 whitespace-nowrap">
                                   {n.data.confidence}% ثقة
                                 </span>
                               )}

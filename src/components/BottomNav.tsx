@@ -121,17 +121,17 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   }`}
                 />
 
-                {/* Telegram-style red badge */}
-                {item.badge && (
-                  <span className="absolute -top-1 -right-2.5 min-w-[16px] h-[16px] px-1 bg-[#FF3B30] text-white text-[10px] font-semibold rounded-full flex items-center justify-center tabular-nums ring-2 ring-white">
-                    {item.badge}
+                {/* Telegram-style red badge (capped so wide counts can't spill into the next tab) */}
+                {item.badge ? (
+                  <span className="absolute -top-1 -right-2.5 min-w-[16px] max-w-[32px] h-[16px] px-1 bg-[#FF3B30] text-white text-[10px] font-semibold rounded-full flex items-center justify-center tabular-nums ring-2 ring-white overflow-hidden">
+                    {typeof item.badge === 'number' && item.badge > 99 ? '99+' : item.badge}
                   </span>
-                )}
+                ) : null}
               </span>
 
               {/* Label */}
               <span
-                className={`text-[10.5px] leading-none whitespace-nowrap ${
+                className={`text-[10.5px] leading-none whitespace-nowrap truncate max-w-full px-0.5 ${
                   active ? 'font-semibold' : 'font-normal'
                 }`}
               >
