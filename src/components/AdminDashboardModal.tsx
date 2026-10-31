@@ -2843,6 +2843,28 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                     </span>
                                   </div>
 
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                      {t('ترتيب العرض في الموقع (الأصغر يظهر أولاً):', 'Display Order (lower shows first):', 'Порядок показа (меньше = раньше):')}
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={activeComp.sort_order ?? ''}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        setEditingCompany({
+                                          ...activeComp,
+                                          sort_order: v === '' ? null : Number(v),
+                                        });
+                                      }}
+                                      placeholder="1"
+                                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-[11px]"
+                                    />
+                                    <span className="text-[9px] text-slate-400 block mt-0.5">
+                                      {t('يحدد ترتيب الشركات في الصفحة الرئيسية وصفحات SEO. اتركه فارغاً للترتيب الافتراضي.', 'Sets the company rank on the homepage and SEO pages. Leave empty for default order.', 'Задаёт порядок на главной и SEO-страницах. Пусто = порядок по умолчанию.')}
+                                    </span>
+                                  </div>
+
                                   <div className="flex items-center gap-2">
                                     <input
                                       type="color"

@@ -69,7 +69,22 @@ function writeJsonFile<T>(filename: string, data: T): void {
 export const storage = {
   // 1. Companies
   getCompanies(): Company[] {
-    return readJsonFile<Company[]>('companies.json', DEFAULT_COMPANIES);
+    const list = readJsonFile<Company[]>('companies.json', DEFAULT_COMPANIES);
+    // Order by importance: lower sort_order first; companies without the field
+    // keep their existing relative order (stable sort), landing after explicit ones.
+    return list
+      .map((c, i) => ({ c, i }))
+      .sort((a, b) => {
+        const ra = a.c.sort_order;
+        const rb = b.c.sort_order;
+        const ea = typeof ra === 'number' && Number.isFinite(ra);
+        const eb = typeof rb === 'number' && Number.isFinite(rb);
+        if (ea && eb) return ra - rb || a.i - b.i;
+        if (ea) return -1;
+        if (eb) return 1;
+        return a.i - b.i;
+      })
+      .map(({ c }) => c);
   },
   saveCompanies(companies: Company[]): void {
     writeJsonFile('companies.json', companies);

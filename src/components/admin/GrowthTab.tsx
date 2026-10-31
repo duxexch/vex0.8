@@ -111,6 +111,10 @@ export function GrowthTab() {
   const [toast, setToast] = useState('');
   const [waSafety, setWaSafety] = useState<any>(null);
   const [waStats, setWaStats] = useState<any>(null);
+  const [tgweb, setTgweb] = useState<any>(null);
+  const [tgForm, setTgForm] = useState({ target: '', text: '' });
+  const [waOutbox, setWaOutbox] = useState<any>(null);
+  const [showWaOutbox, setShowWaOutbox] = useState(false);
 
   const flash = (t: string) => {
     setToast(t);
@@ -120,7 +124,7 @@ export function GrowthTab() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, l, c, st, sf] = await Promise.all([
+      const [s, l, c, st, sf, tw, wo] = await Promise.all([
         fetch('/api/admin/growth/stats').then((r) => r.json()),
         fetch(
           `/api/admin/growth/leads?q=${encodeURIComponent(q)}&segment=${segment}&status=${status}&limit=150`
@@ -128,6 +132,10 @@ export function GrowthTab() {
         fetch('/api/admin/growth/campaigns').then((r) => r.json()),
         fetch('/api/admin/growth/settings').then((r) => r.json()),
         fetch('/api/admin/growth/wa/safety').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/growth/tgweb').then((r) => r.json()).catch(() => null),
+        showWaOutbox
+          ? fetch('/api/admin/growth/wa/outbox').then((r) => r.json()).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setStats(s.stats || null);
       setLeads(l.leads || []);
@@ -138,11 +146,13 @@ export function GrowthTab() {
         setWaSafety(sf.safety || null);
         setWaStats(sf.wa || null);
       }
+      if (tw) setTgweb(tw.tgweb || null);
+      if (wo) setWaOutbox(wo.outbox || null);
     } catch {
       flash('تعذر التحديث');
     }
     setLoading(false);
-  }, [q, segment, status]);
+  }, [q, segment, status, showWaOutbox]);
 
   useEffect(() => {
     const t = setTimeout(loadAll, q ? 400 : 0);
@@ -206,6 +216,84 @@ export function GrowthTab() {
       else flash(`📱 صندوق جاهز: ${data.batch.count} رسالة (متبقّي اليوم: ${data.batch.remaining})`);
       loadAll();
     } else flash('فشل بناء الصندوق');
+  };
+
+  // ---- Telegram Web session outbox (existing-chats tool; campaigns go via bot) ----
+  const queueTgWeb = async () => {
+    const target = tgForm.target.trim();
+    const text = tgForm.text.trim();
+    if (!target || !text) return flash('اكتب اسم المحادثة/المعرّف ونص الرسالة');
+    const res = await fetch('/api/admin/growth/tgweb/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, text, kind: 'manual' }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      flash(`queued في طابور الويب — المتبقّي اليوم: ${data.tgweb?.remaining_today}`);
+      setTgForm({ target: '', text: '' });
+      setTgweb(data.tgweb || null);
+    } else flash(data.error === 'halted' ? '🚨 الطابور متوقف — استأنف أولاً' : (data.error || 'فشل الإضافة للطابور'));
+  };
+
+  const haltTgWeb = async () => {
+    const reason = window.prompt('سبب إيقاف تليجرام (ويب):') || 'ban report';
+    const res = await fetch('/api/admin/growth/tgweb/halt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    const data = await res.json();
+    if (data.success) { setTgweb(data.tgweb); flash('🚨 تم إيقاف تليجرام (ويب)'); }
+    else flash('فشل الإيقاف');
+  };
+
+  const resumeTgWeb = async () => {
+    const res = await fetch('/api/admin/growth/tgweb/resume', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) { setTgweb(data.tgweb); flash('✅ استُؤنف تليجرام (ويب) — تسخين من اليوم الأول'); }
+    else flash('فشل الاستئناف');
+  };
+
+  // ---- WhatsApp manual outbox viewer: toggle, copy, mark-all-sent (no auto-send) ----
+  const toggleWaOutbox = () => setShowWaOutbox((v) => !v);
+
+  const waPhones = React.useMemo(() => {
+    const content: string = waOutbox?.content || '';
+    const phones: string[] = [];
+    // Batch lines look like: "## 3. Ahmed — +201234567890 [warm_player]"
+    const re = /^##\s*\d+\.\s.*—\s*(\+?\d{6,15})\s*\[/gm;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(content)) !== null) phones.push(m[1]);
+    return phones;
+  }, [waOutbox?.content]);
+
+  const copyWaOutbox = async () => {
+    const content: string = waOutbox?.content || '';
+    if (!content) return flash('لا يوجد صندوق اليوم');
+    try {
+      await navigator.clipboard.writeText(content);
+      flash(`📋 نُسخ الصندوق (${waPhones.length} جهة) — الصقه في واتساب Business`);
+    } catch {
+      flash('تعذر النسخ — انسخ يدوياً');
+    }
+  };
+
+  const markAllWaSent = async () => {
+    if (waPhones.length === 0) return flash('مافيش جهات في الصندوق');
+    if (!confirm(`تعليم ${waPhones.length} جهة كـ«اتبعتت»؟ ده بس لتتبع العدّاد — مفيش إرسال تلقائي.`)) return;
+    const res = await fetch('/api/admin/growth/wa/mark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phones: waPhones, status: 'sent' }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setWaStats(data.wa);
+      setWaSafety(data.safety);
+      flash(`✅ عُلّمت ${data.marked} جهة — اتجدد حد اليوم`);
+      loadAll();
+    } else flash('فشل التعليم');
   };
 
   const sendManual = async () => {
@@ -361,6 +449,12 @@ export function GrowthTab() {
               >
                 بناء صندوق اليوم
               </button>
+              <button
+                onClick={toggleWaOutbox}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700"
+              >
+                {showWaOutbox ? 'إخفاء الصندوق' : 'عرض صندوق اليوم'}
+              </button>
             </div>
           </div>
 
@@ -395,8 +489,146 @@ export function GrowthTab() {
             </div>
           </div>
 
+          {/* Today's outbox — view, copy, and mark-sent after you send by hand */}
+          {showWaOutbox && (
+            <div className="mt-3 border-t border-slate-200 dark:border-slate-700 pt-3 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-xs font-black text-slate-700 dark:text-slate-300">
+                  📦 صندوق {waOutbox?.date || 'اليوم'} — {waPhones.length} جهة جاهزة
+                  {!waOutbox?.exists && ' (لا يوجد ملف بعد — ابنِ الصندوق)'}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={copyWaOutbox}
+                    disabled={!waOutbox?.exists}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-40"
+                  >
+                    📋 نسخ الكل
+                  </button>
+                  <button
+                    onClick={markAllWaSent}
+                    disabled={waPhones.length === 0}
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-40"
+                  >
+                    ✅ علّم الكل مُرسَل
+                  </button>
+                </div>
+              </div>
+              {waOutbox?.exists ? (
+                <pre className="max-h-64 overflow-y-auto bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-mono" dir="rtl">
+                  {waOutbox.content}
+                </pre>
+              ) : (
+                <p className="text-[11px] font-bold text-slate-400">
+                  اضغط «بناء صندوق اليوم» يولّد رسائل جاهزة (≤ حد اليوم) ترسلها بنفسك من رقمك.
+                </p>
+              )}
+            </div>
+          )}
+
           <p className="mt-2 text-[10px] font-bold text-slate-400">
             النظام لا يرسل تلقائياً أبداً — الصندوق جاهز للإرسال اليدوي، وبعد الإرسال علّمهم من رأس القائمة.
+          </p>
+        </div>
+      )}
+
+      {/* Telegram Web session outbox — existing-chats tool (campaigns go via the bot) */}
+      {tgweb && (
+        <div
+          className={`rounded-2xl border p-4 ${
+            tgweb.safety?.halted
+              ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Send className={`w-5 h-5 ${tgweb.safety?.halted ? 'text-red-600' : 'text-sky-600'}`} />
+              <span className="text-sm font-black text-slate-900 dark:text-white">
+                تليجرام — جلسة الويب على السيرفر (محادثات قائمة)
+              </span>
+              <span
+                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  tgweb.worker?.state === 'running' && !tgweb.safety?.halted
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
+                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                }`}
+              >
+                {tgweb.safety?.halted
+                  ? '🚨 متوقف'
+                  : tgweb.worker?.state === 'running'
+                  ? '🟢 العامل يعمل'
+                  : '⏸ العامل متوقف'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {tgweb.safety?.halted ? (
+                <button
+                  onClick={resumeTgWeb}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
+                >
+                  استئناف + إعادة التسخين
+                </button>
+              ) : (
+                <button
+                  onClick={haltTgWeb}
+                  className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700"
+                >
+                  إيقاف فوري
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{tgweb.pending ?? 0}</div>
+              <div className="text-[10px] font-bold text-slate-500">بالطابور</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{tgweb.sent_today ?? 0}/{tgweb.allowed_today ?? 0}</div>
+              <div className="text-[10px] font-bold text-slate-500">اليوم (حد السماح)</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{tgweb.warmup_day ?? 1}</div>
+              <div className="text-[10px] font-bold text-slate-500">يوم التسخين</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{tgweb.sent_total ?? 0}</div>
+              <div className="text-[10px] font-bold text-slate-500">اتبعتت (إجمالي)</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{tgweb.failed_total ?? 0}</div>
+              <div className="text-[10px] font-bold text-slate-500">فشلت</div>
+            </div>
+          </div>
+
+          {/* Queue a message to an EXISTING chat by search (numeric-id/phone don't work) */}
+          <div className="mt-3 flex flex-col md:flex-row gap-2">
+            <input
+              value={tgForm.target}
+              onChange={(e) => setTgForm({ ...tgForm, target: e.target.value })}
+              placeholder="اسم المحادثة أو @username (للبحث)"
+              className="md:w-56 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+            />
+            <input
+              value={tgForm.text}
+              onChange={(e) => setTgForm({ ...tgForm, text: e.target.value })}
+              placeholder="نص الرسالة لمحادثة قائمة..."
+              className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+            />
+            <button
+              onClick={queueTgWeb}
+              disabled={tgweb.safety?.halted}
+              className="px-4 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold hover:bg-sky-700 disabled:opacity-40"
+            >
+              أضف للطابور
+            </button>
+          </div>
+
+          <p className="mt-2 text-[10px] font-bold text-slate-400">
+            الحملات تمر عبر البوت (للمشتركين). جلسة الويب دي لمحادثات قائمة فقط — تليجرام يمنع الرسايل الباردة للأرقام، فالعامل يبحث بالاسم ويفتح المحادثة ويرسل.
+            {tgweb.worker?.message ? ` | حالة العامل: ${tgweb.worker.message}` : ''}
           </p>
         </div>
       )}

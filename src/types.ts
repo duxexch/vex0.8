@@ -104,6 +104,8 @@ export interface Company {
   bonus_text_ru?: string;
   api_config?: CompanyApiConfig;
   api_methods?: CompanyApiMethod[];
+  /** Display rank — lower sorts first (importance). null/absent = default list order. */
+  sort_order?: number | null;
 }
 
 export type AccountStatus = 'pending' | 'active' | 'rejected';

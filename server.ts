@@ -54,6 +54,14 @@ import {
   buildCardHtml as growthBuildCardHtml,
   renderPredictionCardPng as growthRenderCard,
   cardPublicUrl as growthCardUrl,
+  tgWebStats as growthTgWebStats,
+  queueTgWebMessage as growthTgWebQueue,
+  queueTgWebBatch as growthTgWebQueueBatch,
+  tgWebHalt as growthTgWebHalt,
+  tgWebResume as growthTgWebResume,
+  tgWebUpdateSafety as growthTgWebUpdateSafety,
+  tgWebEnsureWarmup as growthTgWebEnsureWarmup,
+  listTgWebMessages as growthTgWebList,
 } from './server/growth';
 import {
   extractPrediction,
@@ -1603,6 +1611,93 @@ app.post('/api/admin/growth/wa/resume', (_req, res) => {
 app.get('/api/admin/growth/calendar', (_req, res) => {
   try {
     res.json({ success: true, calendar: growthCalendarPlan(), wa: growthWaStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- Telegram Web session outbox (host worker drains it) ----------------
+// The admin's logged-in Telegram Web session (browser profile on the server) is
+// the sending identity. The Node server only enqueues here; the Playwright
+// worker on the host claims pending files, sends with human-like gaps, and
+// moves them to sent/ or failed/. Same warm-up + halt policy as WhatsApp.
+
+app.get('/api/admin/growth/tgweb', (_req, res) => {
+  try {
+    res.json({ success: true, tgweb: growthTgWebStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/tgweb/queue', (req, res) => {
+  try {
+    growthTgWebEnsureWarmup();
+    const target = String(req.body?.target || '').trim();
+    const text = String(req.body?.text || '').trim();
+    const kind = req.body?.kind === 'campaign' || req.body?.kind === 'binding' ? req.body.kind : 'manual';
+    const leadId = req.body?.lead_id ? String(req.body.lead_id).slice(0, 60) : undefined;
+    const result = growthTgWebQueue({ target, text, kind, lead_id: leadId });
+    if (!result.queued) {
+      return res.status(400).json({ success: false, error: result.reason || 'rejected' });
+    }
+    res.json({ success: true, id: result.id, tgweb: growthTgWebStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/tgweb/halt', (req, res) => {
+  try {
+    const reason = String(req.body?.reason || 'ban report').slice(0, 200);
+    const safety = growthTgWebHalt(reason);
+    io.emit('notification', {
+      message: `🚨 تليجرام (جلسة الويب) متوقف أمنياً: ${reason} — الرسائل المعلّقة تنتظر الاستئناف.`,
+      type: 'warning',
+      title: 'Telegram Web Safety',
+      at: Date.now(),
+    });
+    res.json({ success: true, safety, tgweb: growthTgWebStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/tgweb/resume', (_req, res) => {
+  try {
+    const safety = growthTgWebResume();
+    io.emit('notification', {
+      message: `✅ تليجرام (جلسة الويب) رجع بالوضع الآمن — التسخين من اليوم الأول.`,
+      type: 'success',
+      title: 'Telegram Web Safety',
+      at: Date.now(),
+    });
+    res.json({ success: true, safety, tgweb: growthTgWebStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/tgweb/safety', (req, res) => {
+  try {
+    const safety = growthTgWebUpdateSafety({
+      daily_cap: req.body?.daily_cap,
+      batch_size: req.body?.batch_size,
+      gap_min_s: req.body?.gap_min_s,
+      gap_max_s: req.body?.gap_max_s,
+    });
+    res.json({ success: true, safety, tgweb: growthTgWebStats() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Outbox inspection (pending/sent/failed) — admin visibility into delivery.
+app.get('/api/admin/growth/tgweb/messages', (req, res) => {
+  try {
+    const bucket = req.query.bucket === 'sent' || req.query.bucket === 'failed' ? req.query.bucket : 'pending';
+    const limit = Math.min(200, Number(req.query.limit) || 50);
+    res.json({ success: true, bucket, messages: growthTgWebList(bucket).slice(0, limit) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -227,6 +227,7 @@ export function autoTranslateCompany(input: Partial<Company>): Company {
     color: input.color || '#0d579b',
     show_in_comp: input.show_in_comp !== undefined ? input.show_in_comp : true,
     logo_url: input.logo_url || '',
+    sort_order: input.sort_order ?? null,
 
     // Arabic
     description: rawDesc,

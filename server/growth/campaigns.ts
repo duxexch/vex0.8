@@ -31,7 +31,8 @@ export interface Campaign {
   status: 'draft' | 'sending' | 'sent';
   created_at: number;
   sent_at?: number;
-  stats: { targeted: number; sent: number; failed: number };
+  transport?: 'tg_web';
+  stats: { targeted: number; sent: number; failed: number; pending?: number };
 }
 
 function readJson<T>(file: string, fallback: T): T {
@@ -107,11 +108,17 @@ export async function sendCampaign(id: string): Promise<Campaign | null> {
       matchesSegment(l, campaign.segment) &&
       l.status !== 'stopped' &&
       l.status !== 'dead' &&
+      l.tg_user_id > 0 &&
       (!l.last_campaign_at ||
         new Date(l.last_campaign_at).toISOString().slice(0, 10) !== today)
   );
+
+  // Transport = the Telegram bot (@Vex_wallet_bot). Subscribers chat with the
+  // BOT, not the admin's personal Web session, and Telegram forbids cold DMs by
+  // phone — so the bot is the only channel that can actually reach these
+  // opt-in tg_user_id leads.
   campaign.status = 'sending';
-  campaign.stats.targeted = targets.length;
+  campaign.stats = { targeted: targets.length, sent: 0, failed: 0, pending: targets.length };
   saveAll(campaigns);
 
   for (const lead of targets) {
@@ -124,6 +131,8 @@ export async function sendCampaign(id: string): Promise<Campaign | null> {
     } else {
       campaign.stats.failed++;
     }
+    campaign.stats.pending = Math.max(0, campaign.stats.targeted - campaign.stats.sent - campaign.stats.failed);
+    saveAll(campaigns);
   }
   campaign.status = 'sent';
   campaign.sent_at = Date.now();
