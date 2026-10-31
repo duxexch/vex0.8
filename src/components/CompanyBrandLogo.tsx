@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 interface CompanyBrandLogoProps {
   companyName?: string;
   companyId?: string;
+  /** Optional admin-set logo URL (company.logo_url) — wins over the built-in brand tiles. */
+  logoUrl?: string;
   className?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
@@ -20,15 +22,37 @@ const LOGO_FILES: Array<{ match: (s: string) => boolean; file: string }> = [
   { match: (s) => s.includes('VEX'), file: '/logos/vex.png' },
 ];
 
+// Admin-set custom logo (company.logo_url) — resolved from the companies cache that
+// api.ts refreshes on every load, so every call site benefits without prop drilling.
+const COMPANIES_CACHE_KEY = 'vex_comp_companies';
+function resolveCachedLogoUrl(companyName?: string, companyId?: string): string {
+  try {
+    const raw = localStorage.getItem(COMPANIES_CACHE_KEY);
+    const list: any[] = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return '';
+    const byId = companyId ? list.find((c) => c && c.id === companyId) : undefined;
+    const byName = companyName
+      ? list.find((c) => c && c.name === companyName) ||
+        list.find((c) => c && String(c.name || '').toUpperCase().trim() === companyName.toUpperCase().trim())
+      : undefined;
+    const url = String((byId || byName || {}).logo_url || '').trim();
+    return url;
+  } catch {
+    return '';
+  }
+}
+
 export const CompanyBrandLogo: React.FC<CompanyBrandLogoProps> = ({
   companyName,
   companyId,
+  logoUrl,
   className = '',
   size = 'md',
 }) => {
   const raw = companyName || companyId || 'Partner';
   const normalized = (typeof raw === 'string' ? raw : '').toUpperCase().trim();
   const [imgFailed, setImgFailed] = useState(false);
+  const [customFailed, setCustomFailed] = useState(false);
 
   const sizeClasses = {
     sm: 'w-8 h-8 text-[9px] rounded-full aspect-square shrink-0 ring-1 ring-white/20',
@@ -37,7 +61,29 @@ export const CompanyBrandLogo: React.FC<CompanyBrandLogoProps> = ({
     xl: 'w-16 h-16 text-base rounded-full aspect-square shrink-0 ring-2 ring-white/30',
   }[size];
 
-  // Real logo image (fallback to the CSS brand tiles below if missing/failed)
+  // 1) Admin-set custom logo (explicit prop wins, then the cached company record).
+  //    On load error it silently falls through to the built-in brand tiles below.
+  const customLogo = customFailed
+    ? ''
+    : String(logoUrl || '').trim() || resolveCachedLogoUrl(companyName, companyId);
+  if (customLogo) {
+    return (
+      <div
+        className={`relative overflow-hidden flex items-center justify-center bg-white select-none shadow-sm ${sizeClasses} ${className}`}
+        title={String(raw)}
+      >
+        <img
+          src={customLogo}
+          alt={String(raw)}
+          draggable={false}
+          onError={() => setCustomFailed(true)}
+          className="w-full h-full object-contain p-0.5"
+        />
+      </div>
+    );
+  }
+
+  // 2) Real logo image from /public/logos (fallback to the CSS brand tiles below if missing/failed)
   const logoFile = LOGO_FILES.find((m) => m.match(normalized))?.file;
   if (logoFile && !imgFailed) {
     return (

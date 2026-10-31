@@ -301,7 +301,13 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                               </span>
                               {n.data.confidence && (
                                 <span className="bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded-md font-mono shrink-0 whitespace-nowrap">
-                                  {n.data.confidence}% ثقة
+                                  {isAr
+                                    ? `${n.data.confidence}% ثقة`
+                                    : lang === 'es'
+                                    ? `${n.data.confidence}% confianza`
+                                    : lang === 'ru'
+                                    ? `${n.data.confidence}% уверенность`
+                                    : `${n.data.confidence}% confidence`}
                                 </span>
                               )}
                             </div>

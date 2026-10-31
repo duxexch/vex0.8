@@ -2289,6 +2289,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
                         <div>
                           <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            {t('أيقونة الشركة — رابط صورة الشعار (اختياري):', 'Company Icon — Logo Image URL (optional):', 'Иконка компании — ссылка на логотип (необязательно):')}
+                          </label>
+                          <input
+                            type="url"
+                            value={newCompany.logo_url || ''}
+                            onChange={(e) => setNewCompany({ ...newCompany, logo_url: e.target.value })}
+                            placeholder="https://example.com/logo.png"
+                            dir="ltr"
+                            className="w-full px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                             {t('لون البراند الرئيسي (Hex):', 'Brand Primary Color:', 'Основной цвет бренда (Hex):')}
                           </label>
                           <div className="flex items-center gap-2">
@@ -2808,6 +2822,25 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                       }
                                       className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-[11px]"
                                     />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                      {t('أيقونة الشركة — رابط صورة الشعار (Logo URL):', 'Company Icon — Logo Image URL:', 'Иконка компании — ссылка на логотип (URL):')}
+                                    </label>
+                                    <input
+                                      type="url"
+                                      value={activeComp.logo_url || ''}
+                                      onChange={(e) =>
+                                        setEditingCompany({ ...activeComp, logo_url: e.target.value })
+                                      }
+                                      placeholder="https://example.com/logo.png"
+                                      dir="ltr"
+                                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-[11px]"
+                                    />
+                                    <span className="text-[9px] text-slate-400 block mt-0.5">
+                                      {t('اتركه فارغاً لاستخدام الشعار الرسمي تلقائياً. يظهر فور الحفظ في كل أقسام الموقع.', 'Leave empty to keep the official brand logo. Applies site-wide right after saving.', 'Оставьте пустым для официального логотипа. Применяется сразу после сохранения.')}
+                                    </span>
                                   </div>
 
                                   <div className="flex items-center gap-2">

@@ -537,7 +537,11 @@ app.get('/api/companies', (req, res) => {
   });
 });
 
+// Writes are admin-only: these fields drive revenue (affiliate links) and are rendered
+// verbatim on the SSR /company/:id landing pages, so anonymous visitors must never be
+// able to rewrite them. Same x-admin-token guard as the money endpoints (fail-closed).
 app.post('/api/companies', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const comp = req.body;
   if (!comp || !comp.name) {
     return res.status(400).json({ error: 'اسم الشركة مطلوب.' });
@@ -556,6 +560,7 @@ app.post('/api/companies', (req, res) => {
 });
 
 app.post('/api/companies/:id/toggle-active', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const result = storage.toggleCompanyActive(req.params.id);
   const updatedList = storage.getCompanies();
   io.emit('companies_updated', updatedList);

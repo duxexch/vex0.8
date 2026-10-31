@@ -253,7 +253,13 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               {/* Account Number */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  رقم حساب اللاعب (Account ID)
+                  {lang === 'ar'
+                    ? 'رقم حساب اللاعب (Account ID)'
+                    : lang === 'es'
+                    ? 'ID de cuenta del jugador (Account ID)'
+                    : lang === 'ru'
+                    ? 'ID игрового счёта (Account ID)'
+                    : 'Player Account ID (Account ID)'}
                 </label>
                 <input
                   type="text"
@@ -264,7 +270,13 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 text-xs font-mono font-bold focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors text-center"
                 />
                 <span className="text-[10px] text-slate-500 mt-1 block">
-                  انسخ الرقم التعريفي من تطبيق {company.name} بعد إتمام التسجيل.
+                  {lang === 'ar'
+                    ? `انسخ الرقم التعريفي من تطبيق ${company.name} بعد إتمام التسجيل.`
+                    : lang === 'es'
+                    ? `Copia el ID de tu cuenta desde la app de ${company.name} tras completar el registro.`
+                    : lang === 'ru'
+                    ? `Скопируйте ID из приложения ${company.name} после завершения регистрации.`
+                    : `Copy your account ID from the ${company.name} app after completing registration.`}
                 </span>
               </div>
 

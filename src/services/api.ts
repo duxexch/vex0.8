@@ -3004,7 +3004,34 @@ class VexMobileApiService {
     if (changed) localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
   }
 
-  public async updateCompany(company: Company): Promise<void> {
+  // Company edits are SERVER-FIRST: the admin panel must write to the server's
+  // companies.json because that store is what the SSR /company/:id landing pages and
+  // every other device read (affiliate links, promo codes, logos). localStorage stays
+  // as the offline/cache layer. The POST carries the admin token; auth failures throw
+  // a clear message, while a network outage falls back to local storage.
+  public async updateCompany(company: Company, options?: { bestEffort?: boolean }): Promise<void> {
+    let res: Response | null = null;
+    try {
+      res = await fetch('/api/companies', {
+        method: 'POST',
+        headers: this.adminHeaders(),
+        body: JSON.stringify(company),
+      });
+    } catch {
+      // Network unreachable → offline fallback below.
+    }
+    if (res) {
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data && Array.isArray(data.companies)) {
+          localStorage.setItem(STORAGE_KEYS.COMPANIES, JSON.stringify(data.companies));
+        }
+        return;
+      }
+      if (!options?.bestEffort) {
+        await VexMobileApiService.throwAdminError(res, 'تعذر حفظ بيانات الشركة على السيرفر.');
+      }
+    }
     const companies = await this.getCompanies();
     const idx = companies.findIndex((c) => c.id === company.id);
     if (idx !== -1) {
@@ -3014,6 +3041,26 @@ class VexMobileApiService {
   }
 
   public async toggleCompanyActive(companyId: string): Promise<boolean> {
+    let res: Response | null = null;
+    try {
+      res = await fetch(`/api/companies/${encodeURIComponent(companyId)}/toggle-active`, {
+        method: 'POST',
+        headers: this.adminHeaders(),
+      });
+    } catch {
+      // Network unreachable → offline fallback below.
+    }
+    if (res) {
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data && data.success && Array.isArray(data.companies)) {
+          localStorage.setItem(STORAGE_KEYS.COMPANIES, JSON.stringify(data.companies));
+          return !!data.is_active;
+        }
+        throw new Error('استجابة غير متوقعة من السيرفر أثناء تبديل حالة الشركة.');
+      }
+      await VexMobileApiService.throwAdminError(res, 'تعذر تغيير حالة الشركة على السيرفر.');
+    }
     const companies = await this.getCompanies();
     const target = companies.find((c) => c.id === companyId);
     if (target) {
@@ -3028,6 +3075,25 @@ class VexMobileApiService {
     const companies = await this.getCompanies();
     if (companies.some((c) => c.id === company.id)) {
       throw new Error('معرف الشركة موجود مسبقاً في النظام.');
+    }
+    let res: Response | null = null;
+    try {
+      res = await fetch('/api/companies', {
+        method: 'POST',
+        headers: this.adminHeaders(),
+        body: JSON.stringify(company),
+      });
+    } catch {
+      // Network unreachable → offline fallback below.
+    }
+    if (res) {
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const list = Array.isArray(data.companies) && data.companies.length ? data.companies : [...companies, company];
+        localStorage.setItem(STORAGE_KEYS.COMPANIES, JSON.stringify(list));
+        return list;
+      }
+      await VexMobileApiService.throwAdminError(res, 'تعذر حفظ الشركة الجديدة على السيرفر.');
     }
     companies.push(company);
     localStorage.setItem(STORAGE_KEYS.COMPANIES, JSON.stringify(companies));
@@ -3085,14 +3151,15 @@ class VexMobileApiService {
       timestamp: new Date().toISOString(),
     };
 
-    // Update test record if company exists
+    // Update test record if company exists (best-effort: a missing admin token must
+    // never make a successful connection test look failed to the operator).
     if (comp) {
       comp.api_config = {
         ...config,
         last_test_status: 'success',
         last_test_at: new Date().toISOString(),
       };
-      await this.updateCompany(comp);
+      await this.updateCompany(comp, { bestEffort: true });
     }
 
     return {
@@ -3155,7 +3222,7 @@ class VexMobileApiService {
         }
         return m;
       });
-      await this.updateCompany(comp);
+      await this.updateCompany(comp, { bestEffort: true });
     }
 
     return {
