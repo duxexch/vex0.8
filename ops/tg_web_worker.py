@@ -131,7 +131,16 @@ def move(src, dst_dir, patch=None):
         return
     if patch:
         m.update(patch)
-    dst = os.path.join(dst_dir, os.path.basename(src))
+    # Claimed files carry a `.claim` suffix. Strip it when the file lands, so
+    # it matches the documented `<id>.json` contract: both this worker's
+    # sent_today() and the server's listTgWebMessages() filter on `.json`, so
+    # leaving the suffix would make today's sends invisible to the daily cap
+    # (observed: a delivered message still counting as used=0) and would leave
+    # unclaimed messages stuck in pending/ where claim_batch() never sees them.
+    name = os.path.basename(src)
+    if name.endswith(".claim"):
+        name = name[: -len(".claim")]
+    dst = os.path.join(dst_dir, name)
     tmp = dst + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(m, f, ensure_ascii=False, indent=2)
@@ -169,53 +178,238 @@ def claim_batch(limit):
     return claimed
 
 
-def open_chat(page, target):
-    """Open the target chat by SEARCH (the only reliable Telegram Web path).
+def _norm_title(s):
+    """Normalize a chat name so `@user_name`, `User Name` and `User  Name` compare equal."""
+    s = (s or "").replace("_", " ")
+    return re.sub(r"\s+", " ", s).strip().lower()
 
-    Numeric-id URL hashes and cold-phone lookups do not work (proven), so the
-    target is a search query: type it, click the first matching result row.
+
+def _names_match(query, name):
+    """True when `name` is plausibly the chat `query` points at.
+
+    Either side may be a fragment of the other: a handle resolves to a display
+    name (`@Vex_wallet_bot` -> "VEX WALLET") and an operator may pass a title
+    fragment (`ملوك التوقعات` -> "ملوك التوقعات | رهانات مباشرة").
     """
-    query = target[2:] if target.startswith("q:") else target
-    if not query.strip():
-        raise ValueError("empty search query")
+    q = _norm_title(query)
+    n = _norm_title(name)
+    if len(q) < 2 or not n:
+        return False
+    return q == n or q in n or (len(n) >= 4 and n in q)
 
-    # Ensure we are at the app root with the search box available.
-    if "web.telegram.org" not in page.url:
-        page.goto(URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
 
-    search = page.query_selector("input.input-field-input")
-    if not search:
-        # Search box not present (maybe a chat is open) — go home first.
-        page.goto(URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
-        search = page.query_selector("input.input-field-input")
-    if not search:
-        raise RuntimeError("search box not found")
+def _row_matches(query, peer_title, row_text):
+    """True only when the ROW'S NAME is the chat that was asked for.
 
-    search.click()
-    page.wait_for_timeout(300)
-    page.keyboard.press("Control+A")
-    page.keyboard.type(query, delay=random.randint(40, 90))
-    page.wait_for_timeout(3500)  # let global+local search resolve
+    Matching runs against .peer-title (the chat's name) — never the message
+    preview — so a chat that merely quoted the query in its last message can
+    not be selected. An `@handle` query additionally requires the exact handle
+    inside the row, which separates @Vex_wallet_bot from @VexWallet_bot.
+    """
+    if not _names_match(query, peer_title):
+        return False
+    if query.strip().startswith("@"):
+        handle = "@" + query.strip().lstrip("@").lower()
+        return handle in (row_text or "").lower()
+    return True
 
-    # Click the first VISIBLE result row (re-rendering can leave stale handles).
-    rows = page.query_selector_all(".chatlist-chat")
-    clicked = False
-    for r in rows:
+
+def _open_chat_title(page):
+    """Name of the chat currently open (header), or '' when none can be read."""
+    for sel in (".chat-info .peer-title", ".chat-info .title", ".chat-info"):
         try:
-            if r.is_visible():
-                r.click()
-                clicked = True
-                break
+            el = page.query_selector(sel)
+            if el:
+                text = (el.inner_text() or "").strip()
+                if text:
+                    return text.split("\n")[0].strip()
         except Exception:
             continue
-    if not clicked:
-        raise RuntimeError(f"no search result for {query!r}")
+    try:
+        col = page.query_selector("#column-center")
+        if col:
+            for line in (col.inner_text() or "").split("\n"):
+                line = line.strip()
+                if line:
+                    return line
+    except Exception:
+        pass
+    return ""
 
-    # Wait for the message composer to appear.
-    page.wait_for_selector("#message-text, textarea.input-message-input, .input-message-input", timeout=15000)
-    page.wait_for_timeout(700)
+
+def open_chat(page, target):
+    """Open the target chat by SEARCH, verifying WHO opened before returning.
+
+    Telegram Web cannot open a chat by numeric id or cold-phone (proven), so
+    the target is a search query. Search ranking is dynamic — the same query
+    returned a different first row on consecutive runs — so clicking "the first
+    row" delivered messages to strangers (observed: a random channel instead of
+    the bot). Hence: pick the row whose NAME matches, refuse to click when none
+    does, and re-read the opened chat's title afterwards. Any mismatch raises,
+    so the message lands in failed/ instead of reaching the wrong person.
+    """
+    query = (target[2:] if target.startswith("q:") else target).strip()
+    if not query:
+        raise ValueError("empty search query")
+
+    def focus_and_search():
+        """(Re)type the query into the search box — called once per attempt."""
+        # Ensure we are at the app root with the search box available.
+        if "web.telegram.org" not in page.url:
+            page.goto(URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(3000)
+
+        search = page.query_selector("input.input-field-input")
+        if not search:
+            # Search box not present (maybe a chat is open) — go home first.
+            page.goto(URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(3000)
+            search = page.query_selector("input.input-field-input")
+        if not search:
+            raise RuntimeError("search box not found")
+
+        # Focus the box with real input events. ElementHandle.click() waits for
+        # the element to be "stable", and this sidebar re-renders on every
+        # incoming message — observed to time out after 30s. Fall back to a
+        # coordinate click read fresh from the DOM, which cannot go stale.
+        try:
+            search.click(timeout=8000)
+        except Exception:
+            rect = page.evaluate(
+                """() => {
+                  const el = document.querySelector('input.input-field-input');
+                  if (!el) return null;
+                  const b = el.getBoundingClientRect();
+                  if (b.width < 10 || b.height < 10) return null;
+                  return {x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2)};
+                }"""
+            )
+            if not rect:
+                raise RuntimeError("search box not found")
+            page.mouse.click(rect["x"], rect["y"])
+        page.wait_for_timeout(300)
+        page.keyboard.press("Control+A")
+        page.keyboard.type(query, delay=random.randint(40, 90))
+        page.wait_for_timeout(3500)  # let global+local search resolve
+
+    # The chat list is live: Telegram re-renders it on every incoming message
+    # and detaches element handles mid-action (observed — handles read as
+    # "not visible" or "not attached"). So read the WHOLE result set in one
+    # evaluate and click by coordinates; no handle can go stale in between.
+    # `clickable` (elementFromPoint) proves nothing else — a banner, a menu,
+    # another row — sits on top of the centre we are about to click.
+    SNAPSHOT_JS = """() => {
+      const vh = innerHeight, out = [];
+      for (const r of document.querySelectorAll('.chatlist-chat')) {
+        const b = r.getBoundingClientRect();
+        if (b.width < 10 || b.height < 10) continue;
+        const t = r.querySelector('.peer-title');
+        const cx = Math.round(b.x + b.width / 2), cy = Math.round(b.y + b.height / 2);
+        const hit = document.elementFromPoint(cx, cy);
+        const hitRow = hit && hit.closest ? hit.closest('.chatlist-chat') : null;
+        out.push({
+          title: t ? (t.textContent || '').trim() : '',
+          text: (r.innerText || ''),
+          cx, cy,
+          inView: b.top >= 60 && b.bottom <= vh - 10,
+          clickable: hitRow === r,
+        });
+      }
+      return out;
+    }"""
+
+    def snapshot():
+        return page.evaluate(SNAPSHOT_JS)
+
+    def matching(rows):
+        # NAME only — never the message preview (a chat that merely quoted the
+        # query in its last message must not be selectable).
+        return next((r for r in rows if _row_matches(query, r["title"], r["text"])), None)
+
+    def scroll_list(delta):
+        """Scroll whichever ancestor of the chat list actually scrolls."""
+        page.evaluate(
+            """(delta) => {
+              let el = document.querySelector('.chatlist');
+              while (el && el.scrollHeight <= el.clientHeight + 20) el = el.parentElement;
+              if (el) el.scrollTop += delta;
+            }""",
+            delta,
+        )
+        page.wait_for_timeout(700)
+
+    # (1)-(3) Select by NAME, click, and prove WHO opened — retried because a
+    # click can land while the list is mid-re-render (observed: the composer
+    # stays hidden, i.e. no chat opened at all). Fail closed throughout:
+    # falling back to "some row" is exactly what gets the account reported
+    # and banned, and a message to the wrong person is unrecoverable.
+    last_err = "no attempt made"
+    for _attempt in range(3):
+        try:
+            focus_and_search()
+        except Exception as e:
+            last_err = f"search failed ({str(e)[:140]})"
+            continue
+
+        # Select by NAME, scrolling the (virtual) list if the hit is below
+        # the fold.
+        row = matching(snapshot())
+        for _ in range(6):
+            if row is not None:
+                break
+            scroll_list(700)
+            row = matching(snapshot())
+        if row is None:
+            last_err = f"no result row named like {query!r} ({len(snapshot())} rows seen)"
+            continue
+
+        # Bring it on screen if needed, confirm it is the topmost element at
+        # its coordinates, then click with real input events.
+        for _ in range(8):
+            if row["inView"] and row["clickable"]:
+                break
+            page.mouse.move(row["cx"], max(80, min(row["cy"], 800)))
+            page.mouse.wheel(0, 300 if row["cy"] > 0 else -300)
+            page.wait_for_timeout(400)
+            row = matching(snapshot())
+            if row is None:
+                break
+        if row is None:
+            last_err = f"result row for {query!r} vanished before click"
+            continue
+        if not (row["inView"] and row["clickable"]):
+            last_err = f"result row for {query!r} is covered - refusing to click"
+            continue
+        page.mouse.click(row["cx"], row["cy"])
+
+        # The composer must be VISIBLE — a hidden one means no chat opened.
+        try:
+            page.wait_for_selector(
+                "#message-text, textarea.input-message-input, .input-message-input",
+                timeout=12000,
+            )
+        except Exception as e:
+            last_err = f"composer did not appear after click ({str(e)[:120]})"
+            continue
+
+        # Prove the chat that opened is the one that was asked for. The header
+        # renders lazily (3-9s observed after the click), so poll until it
+        # matches — an early read would fail-closed every send, and a late read
+        # could still be the previously opened chat.
+        opened = ""
+        deadline = time.time() + 20
+        while True:
+            opened = _open_chat_title(page)
+            if _names_match(query, opened):
+                break
+            if time.time() >= deadline:
+                break
+            page.wait_for_timeout(500)
+        if _names_match(query, opened):
+            return
+        last_err = f"opened chat {opened!r} does not match target {query!r}"
+
+    raise RuntimeError(f"{last_err} - refusing to send")
 
 
 def send_one(page, msg):
