@@ -355,10 +355,20 @@ const SOURCE_JUNK_LATIN = /^(code|promo|pomo|www|https?|com|site|link|register|d
 
 function sourceImageQuery(text: string): string {
   const clean = text.replace(/https?:\/\/\S+/g, ' ').replace(/[*_`#[\]()<>]/g, ' ');
+  // Brand guard: never search a bookmaker's name — a branded screenshot under
+  // another company's promo post would advertise a competitor.
+  const brands = loadCompanies().map((c) => c.name.toLowerCase()).filter((n) => n.length > 2);
   // Latin words = team/match names ("Inter Miami - Orlando City") — best query.
-  const latin = (clean.match(/[A-Za-z][A-Za-z'-]{1,}/g) || [])
-    .map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ''))
-    .filter((w) => w.length > 2 && !SOURCE_JUNK_LATIN.test(w) && !/bet$/i.test(w));
+  const latin = (clean.match(/[A-Za-z][A-Za-z0-9'-]{1,}/g) || [])
+    .map((w) => w.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9'-]+$/g, '').trim())
+    .filter((w) => {
+      if (w.length < 3 || w.length > 20) return false;
+      if (/\d/.test(w)) return false; // promo codes (WPL5, QLR9) are not subjects
+      if (SOURCE_JUNK_LATIN.test(w)) return false;
+      const low = w.toLowerCase();
+      if (/bet$/i.test(low)) return false;
+      return !brands.some((n) => n.includes(low) || low.includes(n));
+    });
   if (latin.length >= 2) return `${latin.slice(0, 6).join(' ')} football match`;
   for (const [re, q] of SOURCE_IMAGE_RULES) if (re.test(clean)) return q;
   return 'football stadium night match';

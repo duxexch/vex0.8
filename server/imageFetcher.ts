@@ -31,8 +31,56 @@ function safeName(query: string): string {
   return query.toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/g, '_').slice(0, 60);
 }
 
+// ---------------------------------------------------------------------------
+// Brand safety — never download an image whose URL carries a bookmaker brand.
+// A competitor-branded screenshot under our promo post advertises a rival, so
+// every download in every chain passes this gate (companies.json + known list).
+// ---------------------------------------------------------------------------
+let brandTokenCache: string[] | null = null;
+function brandBlocklist(): string[] {
+  if (!brandTokenCache) {
+    const extra = [
+      'betwinner', '1xbet', 'melbet', 'mostbet', 'linebet', 'bizbet', 'betjam',
+      'gooobet', 'paripesa', '888starz', 'parimatch', 'bet365', 'betfair',
+      'fonbet', 'williamhill', 'pinnacle', 'winline', 'ligastavok', '1win',
+      '22bet', 'betway', 'draftkings', 'fanuel', 'unibet', 'bwin', 'stake',
+      'betongame', 'xpari', 'winwin',
+    ];
+    let names: string[] = [];
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'companies.json'), 'utf-8'));
+      if (Array.isArray(data)) names = data.map((c: any) => String(c?.name || '').toLowerCase()).filter(Boolean);
+    } catch { /* no companies file — the built-in list still guards */ }
+    brandTokenCache = Array.from(new Set([...names, ...extra])).filter((t) => t.length >= 4);
+  }
+  return brandTokenCache;
+}
+
+function isBrandSafeUrl(url: string): boolean {
+  const low = url.toLowerCase();
+  return !brandBlocklist().some((t) => low.includes(t));
+}
+
+// ---------------------------------------------------------------------------
+// Source cooldowns — a hard network failure (blocked host, 5xx burst) pauses
+// that source for 30min instead of re-stalling every post. One warn per outage.
+// ---------------------------------------------------------------------------
+const sourceDownUntil = new Map<string, number>();
+const SOURCE_COOLDOWN_MS = 30 * 60 * 1000;
+
+function sourceUsable(name: string): boolean {
+  const until = sourceDownUntil.get(name);
+  return !until || Date.now() > until;
+}
+
+function markSourceDown(name: string, why: string): void {
+  if (!sourceDownUntil.has(name)) console.warn(`[ImageFetcher] ${name} unavailable — cooldown 30min:`, why);
+  sourceDownUntil.set(name, Date.now() + SOURCE_COOLDOWN_MS);
+}
+
 async function downloadImage(url: string, dest: string): Promise<boolean> {
   try {
+    if (!isBrandSafeUrl(url)) return false;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
       signal: AbortSignal.timeout(15000),
@@ -84,6 +132,7 @@ async function bingImageSearch(query: string, destBase: string): Promise<string 
     return null;
   } catch (err: any) {
     console.warn('[ImageFetcher] bing search failed:', err.message);
+    markSourceDown('bing', err.message);
     return null;
   } finally {
     await page.close();
@@ -115,6 +164,7 @@ async function googleImageSearch(query: string, destBase: string): Promise<strin
     return null;
   } catch (err: any) {
     console.warn('[ImageFetcher] google search failed:', err.message);
+    markSourceDown('google', err.message);
     return null;
   } finally {
     await page.close();
@@ -162,20 +212,24 @@ async function googleCseImageSearch(query: string, destBase: string): Promise<st
  * chain: no key, no browser, stable JSON — so it beats the scrapers on cost.
  */
 async function openverseImageSearch(query: string, destBase: string): Promise<string | null> {
+  if (!sourceUsable('openverse')) return null;
   try {
     const base = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(query)}&page_size=10`;
     let url = `${base}&license_type=commercial&size=large`;
     let res = await fetch(url, {
       headers: { 'User-Agent': 'vex-deals/1.0' },
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) {
       // some deployments reject the optional filters — retry with just q+page_size
       res = await fetch(base, {
         headers: { 'User-Agent': 'vex-deals/1.0' },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(10000),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        markSourceDown('openverse', `HTTP ${res.status}`);
+        return null;
+      }
     }
     const data = await res.json().catch(() => ({}));
     const items: any[] = Array.isArray(data.results) ? data.results : [];
@@ -187,7 +241,8 @@ async function openverseImageSearch(query: string, destBase: string): Promise<st
     }
     return null;
   } catch (err: any) {
-    console.warn('[ImageFetcher] openverse failed:', err?.message);
+    // network-level failure (blocked host / timeout) → pause the source
+    markSourceDown('openverse', err?.message || 'network error');
     return null;
   }
 }
@@ -198,6 +253,7 @@ async function openverseImageSearch(query: string, destBase: string): Promise<st
  * before the AI generator.
  */
 async function loremFlickrImage(query: string, destBase: string): Promise<string | null> {
+  if (!sourceUsable('loremflickr')) return null;
   const tags = query
     .toLowerCase()
     .split(/[^a-z0-9]+/)
@@ -206,10 +262,33 @@ async function loremFlickrImage(query: string, destBase: string): Promise<string
     .join(',');
   if (!tags) return null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const dest = `${destBase}_lf${attempt}.jpg`;
     const lock = (Date.now() % 99991) + attempt;
-    if (await downloadImage(`https://loremflickr.com/1024/768/${encodeURIComponent(tags)}?lock=${lock}`, dest)) {
+    const url = `https://loremflickr.com/1024/768/${encodeURIComponent(tags)}?lock=${lock}`;
+    if (!isBrandSafeUrl(url)) continue;
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36' },
+        signal: AbortSignal.timeout(10000),
+        redirect: 'follow',
+      });
+      if (!res.ok) {
+        markSourceDown('loremflickr', `HTTP ${res.status}`);
+        return null;
+      }
+      const type = res.headers.get('content-type') || '';
+      if (!type.startsWith('image/')) {
+        markSourceDown('loremflickr', `content-type ${type || 'empty'}`);
+        return null;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 5000 || buf.length > 8 * 1024 * 1024) return null;
+      const dest = `${destBase}_lf${attempt}.jpg`;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, buf);
       return dest;
+    } catch (err: any) {
+      markSourceDown('loremflickr', err?.message || 'network error');
+      return null;
     }
   }
   return null;
