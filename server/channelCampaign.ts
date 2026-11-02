@@ -260,28 +260,37 @@ type InlineButton =
 function buildButtons(c: CompanyInfo | null, ch: ChannelProfile, seed: string): InlineButton[][] {
   const rows: InlineButton[][] = [];
   const rotating = rotateSiteLink(seed + (ch.chat_id || ''));
-  // The fire banner GIF is sent bottom-flush, so its flames sit directly on top of
-  // this keyboard — the buttons read as the source of the fire/money burst. The
-  // emoji anchors carry that idea into the button labels themselves.
   if (c) {
-    // Row 1: single wide registration deep link — red marks it as the primary CTA
-    if (c.affiliate_link) {
-      rows.push([{ text: `🔥 سجّل واربح الآن — ${c.name}${c.bonus_text ? ' 🎁' : ''}`, url: c.affiliate_link, style: 'danger' }]);
-    }
+    // Row 1: full-width registration deep link — red marks it as the primary CTA.
+    // The company name inside the label is what makes a dedicated channel's post
+    // read as that brand's own promotion.
+    rows.push([{ text: `🏆 ${c.name} سجل واربح الآن 🎁`, url: c.affiliate_link || rotating, style: 'danger' }]);
     // Row 2: one-tap promo-code copy (green) + app download (blue)
     const row2: InlineButton[] = [];
     if (c.promo_code) {
-      row2.push({ text: `💰 انسخ الكود ${c.promo_code}`, copy_text: { text: c.promo_code }, style: 'success' });
+      row2.push({ text: `📲 نسخ الكود ${c.promo_code}`, copy_text: { text: c.promo_code }, style: 'success' });
     }
-    if (c.app_link) row2.push({ text: `📲 تحميل التطبيق`, url: c.app_link, style: 'primary' });
+    if (c.app_link) row2.push({ text: '📱 تحميل التطبيق', url: c.app_link, style: 'primary' });
     if (row2.length) rows.push(row2);
-    if (!rows.length) rows.push([{ text: `🌐 ${c.name}`, url: rotating, style: 'primary' }]);
   } else {
     const label = String(ch.brand?.company || '').trim() || 'VEX';
-    rows.push([{ text: `🔥 افتح منصة ${label} الآن`, url: rotating, style: 'danger' }]);
-    rows.push([{ text: '💰 تحميل تطبيق الموبايل', url: `${rotating}/download/apk`, style: 'primary' }]);
+    rows.push([{ text: `🏆 ${label} سجل واربح الآن 🎁`, url: rotating, style: 'danger' }]);
+    rows.push([{ text: '📱 تحميل التطبيق', url: `${rotating}/download/apk`, style: 'primary' }]);
   }
   return rows;
+}
+
+/**
+ * CTA keyboard for ANY post that lands in a betting-related channel — the same
+ * three-button set (red register / green code copy / blue app) attached by the
+ * campaign publisher AND by the shared send pipeline (forecasts, promos, live).
+ * Returns null for non-betting channels so their posts stay clean.
+ */
+export function channelCtaKeyboard(ch: ChannelProfile | null | undefined, seed: string): InlineButton[][] | null {
+  if (!ch || !ch.betting_related) return null;
+  if (ch.category === 'users' || ch.category === 'support' || ch.category === 'payments') return null;
+  const kb = buildButtons(resolveCompany(ch), ch, seed || 'seed');
+  return kb.length ? kb : null;
 }
 
 // ------------------------------------------------------------- post media
@@ -305,7 +314,8 @@ const EXPLAINER_IMAGE_QUERIES: Record<string, string> = {
 
 /**
  * Explainer posts teach, so they carry a real content photo fetched by topic.
- * Promo/source posts skip this and get the fire banner instead.
+ * Source posts get their own topical photo (resolveSourceImage below) instead
+ * of the old fire banner — every post's media must express the post itself.
  */
 async function resolveExplainerImage(topic: ExplainerTopic | null | undefined): Promise<string | null> {
   if (!topic) return null;
@@ -315,6 +325,53 @@ async function resolveExplainerImage(topic: ExplainerTopic | null | undefined): 
     return await fetchPostImage(undefined, query);
   } catch (err: any) {
     console.warn(`[Campaign] image fetch failed for ${topic.id}:`, err?.message || err);
+    return null;
+  }
+}
+
+/**
+ * English image queries for source betting tips. The corpus is Arabic, but
+ * every image source in imageFetcher searches far better in English, so the
+ * tip's meaning is mapped to a neutral English scene (goal celebration,
+ * stadium night, trophy…) and Latin team names win when present.
+ */
+const SOURCE_IMAGE_RULES: Array<[RegExp, string]> = [
+  [/دوري\s*(الأبطال|الابطال|ابطال)|ابطال\s*أوروبا|ابطال اوروبا|champions\s*league/i, 'champions league football stadium night'],
+  [/الشوط\s*(الأول|الاول)|شوط\s*(الأول|الاول)/, 'football first half action'],
+  [/كلا\s*(الفريقين|الفريقان|فريق)|سيسجلان|يسجلان|سجلان/, 'football teams scoring a goal'],
+  [/اكثر\s*من\s*هدف|أكثر\s*من\s*هدف|اهداف|هدفين|هدف|جول/, 'football goal celebration'],
+  [/فوز|يفوز|فائز|انتصار/, 'football team victory celebration'],
+  [/تعادل/, 'football match draw'],
+  [/بطاقة|إنذار|انذار|طرد/, 'football yellow card referee'],
+  [/ركنية|ركنيه/, 'football corner kick'],
+  [/كأس|كاس|بطولة/, 'football trophy cup celebration'],
+  [/منتخب|مونديال|كأس\s*عالم|كاس\s*عالم/, 'world cup national football team'],
+  [/مباراة|مباريات|لقاء|الليلة|اليوم/, 'football stadium night match'],
+  [/رهان|مراهنة|برومو|كود|ترويجي|خصم/, 'sports betting odds smartphone'],
+];
+
+/** Junk Latin tokens that are brand/promo boilerplate, never a search subject. */
+const SOURCE_JUNK_LATIN = /^(code|promo|pomo|www|https?|com|site|link|register|download|app|bonus|win|bet|refpa|telegra|click|today|live)$/i;
+
+function sourceImageQuery(text: string): string {
+  const clean = text.replace(/https?:\/\/\S+/g, ' ').replace(/[*_`#[\]()<>]/g, ' ');
+  // Latin words = team/match names ("Inter Miami - Orlando City") — best query.
+  const latin = (clean.match(/[A-Za-z][A-Za-z'-]{1,}/g) || [])
+    .map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ''))
+    .filter((w) => w.length > 2 && !SOURCE_JUNK_LATIN.test(w) && !/bet$/i.test(w));
+  if (latin.length >= 2) return `${latin.slice(0, 6).join(' ')} football match`;
+  for (const [re, q] of SOURCE_IMAGE_RULES) if (re.test(clean)) return q;
+  return 'football stadium night match';
+}
+
+/** Topical photo for a source post — replaces the old fire banner on every send. */
+async function resolveSourceImage(source: SourcePost | null | undefined): Promise<string | null> {
+  if (!source?.text) return null;
+  const query = sourceImageQuery(source.text);
+  try {
+    return await fetchPostImage(undefined, query);
+  } catch (err: any) {
+    console.warn(`[Campaign] source image fetch failed #${source.id}:`, err?.message || err);
     return null;
   }
 }
@@ -665,24 +722,9 @@ async function checkRights(ch: ChannelProfile): Promise<{ ok: boolean; error?: s
   }
 }
 
-// The fire loop that rides along with every post. `data/` is the compose volume, so
-// dropping a file there overrides the baked-in one without a rebuild.
-const FIRE_GIF_CANDIDATES = [
-  path.join(process.cwd(), 'data', 'fire.gif'),
-  path.join(process.cwd(), 'public', 'fire.gif'),
-];
-const FIRE_GIF_CAPTION_LIMIT = 1024; // sendAnimation caps captions here (sendMessage allows 4096)
-
-function resolveFireGif(): string | null {
-  const flag = (process.env.CAMPAIGN_FIRE_GIF || '').toLowerCase();
-  if (flag === '0' || flag === 'false' || flag === 'off') return null;
-  for (const p of FIRE_GIF_CANDIDATES) {
-    try {
-      if (fs.existsSync(p) && fs.statSync(p).size > 0) return p;
-    } catch { /* unreadable candidate — try the next one */ }
-  }
-  return null;
-}
+// sendPhoto caps captions at 1024 chars (sendMessage allows 4096) — posts longer
+// than that go out as plain text so no content is ever cut.
+const POST_CAPTION_LIMIT = 1024;
 
 async function sendTextPost(botToken: string, chatId: string, text: string, replyMarkup?: object) {
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -690,22 +732,6 @@ async function sendTextPost(botToken: string, chatId: string, text: string, repl
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
     signal: AbortSignal.timeout(20000),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!data.ok && !data.description) data.description = `HTTP ${res.status}`;
-  return data;
-}
-
-async function sendAnimationPost(botToken: string, chatId: string, gifPath: string, caption: string, replyMarkup?: object) {
-  const form = new FormData();
-  form.append('chat_id', chatId);
-  form.append('animation', new Blob([await fs.promises.readFile(gifPath)], { type: 'image/gif' }), path.basename(gifPath));
-  form.append('caption', caption);
-  if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup));
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendAnimation`, {
-    method: 'POST',
-    body: form,
-    signal: AbortSignal.timeout(60000),
   });
   const data = await res.json().catch(() => ({}));
   if (!data.ok && !data.description) data.description = `HTTP ${res.status}`;
@@ -721,7 +747,7 @@ function imageContentType(filePath: string): string {
   return 'image/jpeg';
 }
 
-/** Content photo for explainer posts — same multipart shape as the fire banner. */
+/** Content photo for every post — same multipart shape as sendTextPost. */
 async function sendPhotoPost(botToken: string, chatId: string, photoPath: string, caption: string, replyMarkup?: object) {
   const form = new FormData();
   form.append('chat_id', chatId);
@@ -743,31 +769,26 @@ async function sendChannelPost(
   text: string,
   keyboard: InlineButton[][],
   photoPath?: string | null
-): Promise<{ ok: boolean; messageId?: number; error?: string; animated?: boolean }> {
+): Promise<{ ok: boolean; messageId?: number; error?: string }> {
   const publisher = channelsStore.getPublisher();
   if (!publisher.bot_token) return { ok: false, error: 'no publisher bot token' };
   const replyMarkup = keyboard.length ? { inline_keyboard: keyboard } : undefined;
-  // Telegram allows one media per message, so a content photo replaces the fire
-  // banner. Promo/source posts keep the fire so its flames burst straight out of
-  // the buttons; both media types share sendAnimation's 1024-char caption limit.
-  const fitsCaption = text.length <= FIRE_GIF_CAPTION_LIMIT;
+  // Every campaign post carries a topical photo when it fits Telegram's 1024-char
+  // caption cap; longer texts go out as a plain text post so nothing is truncated.
+  const fitsCaption = text.length <= POST_CAPTION_LIMIT;
   let photo = photoPath && fitsCaption ? photoPath : null;
-  let gif = !photo && fitsCaption ? resolveFireGif() : null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const data = photo
         ? await sendPhotoPost(publisher.bot_token, chatId, photo, text, replyMarkup)
-        : gif
-          ? await sendAnimationPost(publisher.bot_token, chatId, gif, text, replyMarkup)
-          : await sendTextPost(publisher.bot_token, chatId, text, replyMarkup);
+        : await sendTextPost(publisher.bot_token, chatId, text, replyMarkup);
       // A media send can fail for reasons a plain post won't (bad file, media
       // parse). Degrade to a text post instead of burning the queue entry.
-      if (!data.ok && (gif || photo) && !/retry after|429|500|502|503|timeout/i.test(String(data.description))) {
-        gif = null;
+      if (!data.ok && photo && !/retry after|429|500|502|503|timeout/i.test(String(data.description))) {
         photo = null;
         continue;
       }
-      if (data.ok) return { ok: true, messageId: data.result?.message_id, animated: !!gif };
+      if (data.ok) return { ok: true, messageId: data.result?.message_id };
       const error = data.description || 'send failed';
       const retryable = /retry after|timeout|500|502|503|429/i.test(String(error));
       if (!retryable || attempt === 3) return { ok: false, error };
@@ -959,9 +980,9 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
       return { posted: 1 };
     }
 
-    // Explainers teach, so they carry a real content photo (fetched by topic).
-    // Promo/source posts skip this and get the fire banner inside sendChannelPost.
-    const mediaImage = isExplainer ? await resolveExplainerImage(topic) : null;
+    // Every post carries a topical photo: explainers fetch by topic, source tips
+    // fetch a scene that expresses the tip itself (no fire banner anymore).
+    const mediaImage = isExplainer ? await resolveExplainerImage(topic) : await resolveSourceImage(source);
     const sent = await sendChannelPost(ch.chat_id, text, keyboard, mediaImage);
     next.attempt++;
     if (sent.ok) {
@@ -979,8 +1000,8 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
         state.coachNotes[ch.chat_id] = notes.slice(-10);
       }
       saveState(state);
-      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, messageId: sent.messageId, sourceId: next.sourceId, kind: next.kind, llm, buttons: keyboard.length, animated: sent.animated, coachNote: note || undefined });
-      console.log(`[Campaign] posted to ${ch.title} (msg ${sent.messageId}, llm=${llm}, buttons=${keyboard.length}${sent.animated ? ', fire-gif' : ''})`);
+      emitFn('campaign:posted', { chatId: ch.chat_id, title: ch.title, messageId: sent.messageId, sourceId: next.sourceId, kind: next.kind, llm, buttons: keyboard.length, coachNote: note || undefined });
+      console.log(`[Campaign] posted to ${ch.title} (msg ${sent.messageId}, llm=${llm}, buttons=${keyboard.length}${mediaImage ? ', photo' : ''})`);
       return { posted: 1 };
     }
     if (next.attempt >= 3) {
@@ -1018,7 +1039,6 @@ export function getCampaignStatus(): any {
     queue: { total: state.queue.length, pending: pending.length, posted: posted.length, failed: failed.length },
     stats: state.stats,
     scheduler: { running: !!schedulerTimer, intervalMinutes: 8 },
-    fireGif: resolveFireGif(),
     next: pending.slice(0, 3).map((e) => {
       const ch = channelsStore.get(e.chatId);
       return { entryId: e.id, sourceId: e.sourceId, channel: ch?.title || e.chatId };

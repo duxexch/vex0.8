@@ -5,6 +5,7 @@ import { channelsStore, ChannelProfile } from './channelsStore';
 import { sentryGate } from './postSentry';
 import { getNewsScraper, ScrapedArticle } from './newsScraper';
 import { fetchPostImage } from './imageFetcher';
+import { channelCtaKeyboard } from './channelCampaign';
 import { agentEngine, availableProviders, AIProvider } from './agentEngine';
 import { storage } from './storage';
 
@@ -535,6 +536,19 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
   }
   chatId = targetChatId;
   text = targetText;
+
+  // 🎯 CTA — every post landing in a betting-related channel carries the three
+  // registration buttons (red register / green code copy / blue app), named for
+  // the company that channel is dedicated to. Built AFTER the sentry reroute so
+  // the name always matches the channel that actually receives the post.
+  let replyMarkup: object | undefined;
+  try {
+    const kb = channelCtaKeyboard(channelsStore.get(chatId), text.slice(0, 80));
+    if (kb && kb.length) replyMarkup = { inline_keyboard: kb };
+  } catch {
+    /* never block a send on buttons */
+  }
+
   if (process.env.DRY_RUN === '1') {
     console.log(`[Publisher][DRY_RUN] → ${chatId}: ${text.slice(0, 120).replace(/\n/g, ' ⏎ ')}`);
     return { ok: true, sentTo: chatId };
@@ -551,6 +565,7 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
       form.append('caption', caption.replace(/<[^>]*$/, ''));
       form.append('parse_mode', parseMode);
       form.append('photo', new Blob([fs.readFileSync(imagePath)], { type: 'image/jpeg' }), path.basename(imagePath));
+      if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup));
       const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
       const data: any = await res.json();
       if (data.ok) return { ok: true, sentTo: chatId };
@@ -560,7 +575,7 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode }),
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
       signal: AbortSignal.timeout(30000),
     });
     const data: any = await res.json();
@@ -570,7 +585,7 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
       const res2 = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: stripHtml(text) }),
+        body: JSON.stringify({ chat_id: chatId, text: stripHtml(text), ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
         signal: AbortSignal.timeout(30000),
       });
       const data2: any = await res2.json();

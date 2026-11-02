@@ -4,8 +4,9 @@ import * as path from 'path';
 import { launchBrowser } from './browser';
 
 // =========================================================================
-// VEX Image Fetcher — browser-based image search for posts (no API key needed).
-// Flow: article image → Bing Images search (Playwright) → Google Images → none.
+// VEX Image Fetcher — post image sourcing (all free tiers, cheapest first):
+// article image → Google CSE (if keys) → Openverse (keyless API) → Bing →
+// Google (Playwright) → LoremFlickr (keyless) → Pollinations (keyless AI).
 // Downloads to data/post-images/ and returns a local path.
 // =========================================================================
 
@@ -156,6 +157,65 @@ async function googleCseImageSearch(query: string, destBase: string): Promise<st
 }
 
 /**
+ * Openverse — free keyless Creative-Commons image search API (commercial-use
+ * filter on, since these posts promote affiliate links). First real API in the
+ * chain: no key, no browser, stable JSON — so it beats the scrapers on cost.
+ */
+async function openverseImageSearch(query: string, destBase: string): Promise<string | null> {
+  try {
+    const base = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(query)}&page_size=10`;
+    let url = `${base}&license_type=commercial&size=large`;
+    let res = await fetch(url, {
+      headers: { 'User-Agent': 'vex-deals/1.0' },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) {
+      // some deployments reject the optional filters — retry with just q+page_size
+      res = await fetch(base, {
+        headers: { 'User-Agent': 'vex-deals/1.0' },
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) return null;
+    }
+    const data = await res.json().catch(() => ({}));
+    const items: any[] = Array.isArray(data.results) ? data.results : [];
+    for (let i = 0; i < items.length; i++) {
+      const u = items[i]?.url;
+      if (!u) continue;
+      const dest = `${destBase}_ov${i}.jpg`;
+      if (await downloadImage(u, dest)) return dest;
+    }
+    return null;
+  } catch (err: any) {
+    console.warn('[ImageFetcher] openverse failed:', err?.message);
+    return null;
+  }
+}
+
+/**
+ * LoremFlickr — free keyless keyword-locked photos straight from Flickr.
+ * Always answers (rotates via ?lock=), so it is the last real-photo source
+ * before the AI generator.
+ */
+async function loremFlickrImage(query: string, destBase: string): Promise<string | null> {
+  const tags = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(',');
+  if (!tags) return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const dest = `${destBase}_lf${attempt}.jpg`;
+    const lock = (Date.now() % 99991) + attempt;
+    if (await downloadImage(`https://loremflickr.com/1024/768/${encodeURIComponent(tags)}?lock=${lock}`, dest)) {
+      return dest;
+    }
+  }
+  return null;
+}
+
+/**
  * Fetch a suitable image for a post.
  * @param preferredUrl image URL already present in the article (tried first)
  * @param query search query when fallback search is needed (e.g. "Real Madrid vs Barcelona live")
@@ -170,9 +230,14 @@ export async function fetchPostImage(preferredUrl: string | undefined, query: st
     if (await downloadImage(preferredUrl, dest)) return dest;
   }
 
-  // Official Google Images API first when configured, then the keyless scrapers.
+  // Official Google Images API first when configured…
   const viaCse = await googleCseImageSearch(query, destBase);
   if (viaCse) return viaCse;
+
+  // …then the FREE keyless APIs (Openverse), then the free browser scrapers,
+  // then LoremFlickr (keyless), and finally Pollinations (keyless AI).
+  const viaOpenverse = await openverseImageSearch(query, destBase);
+  if (viaOpenverse) return viaOpenverse;
 
   const viaBing = await bingImageSearch(query, destBase);
   if (viaBing) return viaBing;
@@ -180,8 +245,11 @@ export async function fetchPostImage(preferredUrl: string | undefined, query: st
   const viaGoogle = await googleImageSearch(query, destBase);
   if (viaGoogle) return viaGoogle;
 
+  const viaFlickr = await loremFlickrImage(query, destBase);
+  if (viaFlickr) return viaFlickr;
+
   // Last resort: keyless Pollinations AI — generates a fitting graphic instead
-  // of returning nothing when both browser searches come up empty.
+  // of returning nothing when every real-photo source comes up empty.
   const aiDest = `${destBase}_ai.jpg`;
   return (await pollinationsImage(query, aiDest)) ? aiDest : null;
 }

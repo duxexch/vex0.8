@@ -1166,7 +1166,7 @@ const CATALOG: FreeApiEntry[] = [
     endpoint: 'https://loremflickr.com',
     auth: 'keyless',
     quota: 'free public, rate-limited',
-    wired: '',
+    wired: 'imageFetcher — last real-photo fallback (before Pollinations AI)',
     notes: 'Keyword-locked Flickr images: /320/240/football',
   },
   {
@@ -2269,7 +2269,7 @@ const CATALOG: FreeApiEntry[] = [
     endpoint: 'https://api.openverse.org/v1/images/?q=cat&page_size=1',
     auth: 'keyless',
     quota: 'free anonymous API (rate-limited)',
-    wired: '',
+    wired: 'imageFetcher — first keyless API in the post-image chain (after Google CSE)',
     notes: 'CC-licensed images across providers; occasional timeouts.',
   },
   {
