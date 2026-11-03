@@ -50,7 +50,7 @@ function brandBlocklist(): string[] {
       '123rf', 'depositphotos', 'canstockphoto', 'vectorstock', 'stock.adobe',
       'fotolia', 'agefotostock', 'imago-images', 'picfair', 'freepik',
       'vecteezy', 'pngtree', 'magnific', 'envato', 'pond5', 'clipdealer',
-      'premium-photo', 'premium-image',
+      'premium-photo', 'premium-image', 'ftcdn.net', 'adobe stock',
     ];
     let names: string[] = [];
     try {
