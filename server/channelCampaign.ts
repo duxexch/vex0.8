@@ -298,7 +298,7 @@ export function channelCtaKeyboard(ch: ChannelProfile | null | undefined, seed: 
 // English search queries per explainer topic. Searches run far better in English
 // than the Arabic post titles, and the resulting photos are language-neutral.
 const EXPLAINER_IMAGE_QUERIES: Record<string, string> = {
-  'ai-predictions': 'football artificial intelligence match prediction analytics',
+  'ai-predictions': 'soccer artificial intelligence match prediction analytics',
   lottery: 'lottery jackpot gold tickets celebration',
   'wallet-cashback': 'digital wallet mobile payment cashback money',
   'companies-directory': 'sports betting bookmaker odds comparison smartphone',
@@ -308,7 +308,7 @@ const EXPLAINER_IMAGE_QUERIES: Record<string, string> = {
   'telegram-bot': 'telegram bot smartphone chat app',
   bonuses: 'casino bonus gift box reward',
   'how-to-start': 'online betting tutorial registration steps',
-  'live-commentary': 'live football stadium night match',
+  'live-commentary': 'live soccer stadium night match',
   support: 'customer support headset agent',
 };
 
@@ -336,17 +336,17 @@ async function resolveExplainerImage(topic: ExplainerTopic | null | undefined): 
  * stadium night, trophy…) and Latin team names win when present.
  */
 const SOURCE_IMAGE_RULES: Array<[RegExp, string]> = [
-  [/دوري\s*(الأبطال|الابطال|ابطال)|ابطال\s*أوروبا|ابطال اوروبا|champions\s*league/i, 'champions league football stadium night'],
-  [/الشوط\s*(الأول|الاول)|شوط\s*(الأول|الاول)/, 'football first half action'],
-  [/كلا\s*(الفريقين|الفريقان|فريق)|سيسجلان|يسجلان|سجلان/, 'football teams scoring a goal'],
-  [/اكثر\s*من\s*هدف|أكثر\s*من\s*هدف|اهداف|هدفين|هدف|جول/, 'football goal celebration'],
-  [/فوز|يفوز|فائز|انتصار/, 'football team victory celebration'],
-  [/تعادل/, 'football match draw'],
-  [/بطاقة|إنذار|انذار|طرد/, 'football yellow card referee'],
-  [/ركنية|ركنيه/, 'football corner kick'],
-  [/كأس|كاس|بطولة/, 'football trophy cup celebration'],
-  [/منتخب|مونديال|كأس\s*عالم|كاس\s*عالم/, 'world cup national football team'],
-  [/مباراة|مباريات|لقاء|الليلة|اليوم/, 'football stadium night match'],
+  [/دوري\s*(الأبطال|الابطال|ابطال)|ابطال\s*أوروبا|ابطال اوروبا|champions\s*league/i, 'champions league soccer stadium night'],
+  [/الشوط\s*(الأول|الاول)|شوط\s*(الأول|الاول)/, 'soccer first half action'],
+  [/كلا\s*(الفريقين|الفريقان|فريق)|سيسجلان|يسجلان|سجلان/, 'soccer teams scoring a goal'],
+  [/اكثر\s*من\s*هدف|أكثر\s*من\s*هدف|اهداف|هدفين|هدف|جول/, 'soccer goal celebration'],
+  [/فوز|يفوز|فائز|انتصار/, 'soccer team victory celebration'],
+  [/تعادل/, 'soccer match draw'],
+  [/بطاقة|إنذار|انذار|طرد/, 'soccer yellow card referee'],
+  [/ركنية|ركنيه/, 'soccer corner kick'],
+  [/كأس|كاس|بطولة/, 'soccer trophy cup celebration'],
+  [/منتخب|مونديال|كأس\s*عالم|كاس\s*عالم/, 'world cup national soccer team'],
+  [/مباراة|مباريات|لقاء|الليلة|اليوم/, 'soccer stadium night match'],
   [/رهان|مراهنة|برومو|كود|ترويجي|خصم/, 'sports betting odds smartphone'],
 ];
 
@@ -369,9 +369,9 @@ function sourceImageQuery(text: string): string {
       if (/bet$/i.test(low)) return false;
       return !brands.some((n) => n.includes(low) || low.includes(n));
     });
-  if (latin.length >= 2) return `${latin.slice(0, 6).join(' ')} football match`;
+  if (latin.length >= 2) return `${latin.slice(0, 6).join(' ')} soccer match`;
   for (const [re, q] of SOURCE_IMAGE_RULES) if (re.test(clean)) return q;
-  return 'football stadium night match';
+  return 'soccer stadium night match';
 }
 
 /** Topical photo for a source post — replaces the old fire banner on every send. */

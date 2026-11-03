@@ -45,6 +45,12 @@ function brandBlocklist(): string[] {
       'fonbet', 'williamhill', 'pinnacle', 'winline', 'ligastavok', '1win',
       '22bet', 'betway', 'draftkings', 'fanuel', 'unibet', 'bwin', 'stake',
       'betongame', 'xpari', 'winwin',
+      // watermark-prone stock agencies — preview images carry visible watermarks
+      'alamy', 'shutterstock', 'gettyimages', 'istockphoto', 'dreamstime',
+      '123rf', 'depositphotos', 'canstockphoto', 'vectorstock', 'stock.adobe',
+      'fotolia', 'agefotostock', 'imago-images', 'picfair', 'freepik',
+      'vecteezy', 'pngtree', 'magnific', 'envato', 'pond5', 'clipdealer',
+      'premium-photo', 'premium-image',
     ];
     let names: string[] = [];
     try {
@@ -80,7 +86,7 @@ function markSourceDown(name: string, why: string): void {
 
 async function downloadImage(url: string, dest: string): Promise<boolean> {
   try {
-    if (!isBrandSafeUrl(url)) return false;
+    if (!isBrandSafeUrl(url) || !isRelevantImageUrl(url)) return false;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
       signal: AbortSignal.timeout(15000),
@@ -295,12 +301,33 @@ async function loremFlickrImage(query: string, destBase: string): Promise<string
 }
 
 /**
+ * Query normalization — the post corpus mixes "football" meanings: a US
+ * audience reads it as NFL, and searches return American-football photos for
+ * our association-football posts. Rewriting to "soccer" keeps every caller's
+ * intent (teams, goals, stadiums) while pinning the right sport.
+ */
+function normalizeImageQuery(query: string): string {
+  return query
+    .replace(/\bamerican\s+football\b/gi, 'soccer')
+    .replace(/\bfootball\b/gi, 'soccer')
+    .replace(/\bnfl\b/gi, 'soccer')
+    .trim();
+}
+
+/** URLs whose slug signals the wrong sport (US football) for our posts. */
+const WRONG_SPORT_RE = /\b(nfl|ncaa|superbowl|super-bowl|gridiron|quarterback|touchdown|helmet)\b/i;
+function isRelevantImageUrl(url: string): boolean {
+  return !WRONG_SPORT_RE.test(url);
+}
+
+/**
  * Fetch a suitable image for a post.
  * @param preferredUrl image URL already present in the article (tried first)
  * @param query search query when fallback search is needed (e.g. "Real Madrid vs Barcelona live")
  * @returns local absolute path or null
  */
 export async function fetchPostImage(preferredUrl: string | undefined, query: string): Promise<string | null> {
+  query = normalizeImageQuery(query);
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
   const destBase = path.join(IMAGES_DIR, `${Date.now()}_${safeName(query)}`);
 
