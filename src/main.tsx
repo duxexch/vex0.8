@@ -127,6 +127,8 @@ if (typeof window !== 'undefined') {
           if (CLEARABLE_ERRORS.includes(data.error)) {
             try {
               localStorage.removeItem('vex_session_id');
+              // Identity may be gone → refresh the notification feed/room now.
+              window.dispatchEvent(new CustomEvent('vex:session-changed'));
             } catch {
               // ignore
             }

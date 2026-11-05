@@ -256,3 +256,39 @@ export function getCurrentUserId(req: Request): string | null {
 export function getCurrentSession(req: Request) {
   return (req as any).session;
 }
+
+/** Resolve the verified user behind an arbitrary session id (server-side lookup only). */
+export function resolveSessionUserId(sessionId: string | null | undefined): string | null {
+  if (!sessionId) return null;
+  const session = SESSION_STORE.get(sessionId);
+  if (!session || Date.now() > session.expires_at || session.status !== 'verified') return null;
+  return String(session.user_id || session.userId || '').trim() || null;
+}
+
+/**
+ * Identity behind a Socket.io handshake: HttpOnly cookie first (unforgeable),
+ * then the x-session-id header / auth payload / query (same secret, used when
+ * the socket outlives a mid-session login and the cookie changed under it).
+ */
+export function resolveSocketUserId(handshake: {
+  headers?: Record<string, unknown>;
+  auth?: Record<string, unknown>;
+  query?: Record<string, unknown>;
+}): string | null {
+  try {
+    const headers = handshake?.headers || {};
+    const auth = handshake?.auth || {};
+    const query = handshake?.query || {};
+    const fromCookie = parseCookieHeader(
+      typeof headers.cookie === 'string' ? headers.cookie : undefined
+    ).session_id;
+    const sessionId =
+      fromCookie ||
+      (typeof headers['x-session-id'] === 'string' ? headers['x-session-id'] : '') ||
+      (typeof auth.session_id === 'string' ? auth.session_id : '') ||
+      (typeof query.session_id === 'string' ? query.session_id : '');
+    return resolveSessionUserId(sessionId);
+  } catch {
+    return null;
+  }
+}

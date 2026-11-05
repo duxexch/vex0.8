@@ -18,7 +18,7 @@ import { GUIDES, getGuide } from './server/i18nGuides';
 import { STATIC_PAGES, STATIC_PAGE_SLUGS, TRUST_NAV } from './server/staticPages';
 import type { Company, SportsNewsItem } from './src/types';
 import { geoLocaleMiddleware } from './server/geoLocale';
-import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS, getCurrentUserId } from './server/sessionGuard';
+import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS, getCurrentUserId, resolveSocketUserId, resolveSessionUserId } from './server/sessionGuard';
 import { buildBotPromoMessage } from './server/botPromo';
 import {
   initGrowth,
@@ -105,6 +105,7 @@ import { getSentryStatus } from './server/postSentry';
 import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel } from './server/channelOnboard';
 import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
 import { startPromoScheduler, getPromoStatus, runPromoPass, setPromoBotUsername } from './server/promoPosts';
+import { startCurrencyRateScheduler, getCurrencyRates } from './server/currencyRates';
 import crypto from 'crypto';
 
 const currentFilename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : '';
@@ -121,10 +122,38 @@ const io = new Server(httpServer, {
   pingInterval: 25000,
 });
 
+// Private per-user room: security / money notices are emitted ONLY to the
+// owner's sockets (see emitNotification) so switching accounts on a shared
+// device can never surface another user's alerts.
+const USER_ROOM_PREFIX = 'user:';
+
+function joinUserRoom(socket: any, uid: string | null): void {
+  const next = uid ? `${USER_ROOM_PREFIX}${uid}` : null;
+  const current = Array.from((socket.rooms as Set<string>) || []).find((r) =>
+    String(r).startsWith(USER_ROOM_PREFIX)
+  );
+  if (current === next) return;
+  if (current) socket.leave(current);
+  if (next) socket.join(next);
+}
+
 io.on('connection', (socket) => {
   console.log('⚡ Socket.io client connected:', socket.id);
+  joinUserRoom(socket, resolveSocketUserId(socket.handshake));
 
-  socket.on('heartbeat', (data) => {
+  // Fired on connect and whenever the client's session changes (login/switch)
+  // so this socket always sits in the CURRENT account's room.
+  socket.on('identify', (payload: any) => {
+    joinUserRoom(socket, resolveSessionUserId(payload?.session_id));
+  });
+
+  socket.on('heartbeat', (data: any) => {
+    // Re-check identity every beat: a mid-session login must move the socket
+    // into the new account's room (and out of the old one) without a reload.
+    joinUserRoom(
+      socket,
+      resolveSessionUserId(data?.session_id) || resolveSocketUserId(socket.handshake)
+    );
     socket.emit('heartbeat_ack', { serverTime: Date.now() });
   });
 
@@ -646,6 +675,14 @@ app.get('/api/geo', (req, res) => {
     confidence: info.confidence || 'low',
     source: info.source || 'fallback',
   });
+});
+
+// Live USD exchange rates — refreshed server-side every 3 hours (see
+// server/currencyRates.ts) so every client shows current converted amounts.
+app.get('/api/currency-rates', (_req, res) => {
+  const rates = getCurrencyRates();
+  // 200 with null on first boot: the client keeps its built-in defaults.
+  res.json(rates ? { updatedAt: rates.updatedAt, rates: rates.rates, source: rates.source } : { updatedAt: null, rates: null });
 });
 
 // App Branding (Name & Icon)
@@ -2871,7 +2908,8 @@ app.post('/api/admin/compensation-email/dispatch', (req, res) => {
 
     storage.addEmailDispatchLog(dispatchLog);
 
-    // Also push real-time notification to user feed
+    // Also push real-time notification to user feed (owner-only: contains the
+    // recipient's email — never a global broadcast)
     if (createPushNotification) {
       const notif = {
         id: `NOTIF-EMAIL-DISPATCH-${Date.now()}`,
@@ -2886,9 +2924,10 @@ app.post('/api/admin/compensation-email/dispatch', (req, res) => {
           companyName,
           dispatchId: dispatchLog.id,
         },
+        ...(notifOwner(userId) ? { owner_id: notifOwner(userId) } : { admin_only: true }),
       };
       storage.addNotification(notif);
-      io.emit('notification', notif);
+      emitNotification(notif);
     }
 
     res.json({
@@ -3110,8 +3149,49 @@ app.post('/api/ai/search', async (req, res) => {
 });
 
 // Notifications Endpoints
+// ---------------------------------------------------------------------------
+// notifications.json is ONE shared feed holding three kinds of entries:
+//   • owner_id set      → only that user's session may see/mark it
+//   • admin_only set    → PII for the team (compensation/phone requests): only
+//                          the owner (when set) or a valid x-admin-token holder
+//   • neither           → global broadcast (unchanged behaviour for everyone)
+// ---------------------------------------------------------------------------
+function hasAdminToken(req: any): boolean {
+  const configured = String(process.env.ADMIN_TOKEN || '').trim();
+  if (!configured) return false;
+  const raw = String(req.headers?.['x-admin-token'] || req.headers?.authorization || '').trim();
+  const provided = raw.replace(/^Bearer\s+/i, '').trim();
+  if (provided.length !== configured.length) return false;
+  // Constant-time-ish compare (same approach as requireAdmin).
+  let diff = 0;
+  for (let i = 0; i < configured.length; i++) diff |= configured.charCodeAt(i) ^ provided.charCodeAt(i);
+  return diff === 0;
+}
+
+function notificationVisibleTo(notif: any, userId: string | null, isAdmin: boolean): boolean {
+  const owner = String(notif?.owner_id || '').trim();
+  if (owner && owner === userId) return true;
+  if (notif?.admin_only) return isAdmin;
+  return !owner; // another user's private notice stays hidden
+}
+
+/** Owner-scoped → only that user's sockets; global feed → everybody (as before). */
+function emitNotification(notif: any): void {
+  const owner = String(notif?.owner_id || '').trim();
+  if (owner) io.to(`${USER_ROOM_PREFIX}${owner}`).emit('notification', notif);
+  else io.emit('notification', notif);
+}
+
+/** Ownership stamp for a user-specific notice (anonymous/empty → not owner-keyed). */
+function notifOwner(id?: unknown): string | undefined {
+  const v = String(id ?? '').trim();
+  return v && v !== 'anonymous' && v !== 'undefined' && v !== 'null' ? v : undefined;
+}
+
 app.get('/api/notifications', (req, res) => {
-  const notifs = storage.getNotifications();
+  const userId = getCurrentUserId(req);
+  const isAdmin = hasAdminToken(req);
+  const notifs = storage.getNotifications().filter((n) => notificationVisibleTo(n, userId, isAdmin));
   res.json({
     notifications: notifs,
     unreadCount: notifs.filter((n) => !n.read).length,
@@ -3156,11 +3236,16 @@ app.post('/api/notifications/broadcast', (req, res) => {
 
 app.post('/api/notifications/mark-read', (req, res) => {
   const { id } = req.body;
+  const userId = getCurrentUserId(req);
+  const isAdmin = hasAdminToken(req);
   const notifs = storage.getNotifications();
+  // Only notices this caller is allowed to SEE may be flipped to read —
+  // otherwise anyone could mark another account's private alerts as read.
+  const visible = notifs.filter((n) => notificationVisibleTo(n, userId, isAdmin));
   if (id === 'all') {
-    notifs.forEach((n) => (n.read = true));
+    visible.forEach((n) => (n.read = true));
   } else {
-    const target = notifs.find((n) => n.id === id);
+    const target = visible.find((n) => n.id === id);
     if (target) target.read = true;
   }
   storage.saveNotifications(notifs);
@@ -3323,10 +3408,13 @@ app.post('/api/compensation/requests', (req, res) => {
       amount: numAmount,
       company: newRequest.company_name,
     },
+    // PII (account number): requester + admins only, never the whole feed.
+    ...(notifOwner(newRequest.user_id) ? { owner_id: notifOwner(newRequest.user_id) } : {}),
+    admin_only: true,
   };
 
   storage.addNotification(adminNotif);
-  io.emit('notification', adminNotif);
+  emitNotification(adminNotif);
   io.emit('new_compensation_request', newRequest);
 
   res.json({
@@ -3405,10 +3493,13 @@ app.post('/api/compensation/requests/unfreeze-deposit', (req, res) => {
       amount: numAmount,
       company: newRequest.company_name,
     },
+    // PII (account number): requester + admins only, never the whole feed.
+    ...(notifOwner(newRequest.user_id) ? { owner_id: notifOwner(newRequest.user_id) } : {}),
+    admin_only: true,
   };
 
   storage.addNotification(adminNotif);
-  io.emit('notification', adminNotif);
+  emitNotification(adminNotif);
   io.emit('new_compensation_request', newRequest);
 
   res.json({
@@ -3807,7 +3898,7 @@ app.post('/api/compensation/approve', (req, res) => {
     io.emit('wallets_updated', { user_id: updated.user_id });
   }
 
-  // Broadcast approval notification
+  // Broadcast approval notification (owner-only: a personal money notice)
   const notif = {
     id: `NOTIF-APP-${Date.now()}`,
     title: isUnfreeze ? '✅ تم فك تجميد رصيدك بنجاح!' : '✅ تم اعتماد طلب التعويض!',
@@ -3818,10 +3909,11 @@ app.post('/api/compensation/approve', (req, res) => {
     timestamp: new Date().toISOString(),
     read: false,
     data: { requestId: updated.id, amount: updated.amount },
+    ...(notifOwner(updated.user_id) ? { owner_id: notifOwner(updated.user_id) } : { admin_only: true }),
   };
 
   storage.addNotification(notif);
-  io.emit('notification', notif);
+  emitNotification(notif);
   io.emit('compensation_status_updated', { requestId: updated.id, status: 'approved', request: updated });
 
   res.json({
@@ -3902,9 +3994,10 @@ app.post('/api/compensation/bulk-approve', (req, res) => {
           timestamp,
           read: false,
           data: { requestId: updated.id, amount: updated.amount },
+          ...(notifOwner(updated.user_id) ? { owner_id: notifOwner(updated.user_id) } : { admin_only: true }),
         };
         storage.addNotification(notif);
-        io.emit('notification', notif);
+        emitNotification(notif);
         io.emit('compensation_status_updated', { requestId: updated.id, status: 'approved', request: updated });
       }
     }
@@ -4002,7 +4095,7 @@ app.post('/api/user/phone-change-request', (req, res) => {
 
   storage.addPhoneChangeRequest(newRequest);
 
-  // Send admin notification
+  // Send admin notification (PII: phone numbers → requester + admins only)
   const adminNotif = {
     id: `NOTIF-PCR-${now}`,
     title: '🔒 طلب تغيير رقم هاتف المحفظة',
@@ -4011,10 +4104,12 @@ app.post('/api/user/phone-change-request', (req, res) => {
     timestamp: new Date().toISOString(),
     read: false,
     data: { requestId: newRequest.id, currentPhone: cleanCurrent, newPhone: cleanNew },
+    ...(notifOwner(newRequest.user_id) ? { owner_id: notifOwner(newRequest.user_id) } : {}),
+    admin_only: true,
   };
 
   storage.addNotification(adminNotif);
-  io.emit('notification', adminNotif);
+  emitNotification(adminNotif);
   io.emit('new_phone_change_request', newRequest);
 
   res.json({
@@ -4068,10 +4163,11 @@ app.post('/api/admin/phone-change-requests/approve', (req, res) => {
     timestamp: new Date().toISOString(),
     read: false,
     data: { requestId: updated.id, newPhone: updated.new_phone },
+    ...(notifOwner(updated.user_id) ? { owner_id: notifOwner(updated.user_id) } : { admin_only: true }),
   };
 
   storage.addNotification(notif);
-  io.emit('notification', notif);
+  emitNotification(notif);
   io.emit('phone_change_status_updated', { requestId: updated.id, status: 'approved', request: updated });
 
   res.json({
@@ -4106,10 +4202,11 @@ app.post('/api/admin/phone-change-requests/reject', (req, res) => {
     timestamp: new Date().toISOString(),
     read: false,
     data: { requestId: updated.id },
+    ...(notifOwner(updated.user_id) ? { owner_id: notifOwner(updated.user_id) } : { admin_only: true }),
   };
 
   storage.addNotification(notif);
-  io.emit('notification', notif);
+  emitNotification(notif);
   io.emit('phone_change_status_updated', { requestId: updated.id, status: 'rejected', request: updated });
 
   res.json({
@@ -4973,10 +5070,12 @@ app.post('/api/telegram/verify-code', (req, res) => {
     category: 'security',
     timestamp: new Date().toISOString(),
     read: false,
+    // Security notice: only the freshly-verified owner ever sees it.
+    owner_id: phoneRef,
   };
 
   storage.addNotification(notif);
-  io.emit('notification', notif);
+  emitNotification(notif);
   io.emit('phone_verified', {
     userId: userId || session.user_id,
     phone: verifiedPhone,
@@ -5152,7 +5251,7 @@ let serverLotteryState: ServerLotteryState = {
   titleAr: 'سحب VEX التكافلي الذهبي الأسبوعي #88',
   titleEn: 'VEX Weekly Solidarity Gold Draw #88',
   closeAt: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
-  jackpotAmount: 18450.0,
+  jackpotAmount: 3200.0,
   oneHourReminderSent: false,
   thirtyMinReminderSent: false,
   tierAlertSubscriptions: {
@@ -5224,29 +5323,29 @@ function dispatchLotteryThirtyMinTierNotification(
   
   const tierNames: Record<string, { ar: string; en: string; highlight: string }> = {
     tier1_jackpot: {
-      ar: 'الجائزة الكبرى ($10,000+)',
-      en: 'Jackpot Tier ($10,000+)',
+      ar: 'الجائزة الكبرى ($1,000+)',
+      en: 'Jackpot Tier ($1,000+)',
       highlight: `$${drawState.jackpotAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
     },
     tier2_match5: {
       ar: 'المستوى الثاني (5 أرقام + 1 ذهبي)',
       en: 'Tier 2 (5 Numbers + 1 Star)',
-      highlight: '$2,500+',
+      highlight: '$250+',
     },
     tier3_match4_2: {
       ar: 'المستوى الثالث (4 أرقام + 2 ذهبيين)',
       en: 'Tier 3 (4 Numbers + 2 Stars)',
-      highlight: '$1,000+',
+      highlight: '$100+',
     },
     tier4_match3: {
       ar: 'مستوى التكافل الرابع (3 أرقام)',
       en: 'Solidarity Tier 4 (3 Numbers)',
-      highlight: '$25.00',
+      highlight: '$10.00',
     },
     tier5_match2: {
       ar: 'مستوى التكافل الخامس (تذاكر مجانية / كاش)',
       en: 'Tier 5 (Free Tickets / Cash)',
-      highlight: '$2.50 / Free Ticket',
+      highlight: '$1.00 / Free Ticket',
     },
   };
 
@@ -5631,6 +5730,9 @@ async function ingestDailyFixtures(): Promise<void> {
 // Run shortly after boot, then keep the 7-day window rolling every 6 hours
 setTimeout(() => { void ingestDailyFixtures(); }, 4000);
 setInterval(() => { void ingestDailyFixtures(); }, 6 * 3600 * 1000);
+
+// Currency display rates: first pull right after boot, then every 3 hours
+startCurrencyRateScheduler();
 
 // VITE MIDDLEWARE SETUP
 async function setupServer() {

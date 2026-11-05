@@ -1,12 +1,15 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Trophy, Sparkles, Flame, Gift, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { lotteryService } from '../services/lotteryService';
 import { LotteryDraw } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { formatCurrency } from '../utils/currency';
 
 interface LotteryTickerBarProps {
   lang: string;
+  /** Display currency chosen by the customer — all money follows it. */
+  displayCurrency?: string;
   onOpenLottery: () => void;
 }
 
@@ -24,13 +27,19 @@ interface TickerItem {
 
 export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
   lang,
+  displayCurrency = 'USD',
   onOpenLottery,
 }) => {
   const isAr = lang === 'ar';
   const [activeDraw, setActiveDraw] = useState<LotteryDraw | null>(null);
-  const [jackpotAmount, setJackpotAmount] = useState<number>(18500);
+  const [jackpotAmount, setJackpotAmount] = useState<number>(3200);
   const [dynamicItems, setDynamicItems] = useState<TickerItem[]>([]);
   const [showSuccessCheck, setShowSuccessCheck] = useState(false);
+
+  // Every figure on the ticker follows the customer's chosen currency
+  // (memoized: baseItems below depends on it — a fresh fn each render would
+  // re-trigger the items effect forever)
+  const fmt = useCallback((usd: number) => formatCurrency(usd, displayCurrency), [displayCurrency]);
 
   // Initial base items
   const baseItems: TickerItem[] = useMemo(() => [
@@ -41,7 +50,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       badgeText: isAr ? 'الجائزة الكبرى المتراكمة' : 'JACKPOT POOL',
       badgeColor: 'text-amber-300 border-amber-500/40',
       mainText: isAr ? 'مجمع السحب المباشر وصل إلى' : 'Current Mega Jackpot:',
-      highlightText: `$${jackpotAmount.toLocaleString('en-US')}`,
+      highlightText: fmt(jackpotAmount),
       subText: isAr ? 'فرصة الفوز بـ 5 أرقام + 2 نجوم' : 'Match 5 + 2 Lucky Stars',
     },
     {
@@ -51,7 +60,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       badgeText: isAr ? 'أحدث الفائزين 👑' : 'LATEST WINNER 👑',
       badgeColor: 'text-yellow-300 border-yellow-500/40',
       mainText: isAr ? 'مستخدم (+2010****)' : 'Player (+2010****)',
-      highlightText: '$2,500.00',
+      highlightText: fmt(250),
       subText: isAr ? 'مطابقة 5 أرقام (المستوى الثاني)' : 'Match 5 Main Numbers',
     },
     {
@@ -61,8 +70,8 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       badgeText: isAr ? 'سحب جديد متاح الآن 🎟️' : 'NEW DRAW ACTIVE 🎟️',
       badgeColor: 'text-rose-300 border-rose-500/40',
       mainText: isAr ? (activeDraw?.titleAr || 'سحب VEX الذهبي الأسبوعي #88') : (activeDraw?.titleEn || 'VEX Weekly Mega Draw #88'),
-      highlightText: '$1.00',
-      subText: isAr ? 'سعر التذكرة $1 فقط' : 'Only $1 per ticket',
+      highlightText: fmt(1),
+      subText: isAr ? `سعر التذكرة ${fmt(1)} فقط` : `Only ${fmt(1)} per ticket`,
     },
     {
       id: '5',
@@ -74,7 +83,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       highlightText: isAr ? 'مع كل تعويض خسارة' : 'with every loss compensation',
       subText: isAr ? 'شبكة أمان واسترداد 100%' : '100% cashback guarantee',
     },
-  ], [isAr, jackpotAmount, activeDraw]);
+  ], [isAr, jackpotAmount, activeDraw, fmt]);
 
   // Set initial state
   useEffect(() => {
@@ -112,7 +121,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
         badgeText: isAr ? 'فائز جديد! 🎊' : 'NEW WINNER! 🎊',
         badgeColor: 'text-emerald-300 border-emerald-500/40',
         mainText: isAr ? `مستخدم (+${Math.floor(Math.random() * 900) + 100}****)` : `Player (+${Math.floor(Math.random() * 900) + 100}****)`,
-        highlightText: `$${(Math.floor(Math.random() * 10) * 100 + 50).toLocaleString()}.00`,
+        highlightText: fmt(Math.floor(Math.random() * 6) * 25 + 5),
         subText: isAr ? 'فوز فوري في السحب' : 'Instant draw win',
         isNew: true,
       };
@@ -136,7 +145,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       clearInterval(jackpotInterval);
       clearInterval(winnerInterval);
     };
-  }, [isAr]);
+  }, [isAr, fmt]);
 
   const handleTickerClick = () => {
     triggerHaptic('light');

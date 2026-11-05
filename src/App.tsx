@@ -33,7 +33,7 @@ import { vexApi } from './services/api';
 import { requestFCMToken, onForegroundMessage } from './services/firebaseClient';
 import { ensureWebPushSubscription } from './services/pushService';
 import { recursiveLocalizeCompanies } from './utils/companyTranslator';
-import { detectUserRegionalCurrency } from './utils/currency';
+import { detectUserRegionalCurrency, syncCurrencyRates } from './utils/currency';
 import { requirePhoneLink } from './utils/requireLink';
 import { isWalletApp, walletHomeTab } from './walletApp';
 import { Header } from './components/Header';
@@ -201,6 +201,8 @@ export default function App() {
   const [responsibleGamingOpen, setResponsibleGamingOpen] = useState(false);
   const [legalTermsOpen, setLegalTermsOpen] = useState(false);
   const [depositUnfreezeModalOpen, setDepositUnfreezeModalOpen] = useState(false);
+  // Which deposit flow opens: 'unfreeze' (1:1 matching) or 'general' (any amount)
+  const [depositModalMode, setDepositModalMode] = useState<'unfreeze' | 'general'>('unfreeze');
 
   // AI Match Analysis & Fixtures
   const [fixtures, setFixtures] = useState<SportsMatchFixture[]>([]);
@@ -420,6 +422,14 @@ export default function App() {
     vexApi.logUserInteraction('session_start');
   }, [loadData, loadBrandingAndNotifs]);
 
+  // Live exchange rates: pull the server's latest (refreshed every 3 h) on
+  // mount and re-check hourly so display conversions never go stale.
+  useEffect(() => {
+    void syncCurrencyRates();
+    const ratesInterval = setInterval(() => void syncCurrencyRates(), 60 * 60 * 1000);
+    return () => clearInterval(ratesInterval);
+  }, []);
+
   useEffect(() => {
     if (activeTab) {
       vexApi.logUserInteraction(`tab_${activeTab}`);
@@ -437,9 +447,31 @@ export default function App() {
       timeout: 15000,
     });
 
+    // Which account's private room should this socket sit in? (server validates
+    // the session id server-side before joining — a forged id joins nothing)
+    const readSessionId = (): string => {
+      try {
+        return localStorage.getItem('vex_session_id') || '';
+      } catch {
+        return '';
+      }
+    };
+    const identify = () => {
+      if (socket.connected) socket.emit('identify', { session_id: readSessionId() });
+    };
+
     socket.on('connect', () => {
       console.log('⚡ Connected to VEX Real-Time Socket Hub (ID:', socket.id, ')');
+      identify();
     });
+
+    // Login / account switch / session expiry → move this socket into the
+    // CURRENT account's notification room and refetch its feed immediately.
+    const onSessionChanged = () => {
+      identify();
+      void loadBrandingAndNotifs();
+    };
+    window.addEventListener('vex:session-changed', onSessionChanged);
 
     socket.on('disconnect', (reason) => {
       console.warn('⚠️ Disconnected from Socket Hub:', reason);
@@ -476,15 +508,16 @@ export default function App() {
     // Heartbeat ping interval to keep Nginx reverse proxy connection alive (every 25 seconds)
     const heartbeatInterval = setInterval(() => {
       if (socket.connected) {
-        socket.emit('heartbeat', { timestamp: Date.now() });
+        socket.emit('heartbeat', { timestamp: Date.now(), session_id: readSessionId() });
       }
     }, 25000);
 
     return () => {
       clearInterval(heartbeatInterval);
+      window.removeEventListener('vex:session-changed', onSessionChanged);
       socket.disconnect();
     };
-  }, [lang]);
+  }, [lang, loadBrandingAndNotifs]);
 
   // Guest-first: protected actions ask the guest to link their phone (in-app modal)
   useEffect(() => {
@@ -626,6 +659,7 @@ export default function App() {
       {/* Live Horizontal Marquee Lottery & Winners News Ticker */}
       <LotteryTickerBar
         lang={lang}
+        displayCurrency={displayCurrency}
         onOpenLottery={() => setActiveTab('lottery')}
       />
 
@@ -720,7 +754,16 @@ export default function App() {
                 onGoToReferral={handleGoToReferral}
                 onRequestComp={handleRequestComp}
                 onOpenDepositUnfreeze={() => {
-                  if (requirePhoneLink(userProfile)) setDepositUnfreezeModalOpen(true);
+                  if (requirePhoneLink(userProfile)) {
+                    setDepositModalMode('unfreeze');
+                    setDepositUnfreezeModalOpen(true);
+                  }
+                }}
+                onOpenGeneralDeposit={() => {
+                  if (requirePhoneLink(userProfile)) {
+                    setDepositModalMode('general');
+                    setDepositUnfreezeModalOpen(true);
+                  }
                 }}
                 onOpenPhoneModal={() => setPhoneModalOpen(true)}
                 lang={lang}
@@ -797,6 +840,7 @@ export default function App() {
                 lang={lang}
                 userId={userId}
                 wallets={wallets}
+                displayCurrency={displayCurrency}
                 onRefreshWallets={loadData}
                 onCopyToast={showToast}
                 onInstallPwa={handleInstallPwa}
@@ -990,6 +1034,7 @@ export default function App() {
       {/* Direct Deposit Unfreeze Modal (1:1 matching deposit unfreeze request) */}
       <DirectDepositUnfreezeModal
         isOpen={depositUnfreezeModalOpen}
+        mode={depositModalMode}
         onClose={() => setDepositUnfreezeModalOpen(false)}
         wallets={wallets}
         companies={localizedCompanies}

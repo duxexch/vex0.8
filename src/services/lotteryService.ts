@@ -26,7 +26,20 @@ const STORAGE_KEYS = {
   FREE_TICKETS_BALANCE: 'vex_lottery_free_tickets_',
   USER_WON_PRIZES: 'vex_lottery_user_winnings_',
   ALERT_SETTINGS: 'vex_lottery_tier_alert_settings_v1',
+  SEED_VERSION: 'vex_lottery_seed_version',
 };
+
+// Bumped whenever the seed prize structure changes — one-time normalization of
+// cached draws so existing installs show the current (reduced) amounts too.
+const SEED_VERSION = 'v2';
+
+// Old seed money values → current values (only these exact figures are rewritten,
+// so admin-adjusted or sales-driven jackpots are never clobbered).
+const LEGACY_SEED_AMOUNTS: Array<{ jackpot: number; jackpotTo: number; initial: number; initialTo: number; pool: number; poolTo: number; paidOut?: number; paidOutTo?: number }> = [
+  { jackpot: 18450, jackpotTo: 3200, initial: 15000, initialTo: 2500, pool: 22680, poolTo: 3450 },
+  { jackpot: 14200, jackpotTo: 2800, initial: 10000, initialTo: 2000, pool: 17400, poolTo: 4120, paidOut: 6850, paidOutTo: 1650 },
+  { jackpot: 12500, jackpotTo: 2400, initial: 10000, initialTo: 2000, pool: 15300, poolTo: 3200, paidOut: 14850, paidOutTo: 1900 },
+];
 
 
 // Default standard prize tier structure
@@ -38,10 +51,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 5,
     matchLucky: 2,
     sharePercent: 50,
-    guaranteedAmount: 10000,
+    guaranteedAmount: 1000,
     odds: '1 : 139,838,160',
-    termsAr: 'تتطلب مطابقة جميع الأرقام الخمسة الرئيسية (من 1 إلى 50) بالإضافة إلى رقمي نجوم الحظ الذهبيين (من 1 إلى 12) بدقة تامة. في حال تعدد التذاكر الفائزة، يُقسّم مجمع الجائزة بالتساوي مع ضمان حد أدنى لا يقل عن $10,000.',
-    termsEn: 'Requires an exact match of all 5 main balls (1-50) plus both 2 lucky stars (1-12). If multiple tickets match, the jackpot pool is split equally, guaranteed at no less than $10,000.',
+    termsAr: 'تتطلب مطابقة جميع الأرقام الخمسة الرئيسية (من 1 إلى 50) بالإضافة إلى رقمي نجوم الحظ الذهبيين (من 1 إلى 12) بدقة تامة. في حال تعدد التذاكر الفائزة، يُقسّم مجمع الجائزة بالتساوي مع ضمان حد أدنى لا يقل عن $1,000.',
+    termsEn: 'Requires an exact match of all 5 main balls (1-50) plus both 2 lucky stars (1-12). If multiple tickets match, the jackpot pool is split equally, guaranteed at no less than $1,000.',
     payoutTermsAr: 'إيداع تلقائي فوري 100% في المحفظة النشطة بدون أي استقطاعات أو عمولات، ومتاحة للسحب النقدي الفوري عبر USDT أو فودافون كاش أو التحويل البنكي.',
     payoutTermsEn: '100% instant automatic credit to user active wallet with zero deductions. Immediately withdrawable via USDT, Vodafone Cash, or Bank Transfer.',
   },
@@ -52,10 +65,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 5,
     matchLucky: 1,
     sharePercent: 20,
-    guaranteedAmount: 2500,
+    guaranteedAmount: 250,
     odds: '1 : 6,991,908',
-    termsAr: 'تتطلب مطابقة 5 أرقام رئيسية ورقم ذهبي واحد. يحصل الفائزون على 20% من إجمالي مجمع السحب، بحد أدنى مضمون $2,500.',
-    termsEn: 'Requires matching 5 main numbers and 1 lucky star. Awarded 20% of total pool with a guaranteed minimum of $2,500.',
+    termsAr: 'تتطلب مطابقة 5 أرقام رئيسية ورقم ذهبي واحد. يحصل الفائزون على 20% من إجمالي مجمع السحب، بحد أدنى مضمون $250.',
+    termsEn: 'Requires matching 5 main numbers and 1 lucky star. Awarded 20% of total pool with a guaranteed minimum of $250.',
     payoutTermsAr: 'صرف مباشر وفوري في المحفظة خلال أقل من 10 ثوانٍ من انتهاء السحب التشفيري.',
     payoutTermsEn: 'Direct instant credit to wallet in under 10 seconds following cryptographic draw execution.',
   },
@@ -66,10 +79,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 4,
     matchLucky: 2,
     sharePercent: 15,
-    guaranteedAmount: 1000,
+    guaranteedAmount: 100,
     odds: '1 : 621,503',
-    termsAr: 'تتطلب مطابقة 4 أرقام رئيسية ورقمي الحظ الذهبيين. يحصل الفائزون على 15% من المجمع بحد أدنى $1,000.',
-    termsEn: 'Requires matching 4 main numbers and both 2 lucky stars. Awarded 15% of pool, minimum $1,000.',
+    termsAr: 'تتطلب مطابقة 4 أرقام رئيسية ورقمي الحظ الذهبيين. يحصل الفائزون على 15% من المجمع بحد أدنى $100.',
+    termsEn: 'Requires matching 4 main numbers and both 2 lucky stars. Awarded 15% of pool, minimum $100.',
     payoutTermsAr: 'إيداع لحظي في المحفظة مع إشعار فوري وتوليد إيصال رقمي رسمي معتمد.',
     payoutTermsEn: 'Instant deposit with push notification alert and verifiable digital payout receipt.',
   },
@@ -80,10 +93,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 3,
     matchLucky: 1,
     sharePercent: 10,
-    fixedPrize: 25,
+    fixedPrize: 10,
     odds: '1 : 3,107',
-    termsAr: 'تتطلب مطابقة 3 أرقام رئيسية ورقم ذهبي واحد على الأقل. جائزة نقدية ثابتة بقيمة $25.00 لكل تذكرة فائزة.',
-    termsEn: 'Requires matching 3 main numbers and at least 1 lucky star. Fixed cash prize of $25.00 per winning ticket.',
+    termsAr: 'تتطلب مطابقة 3 أرقام رئيسية ورقم ذهبي واحد على الأقل. جائزة نقدية ثابتة بقيمة $10.00 لكل تذكرة فائزة.',
+    termsEn: 'Requires matching 3 main numbers and at least 1 lucky star. Fixed cash prize of $10.00 per winning ticket.',
     payoutTermsAr: 'تضاف فوراً لرصيد المحفظة المتاح للاستخدام في طلبات التعويض أو شراء تذاكر جديدة أو السحب.',
     payoutTermsEn: 'Instantly credited to spendable wallet balance for withdrawals or new tickets.',
   },
@@ -94,10 +107,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 2,
     matchLucky: 1,
     sharePercent: 5,
-    fixedPrize: 2.5,
+    fixedPrize: 1,
     odds: '1 : 128',
-    termsAr: 'تتطلب مطابقة رقمين رئيسيين ورقم ذهبي واحد. تمنحك جائزة نقدية $2.50 أو تذكرة تكافل مجانية إضافية للمشاركة في السحب القادم.',
-    termsEn: 'Requires matching 2 main numbers and 1 lucky star. Awards $2.50 cash or free compassion lottery ticket.',
+    termsAr: 'تتطلب مطابقة رقمين رئيسيين ورقم ذهبي واحد. تمنحك جائزة نقدية $1.00 أو تذكرة تكافل مجانية إضافية للمشاركة في السحب القادم.',
+    termsEn: 'Requires matching 2 main numbers and 1 lucky star. Awards $1.00 cash or free compassion lottery ticket.',
     payoutTermsAr: 'تسليم فوري للمحفظة وتحديث فوري لرصيد التذاكر المجانية.',
     payoutTermsEn: 'Immediate credit and updated free ticket balance.',
   },
@@ -135,9 +148,9 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     status: 'open',
     ticketPrice: 1.0,
     currency: 'USD',
-    jackpotAmount: 18450.0,
-    initialJackpot: 15000.0,
-    totalPool: 22680.0,
+    jackpotAmount: 3200.0,
+    initialJackpot: 2500.0,
+    totalPool: 3450.0,
     ticketsSoldCount: 3450,
     participantsCount: 890,
     openAt: new Date(Date.now() - 3 * 86400000).toISOString(),
@@ -161,9 +174,9 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     status: 'completed',
     ticketPrice: 1.0,
     currency: 'USD',
-    jackpotAmount: 14200.0,
-    initialJackpot: 10000.0,
-    totalPool: 17400.0,
+    jackpotAmount: 2800.0,
+    initialJackpot: 2000.0,
+    totalPool: 4120.0,
     ticketsSoldCount: 4120,
     participantsCount: 1105,
     openAt: new Date(Date.now() - 10 * 86400000).toISOString(),
@@ -186,7 +199,7 @@ const INITIAL_DRAWS: LotteryDraw[] = [
       tier4_match3: 42,
       tier5_match2: 198,
     },
-    totalPaidOut: 6850.0,
+    totalPaidOut: 1650.0,
     isRollover: true,
   },
   {
@@ -197,9 +210,9 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     status: 'completed',
     ticketPrice: 1.0,
     currency: 'USD',
-    jackpotAmount: 12500.0,
-    initialJackpot: 10000.0,
-    totalPool: 15300.0,
+    jackpotAmount: 2400.0,
+    initialJackpot: 2000.0,
+    totalPool: 3200.0,
     ticketsSoldCount: 3200,
     participantsCount: 940,
     openAt: new Date(Date.now() - 17 * 86400000).toISOString(),
@@ -222,7 +235,7 @@ const INITIAL_DRAWS: LotteryDraw[] = [
       tier4_match3: 31,
       tier5_match2: 145,
     },
-    totalPaidOut: 14850.0,
+    totalPaidOut: 1900.0,
     isRollover: false,
   },
 ];
@@ -242,9 +255,11 @@ class LotteryService {
       const storedDraws = localStorage.getItem(STORAGE_KEYS.DRAWS);
       if (storedDraws) {
         this.draws = JSON.parse(storedDraws);
+        this.migrateSeedAmounts();
       } else {
         this.draws = INITIAL_DRAWS;
         localStorage.setItem(STORAGE_KEYS.DRAWS, JSON.stringify(INITIAL_DRAWS));
+        localStorage.setItem(STORAGE_KEYS.SEED_VERSION, SEED_VERSION);
       }
 
       const storedTickets = localStorage.getItem(STORAGE_KEYS.TICKETS);
@@ -263,6 +278,54 @@ class LotteryService {
   private saveDraws() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.DRAWS, JSON.stringify(this.draws));
+    }
+  }
+
+  /**
+   * One-time seed normalization: cached draws that still hold the OLD prize
+   * figures are rewritten to the current reduced amounts. Draws whose jackpot
+   * was changed (admin / live sales) keep their value untouched.
+   */
+  private migrateSeedAmounts(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      if (localStorage.getItem(STORAGE_KEYS.SEED_VERSION) === SEED_VERSION) return;
+      let changed = false;
+      this.draws = this.draws.map((d) => {
+        if (!d) return d;
+        // Always refresh tier prize figures to the current structure.
+        const tiers = Array.isArray(d.tiers)
+          ? d.tiers.map((t) => {
+              const fresh = DEFAULT_PRIZE_TIERS.find((x) => x.id === t?.id);
+              return fresh ? { ...t, guaranteedAmount: fresh.guaranteedAmount, fixedPrize: fresh.fixedPrize } : t;
+            })
+          : d.tiers;
+        const tiersChanged = JSON.stringify(tiers) !== JSON.stringify(d.tiers);
+        const legacy = LEGACY_SEED_AMOUNTS.find((m) => Number(d.jackpotAmount) === m.jackpot);
+        if (!legacy) {
+          if (tiersChanged) {
+            changed = true;
+            return { ...d, tiers } as LotteryDraw;
+          }
+          return d;
+        }
+        changed = true;
+        return {
+          ...d,
+          jackpotAmount: legacy.jackpotTo,
+          initialJackpot: Number(d.initialJackpot) === legacy.initial ? legacy.initialTo : d.initialJackpot,
+          totalPool: Number(d.totalPool) === legacy.pool ? legacy.poolTo : d.totalPool,
+          totalPaidOut:
+            legacy.paidOut !== undefined && Number(d.totalPaidOut) === legacy.paidOut
+              ? legacy.paidOutTo
+              : d.totalPaidOut,
+          tiers,
+        } as LotteryDraw;
+      });
+      if (changed) this.saveDraws();
+      localStorage.setItem(STORAGE_KEYS.SEED_VERSION, SEED_VERSION);
+    } catch {
+      // migration is best-effort — never break lottery loading
     }
   }
 

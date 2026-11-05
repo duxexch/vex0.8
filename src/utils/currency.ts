@@ -19,6 +19,53 @@ export const SUPPORTED_CURRENCIES: Record<string, CurrencyInfo> = {
   IQD: { code: 'IQD', symbol: 'IQD', name: 'Iraqi Dinar', rateToUSD: 1310 },
 };
 
+// ---------------------------------------------------------------------------
+// Live rates: the server refreshes USD rates every 3 hours
+// (server/currencyRates.ts) and serves them via GET /api/currency-rates.
+// The built-in numbers above are only fallbacks until the first sync.
+// ---------------------------------------------------------------------------
+const RATES_CACHE_KEY = 'vex_currency_rates';
+
+function applyLiveRates(rates: Record<string, unknown>): void {
+  for (const code of Object.keys(SUPPORTED_CURRENCIES)) {
+    if (code === 'USD') continue;
+    const v = Number((rates as Record<string, unknown>)[code]);
+    if (isFinite(v) && v > 0) SUPPORTED_CURRENCIES[code].rateToUSD = v;
+  }
+}
+
+// Hydrate synchronously from the last sync so conversions are current on first paint.
+if (typeof window !== 'undefined') {
+  try {
+    const raw = localStorage.getItem(RATES_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.rates && typeof parsed.rates === 'object') applyLiveRates(parsed.rates);
+    }
+  } catch {
+    // storage unavailable → built-in defaults still work
+  }
+}
+
+/** Fetch the server's live rates and cache them (safe to call any time). */
+export async function syncCurrencyRates(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    const res = await fetch('/api/currency-rates');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data?.rates && typeof data.rates === 'object') {
+      applyLiveRates(data.rates);
+      localStorage.setItem(
+        RATES_CACHE_KEY,
+        JSON.stringify({ updatedAt: data.updatedAt || new Date().toISOString(), rates: data.rates })
+      );
+    }
+  } catch {
+    // offline → keep cached / built-in rates
+  }
+}
+
 export function convertCurrency(amountInUSD: number, targetCurrency: string): number {
   const curr = SUPPORTED_CURRENCIES[targetCurrency] || SUPPORTED_CURRENCIES['USD'];
   return amountInUSD * curr.rateToUSD;

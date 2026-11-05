@@ -25,10 +25,13 @@ import {
   triggerJackpotCelebration,
   triggerPrizeWonCelebration
 } from '../../utils/lotteryCelebration';
+import { formatCurrency } from '../../utils/currency';
 
 interface LotteryWinningsHistoryProps {
   lang: Language;
   wonPrizes: LotteryUserWonPrize[];
+  /** Customer's chosen display currency — winnings follow it. */
+  displayCurrency?: string;
   onPlayClick?: () => void;
   onCopyToast?: (msg: string) => void;
 }
@@ -36,12 +39,16 @@ interface LotteryWinningsHistoryProps {
 export const LotteryWinningsHistory: React.FC<LotteryWinningsHistoryProps> = ({
   lang,
   wonPrizes,
+  displayCurrency = 'USD',
   onPlayClick,
   onCopyToast,
 }) => {
   const isAr = lang === 'ar';
   const [selectedReceipt, setSelectedReceipt] = useState<LotteryUserWonPrize | null>(null);
   const [copiedTxId, setCopiedTxId] = useState<string | null>(null);
+
+  // Money display helper (USD base → customer's currency)
+  const fmt = (usd: number) => formatCurrency(usd, displayCurrency);
 
   // Trigger celebratory confetti when winnings history mounts with prizes
   useEffect(() => {
@@ -62,8 +69,8 @@ export const LotteryWinningsHistory: React.FC<LotteryWinningsHistoryProps> = ({
     if (onCopyToast) {
       onCopyToast(
         isAr
-          ? `🎉 مبروك الفوز بجائزة [${prize.prizeNameAr}] بقيمة $${prize.amountWon.toFixed(2)}!`
-          : `🎉 Congratulations on winning [${prize.prizeNameEn}] of $${prize.amountWon.toFixed(2)}!`
+          ? `🎉 مبروك الفوز بجائزة [${prize.prizeNameAr}] بقيمة ${fmt(prize.amountWon)}!`
+          : `🎉 Congratulations on winning [${prize.prizeNameEn}] of ${fmt(prize.amountWon)}!`
       );
     }
   };
@@ -149,7 +156,7 @@ export const LotteryWinningsHistory: React.FC<LotteryWinningsHistoryProps> = ({
             <div className="bg-slate-950/80 rounded-xl px-3.5 py-2 border border-slate-800 text-center min-w-[100px]">
               <span className="text-[10px] text-slate-400 font-bold block">{isAr ? 'إجمالي الأرباح' : 'Total Won'}</span>
               <span className="text-base sm:text-lg font-black text-emerald-400 font-mono">
-                ${totalWon.toFixed(2)}
+                {fmt(totalWon)}
               </span>
             </div>
             <div className="bg-slate-950/80 rounded-xl px-3.5 py-2 border border-slate-800 text-center min-w-[90px]">
@@ -235,7 +242,7 @@ export const LotteryWinningsHistory: React.FC<LotteryWinningsHistoryProps> = ({
                         {isAr ? 'قيمة الجائزة' : 'Amount Won'}
                       </span>
                       <span className="text-base sm:text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                        +${prize.amountWon.toFixed(2)}
+                        +{fmt(prize.amountWon)}
                       </span>
                     </div>
                   </div>
@@ -387,7 +394,7 @@ export const LotteryWinningsHistory: React.FC<LotteryWinningsHistoryProps> = ({
                 <div className="flex items-center justify-between py-2">
                   <span className="text-slate-400">{isAr ? 'المبلغ المودع الصافي' : 'Net Amount Deposited'}</span>
                   <span className="text-base font-black text-emerald-400 font-mono">
-                    ${selectedReceipt.amountWon.toFixed(2)} USDT
+                    {fmt(selectedReceipt.amountWon)}
                   </span>
                 </div>
 

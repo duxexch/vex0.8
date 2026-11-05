@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { channelsStore, ChannelProfile } from './channelsStore';
+import { resolveCompany } from './channelCampaign';
+import { BOT_PROMO_DOMAINS } from './botPromo';
+import { storage } from './storage';
 
 // =========================================================================
 // 🛡 بوابة الرقيب — POST SENTRY
@@ -17,6 +20,8 @@ export interface SentryVerdict {
   lang: TextLang;
   kind: ContentKind;
   betting: boolean;
+  /** Active partner brands explicitly named in the post (canonical company names). */
+  companies: string[];
 }
 
 export interface SentryResult {
@@ -94,11 +99,80 @@ export function detectBetting(text: string): boolean {
   return false;
 }
 
+// ------------------------------------------------------- company detection
+
+/** Our official domains — a link to them is NEVER a partner-brand mention
+ *  (https://1xbetservices.com is our own domain, not a 1XBET promotion). */
+const OUR_HOSTS = BOT_PROMO_DOMAINS.map((d) => {
+  try {
+    return new URL(d).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}).filter(Boolean);
+
+/** Remove our official links (full URLs + bare hosts) before brand scanning. */
+function stripOurLinks(text: string): string {
+  let out = text.replace(/https?:\/\/[^\s<>"')]+/g, (u) => {
+    try {
+      const h = new URL(u.replace(/[).,]+$/, '')).hostname.replace(/^www\./, '');
+      return OUR_HOSTS.includes(h) ? ' ' : u;
+    } catch {
+      return u;
+    }
+  });
+  for (const h of OUR_HOSTS) out = out.split(h).join(' ');
+  return out;
+}
+
+/** Lowercase + drop Arabic harakat/tatweel so brand matching is diacritic-proof. */
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Word-boundary aware brand mention (latin boundaries only — Arabic passes). */
+function mentionsBrand(haystack: string, needle: string): boolean {
+  const n = normalizeForMatch(needle);
+  if (n.length < 4) return false;
+  let i = haystack.indexOf(n);
+  while (i !== -1) {
+    const before = i > 0 ? haystack[i - 1] : '';
+    const after = haystack[i + n.length] || '';
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true;
+    i = haystack.indexOf(n, i + 1);
+  }
+  return false;
+}
+
+/** Every active partner brand explicitly named in the post (canonical `name`). */
+function detectCompanies(text: string): string[] {
+  try {
+    const hay = normalizeForMatch(stripOurLinks(text));
+    const found: string[] = [];
+    for (const c of storage.getCompanies()) {
+      if (!c.is_active) continue;
+      const variants = [c.name, c.name_ar || '', c.name_en || '', c.name_es || '', c.name_ru || ''];
+      // Arabic display names may appear without their parenthetical latin part —
+      // also try each paren/slash-separated fragment («ميلبيت» from «ميلبيت (MELBET)»).
+      for (const part of (c.name_ar || '').split(/[()\[\]/|,،:]+/)) variants.push(part);
+      if (variants.some((v) => mentionsBrand(hay, v))) found.push(c.name);
+    }
+    return found;
+  } catch {
+    return [];
+  }
+}
+
 export function reviewText(text: string): SentryVerdict {
   return {
     lang: detectLang(text),
     kind: detectKind(text),
     betting: detectBetting(text),
+    companies: detectCompanies(text),
   };
 }
 
@@ -125,12 +199,30 @@ export function fitIssues(ch: ChannelProfile, v: SentryVerdict): string[] {
   if ((v.kind === 'forecast' || v.kind === 'live' || v.kind === 'news') && ch.category === 'support') {
     issues.push(`category: ${v.kind} content on support channel`);
   }
+  // 🏢 company — a post promoting brand X must not land in a channel dedicated
+  // to a different brand Y. Neutral channels accept any brand; multi-brand
+  // posts are fine when they include the channel's own brand.
+  const chCompany = resolveCompany(ch)?.name || '';
+  if (
+    chCompany &&
+    v.companies.length > 0 &&
+    !v.companies.some((p) => p.toLowerCase() === chCompany.toLowerCase())
+  ) {
+    issues.push(`company: post=${v.companies.join('/')} channel=${chCompany}`);
+  }
   return issues;
 }
 
 function usageWeight(ch: ChannelProfile): number {
   const today = new Date().toISOString().slice(0, 10);
   return ch.daily_reset === today ? ch.daily_used : 0;
+}
+
+/** Does this channel's dedicated brand appear among the post's brands? */
+function matchesPostCompany(ch: ChannelProfile, v: SentryVerdict): boolean {
+  if (v.companies.length === 0) return false;
+  const name = resolveCompany(ch)?.name || '';
+  return Boolean(name) && v.companies.some((p) => p.toLowerCase() === name.toLowerCase());
 }
 
 /** Best alternative publishable channel that fits; null when none exists. */
@@ -140,7 +232,14 @@ function pickAlternative(fromChatId: string, v: SentryVerdict): ChannelProfile |
     .filter((c) => c.chat_id !== fromChatId)
     .filter((c) => fitIssues(c, v).length === 0);
   if (candidates.length === 0) return null;
-  candidates.sort((a, b) => usageWeight(a) - usageWeight(b));
+  // Company fit first: land the post on a channel dedicated to a brand it
+  // actually promotes (neutral channels are the fallback), then daily usage.
+  candidates.sort((a, b) => {
+    const ca = matchesPostCompany(a, v) ? 0 : 1;
+    const cb = matchesPostCompany(b, v) ? 0 : 1;
+    if (ca !== cb) return ca - cb;
+    return usageWeight(a) - usageWeight(b);
+  });
   return candidates[0];
 }
 
@@ -222,6 +321,7 @@ export function sentryGate(chatId: string, text: string): SentryResult {
       lang: verdict.lang,
       kind: verdict.kind,
       betting: verdict.betting,
+      companies: verdict.companies,
       snippet: text.replace(/\s+/g, ' ').slice(0, 140),
     });
 

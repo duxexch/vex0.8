@@ -21,6 +21,11 @@ import {
 
 interface DirectDepositUnfreezeModalProps {
   isOpen: boolean;
+  /**
+   * 'unfreeze' → 1:1 matching deposit capped at the frozen balance (default).
+   * 'general'  → general wallet deposit: any amount, no frozen-balance cap.
+   */
+  mode?: 'unfreeze' | 'general';
   onClose: () => void;
   wallets: Wallet[];
   companies: Company[];
@@ -32,6 +37,7 @@ interface DirectDepositUnfreezeModalProps {
 
 export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProps> = ({
   isOpen,
+  mode = 'unfreeze',
   onClose,
   wallets,
   companies,
@@ -40,6 +46,7 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
   onSuccess,
   showToast,
 }) => {
+  const isGeneral = mode === 'general';
   const [selectedCompanyId, setSelectedCompanyId] = useState(wallets[0]?.company_id || companies[0]?.id || '');
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [selectedPmId, setSelectedPmId] = useState<string>('');
@@ -122,7 +129,9 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
       return;
     }
 
-    if (amount > frozenBal) {
+    // General deposits aren't limited by the frozen balance — only the
+    // 1:1 unfreeze flow caps the amount at what is currently frozen.
+    if (!isGeneral && amount > frozenBal) {
       setError(
         getLocalizedText(
           'err_frozen',
@@ -168,7 +177,7 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
         amount,
         account_number: accountNumber,
         sender_phone: senderPhone,
-        screenshot_note: screenshotNote || 'إيصال إيداع مباشر لفك التجميد',
+        screenshot_note: screenshotNote || (isGeneral ? 'إيصال إيداع عام' : 'إيصال إيداع مباشر لفك التجميد'),
         payment_method_id: selectedPm?.id,
         payment_method_name: selectedPm ? (lang === 'ar' ? selectedPm.nameAr || selectedPm.name : selectedPm.nameEn || selectedPm.name) : undefined,
       });
@@ -176,19 +185,19 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
       setSuccess(
         getLocalizedText(
           'success_msg',
-          'تم إرسال طلب إيداع فك التجميد بنجاح! سيتم مراجعته واعتماده فوراً.',
-          'Deposit unfreeze request submitted successfully!',
-          '¡Solicitud de descongelación enviada con éxito!',
-          'Запрос на разморозку депозита успешно отправлен!'
+          isGeneral ? 'تم إرسال طلب الإيداع بنجاح! سيتم مراجعته وإيداعه في محفظتك قريباً.' : 'تم إرسال طلب إيداع فك التجميد بنجاح! سيتم مراجعته واعتماده فوراً.',
+          isGeneral ? 'Deposit request submitted successfully!' : 'Deposit unfreeze request submitted successfully!',
+          isGeneral ? '¡Solicitud de depósito enviada con éxito!' : '¡Solicitud de descongelación enviada con éxito!',
+          isGeneral ? 'Запрос на депозит успешно отправлен!' : 'Запрос на разморозку депозита успешно отправлен!'
         )
       );
       showToast(
         getLocalizedText(
           'toast_msg',
-          'تم تقديم طلب فك التجميد بنجاح',
-          'Deposit unfreeze submitted',
-          'Solicitud de descongelación enviada',
-          'Запрос на разморозку отправлен'
+          isGeneral ? 'تم تقديم طلب الإيداع بنجاح' : 'تم تقديم طلب فك التجميد بنجاح',
+          isGeneral ? 'Deposit request submitted' : 'Deposit unfreeze submitted',
+          isGeneral ? 'Solicitud de depósito enviada' : 'Solicitud de descongelación enviada',
+          isGeneral ? 'Запрос на депозит отправлен' : 'Запрос на разморозку отправлен'
         )
       );
       setTimeout(() => {
@@ -217,19 +226,19 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
               <h3 className="text-sm font-bold text-slate-900">
                 {getLocalizedText(
                   'title',
-                  'إيداع مباشر لفك التجميد (1:1)',
-                  'Direct Deposit Unfreeze (1:1)',
-                  'Depósito directo para descongelar (1:1)',
-                  'Прямой депозит для разморозки (1:1)'
+                  isGeneral ? 'إيداع عام في المحفظة' : 'إيداع مباشر لفك التجميد (1:1)',
+                  isGeneral ? 'General Wallet Deposit' : 'Direct Deposit Unfreeze (1:1)',
+                  isGeneral ? 'Depósito general en la billetera' : 'Depósito directo para descongelar (1:1)',
+                  isGeneral ? 'Общий депозит в кошелёк' : 'Прямой депозит для разморозки (1:1)'
                 )}
               </h3>
               <p className="text-[11px] text-slate-500">
                 {getLocalizedText(
                   'subtitle',
-                  'فك تجميد رصيدك فوراً وبدون دعوة أصدقاء',
-                  'Unfreeze balance instantly via matching deposit',
-                  'Descongelar saldo al instante mediante nuevo depósito',
-                  'Мгновенная разморозка баланса через новый депозит'
+                  isGeneral ? 'أودع أي مبلغ في محفظتك بسهولة وأمان' : 'فك تجميد رصيدك فوراً وبدون دعوة أصدقاء',
+                  isGeneral ? 'Deposit any amount into your wallet, fast & safe' : 'Unfreeze balance instantly via matching deposit',
+                  isGeneral ? 'Deposite cualquier monto en su billetera' : 'Descongelar saldo al instante mediante nuevo depósito',
+                  isGeneral ? 'Внесите любую сумму в кошелёк' : 'Мгновенная разморозка баланса через новый депозит'
                 )}
               </p>
             </div>
@@ -264,20 +273,28 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
               <span>
                 {getLocalizedText(
                   'terms_title',
-                  'شروط الإيداع لفك التجميد:',
-                  'Direct Deposit Terms:',
-                  'Condiciones del depósito directo:',
-                  'Условия прямого депозита:'
+                  isGeneral ? 'شروط الإيداع العام:' : 'شروط الإيداع لفك التجميد:',
+                  isGeneral ? 'General Deposit Terms:' : 'Direct Deposit Terms:',
+                  isGeneral ? 'Condiciones del depósito general:' : 'Condiciones del depósito directo:',
+                  isGeneral ? 'Условия общего депозита:' : 'Условия прямого депозита:'
                 )}
               </span>
             </p>
             <p className="text-[11px] text-emerald-800 leading-relaxed">
               {getLocalizedText(
                 'terms_desc',
-                'عند قيامك بإيداع مبلغ جديد في المنصة، سيتم فك تجميد نفس القيمة من رصيدك المجمد فوراً بنسبة 100% (1 مقابل 1) بعد مراجعة إيصال الإيداع ورقم الهاتف من قبل الإدارة.',
-                'When you make a new deposit, the exact matching amount will be unfrozen 1:1 from your frozen balance upon admin verification.',
-                'Al realizar un nuevo depósito en la plataforma, se descongelará exactamente el mismo monto 1:1 de su saldo congelado tras la verificación.',
-                'При внесении нового депозита точно такая же сумма будет разморожена 1:1 с вашего замороженного баланса после проверки администрацией.'
+                isGeneral
+                  ? 'سيتم إيداع المبلغ في محفظتك بعد مراجعة الإدارة للإيصال ورقم الهاتف، وستصلك الموافقة كإشعار فوري.'
+                  : 'عند قيامك بإيداع مبلغ جديد في المنصة، سيتم فك تجميد نفس القيمة من رصيدك المجمد فوراً بنسبة 100% (1 مقابل 1) بعد مراجعة إيصال الإيداع ورقم الهاتف من قبل الإدارة.',
+                isGeneral
+                  ? 'Your deposit is credited to your wallet after the admin verifies the receipt and phone number — you get an instant approval notification.'
+                  : 'When you make a new deposit, the exact matching amount will be unfrozen 1:1 from your frozen balance upon admin verification.',
+                isGeneral
+                  ? 'Su depósito se acredita en su billetera tras la verificación del recibo y el teléfono.'
+                  : 'Al realizar un nuevo depósito en la plataforma, se descongelará exactamente el mismo monto 1:1 de su saldo congelado tras la verificación.',
+                isGeneral
+                  ? 'Депозит зачисляется в кошелёк после проверки чека и телефона администрацией.'
+                  : 'При внесении нового депозита точно такая же сумма будет разморожена 1:1 с вашего замороженного баланса после проверки администрацией.'
               )}
             </p>
           </div>
@@ -346,7 +363,7 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
                           key={pm.id}
                           type="button"
                           onClick={() => setSelectedPmId(pm.id)}
-                          className={`p-2.5 rounded-xl border text-right transition-all flex flex-col justify-between cursor-pointer ${
+                          className={`p-2.5 rounded-xl border text-start transition-all flex flex-col justify-between cursor-pointer ${
                             isSelected
                               ? 'bg-emerald-50/90 border-emerald-500 text-emerald-950 shadow-xs ring-1 ring-emerald-500'
                               : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
@@ -567,10 +584,10 @@ export const DirectDepositUnfreezeModal: React.FC<DirectDepositUnfreezeModalProp
                   <span>
                     {getLocalizedText(
                       'submit_btn',
-                      'إرسال طلب إيداع لفك التجميد',
-                      'Submit Deposit Unfreeze Request',
-                      'Enviar solicitud de descongelación',
-                      'Отправить запрос на разморозку'
+                      isGeneral ? 'إرسال طلب الإيداع' : 'إرسال طلب إيداع لفك التجميد',
+                      isGeneral ? 'Submit Deposit Request' : 'Submit Deposit Unfreeze Request',
+                      isGeneral ? 'Enviar solicitud de depósito' : 'Enviar solicitud de descongelación',
+                      isGeneral ? 'Отправить запрос на депозит' : 'Отправить запрос на разморозку'
                     )}
                   </span>
                 </>

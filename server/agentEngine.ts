@@ -1905,7 +1905,7 @@ ${primeMatch.teams} (${primeMatch.league})
     // Resolve target company
     let targetCompany = targetCompanyId ? companies.find((c) => c.id === targetCompanyId) : null;
     if (!targetCompany && (theme === 'partner_promo' || !targetCompanyId)) {
-      targetCompany = companies.find((c) => c.is_active && c.name.includes('1XBET')) || companies.find((c) => c.is_active) || companies[0];
+      targetCompany = companies.find((c) => c.is_active) || companies[0];
     }
 
     // Resolve target match
@@ -1928,7 +1928,7 @@ ${primeMatch.teams} (${primeMatch.league})
     } else if (theme === 'partner_promo') {
       category = 'marketing';
       const code = targetCompany?.promo_code || 'vexwallet';
-      const compName = targetCompany?.name_ar || targetCompany?.name || '1XBET';
+      const compName = targetCompany?.name_ar || targetCompany?.name || 'VEX Deals';
       const bonus = targetCompany?.bonus_text || 'بونص ترحيبي 130% + استرداد 100%';
       fallbackTitle = `🎁 عرض حصري: سجل في ${compName}`;
       fallbackMessage = `استخدم كود الوكالة [${code}] واحصل على ${bonus} وضمان تعويض كامل من VEX!`;
@@ -2078,10 +2078,10 @@ ${primeMatch.teams} (${primeMatch.league})
       targetCompany = companies.find((c) => c.name.toLowerCase().includes(params.targetCompanyId!.toLowerCase()));
     }
     if (!targetCompany) {
-      targetCompany = companies.find((c) => c.name.toLowerCase().includes('1xbet')) || companies[0];
+      targetCompany = companies.find((c) => c.is_active) || companies[0];
     }
 
-    const companyName = targetCompany?.name || '1XBET';
+    const companyName = targetCompany?.name || 'VEX Deals';
     const promoCode = targetCompany?.promo_code || 'vexwallet';
 
     const now = new Date();
@@ -2310,10 +2310,10 @@ ${params.baseMessage ? `- نص الرسالة الأساسية المقترحة:
       targetCompany = companies.find((c) => c.name.toLowerCase().includes(params.targetCompanyId!.toLowerCase()));
     }
     if (!targetCompany) {
-      targetCompany = companies.find((c) => c.name.toLowerCase().includes('1xbet')) || companies[0];
+      targetCompany = companies.find((c) => c.is_active) || companies[0];
     }
 
-    const companyName = targetCompany?.name || '1XBET';
+    const companyName = targetCompany?.name || 'VEX Deals';
     const promoCode = targetCompany?.promo_code || 'vexwallet';
 
     // Default high-converting A/B contrast presets

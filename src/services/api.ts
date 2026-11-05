@@ -59,9 +59,21 @@ const STORAGE_KEYS = {
   ACTIVE_OTP: 'vex_comp_active_otp',
   BRANDING: 'vex_app_branding',
   NOTIFICATIONS: 'vex_app_notifications',
+  NOTIF_OWNER: 'vex_app_notifications_owner',
   PHONE_CHANGE_REQUESTS: 'vex_phone_change_requests',
   PHONE_REF: 'vex_phone_ref',
 };
+
+/** Tell the app the authenticated identity changed (login / account switch). */
+function noteSessionChanged(): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vex:session-changed'));
+    }
+  } catch {
+    // ignore — storage/event unavailable
+  }
+}
 
 // SHA-256 for secure PIN hashing
 async function sha256(str: string): Promise<string> {
@@ -858,6 +870,7 @@ class VexMobileApiService {
         // Persist the session number (رقم محفوظ) — gone on cache clear, by design
         try {
           if (data.session_id) localStorage.setItem('vex_session_id', data.session_id);
+          noteSessionChanged();
         } catch {
           // ignore
         }
@@ -940,6 +953,7 @@ class VexMobileApiService {
       // Verified: store the session number for header-based auth (x-session-id)
       try {
         if (data.session_id) localStorage.setItem('vex_session_id', data.session_id);
+        noteSessionChanged();
       } catch {
         // ignore
       }
@@ -1023,6 +1037,7 @@ class VexMobileApiService {
     // Store the session number for header-based auth (x-session-id)
     try {
       if (data.session_id) localStorage.setItem('vex_session_id', data.session_id);
+      noteSessionChanged();
     } catch {
       // ignore — cookie auth still works
     }
@@ -2770,12 +2785,43 @@ class VexMobileApiService {
   // --------------------------------------------------------------------------
   // Notifications System
   // --------------------------------------------------------------------------
+
+  /**
+   * The local notifications cache is shared browser storage — after a logout →
+   * different-account login it must never keep serving the PREVIOUS account's
+   * feed. Guest-stage data (WC… uid) legitimately follows the first linked
+   * account; anything else that isn't the current identity is dropped.
+   */
+  private reconcileLocalNotificationOwner(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const uid = this.userId;
+      const owner = localStorage.getItem(STORAGE_KEYS.NOTIF_OWNER) || '';
+      if (owner === uid) return;
+      const isGuestUid = (v: string) => /^WC/.test(v);
+      if (owner && owner !== uid && !isGuestUid(owner)) {
+        // A different, already-linked account owned this cache → start clean.
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify([]));
+      }
+      localStorage.setItem(STORAGE_KEYS.NOTIF_OWNER, uid);
+    } catch {
+      // storage unavailable — nothing to reconcile
+    }
+  }
+
   public async getNotifications(): Promise<AppNotification[]> {
     if (typeof window === 'undefined') return [];
 
+    this.reconcileLocalNotificationOwner();
+
     let remoteNotifs: AppNotification[] = [];
     try {
-      const res = await fetch('/api/notifications');
+      // Admins (token already unlocked in this browser) also receive the
+      // admin-only notices; regular users never see them.
+      const headers: Record<string, string> = {};
+      const adminToken = this.getAdminToken();
+      if (adminToken) headers['x-admin-token'] = adminToken;
+      const res = await fetch('/api/notifications', { headers });
       if (res.ok) {
         const data = await res.json();
         remoteNotifs = data.notifications || [];
@@ -2833,6 +2879,7 @@ class VexMobileApiService {
 
   public async markNotificationAsRead(id: string): Promise<void> {
     if (typeof window === 'undefined') return;
+    this.reconcileLocalNotificationOwner();
     const raw = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
     const notifs: AppNotification[] = raw ? JSON.parse(raw) : [];
 
@@ -2856,6 +2903,7 @@ class VexMobileApiService {
 
   private saveNotificationLocally(notif: AppNotification): void {
     if (typeof window === 'undefined') return;
+    this.reconcileLocalNotificationOwner();
     const raw = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
     const notifs: AppNotification[] = raw ? JSON.parse(raw) : [];
     notifs.unshift(notif);

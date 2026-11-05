@@ -100,11 +100,12 @@ async function maybeSendDrip(lead: Lead, now: number): Promise<void> {
 
 // --------------------------- event triggers ---------------------------
 
-/** Jackpot milestone: when the pot crosses a 10k step, notify warm lottery fans. */
+/** Jackpot milestone: when the pot crosses a 1k step, notify warm lottery fans. */
 function checkJackpotMilestone(now: number): void {
   const state = lotteryProvider?.();
   if (!state || typeof state.jackpotAmount !== 'number') return;
-  const milestone = Math.floor(state.jackpotAmount / 10000);
+  // Prize scale was reduced (~1/10) — keep milestones reachable at the new size.
+  const milestone = Math.floor(state.jackpotAmount / 1000);
   if (lastJackpotMilestone === -1) {
     lastJackpotMilestone = milestone;
     return;

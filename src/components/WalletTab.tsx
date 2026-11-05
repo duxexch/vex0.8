@@ -37,6 +37,8 @@ interface WalletTabProps {
   onGoToReferral: (companyId: string) => void;
   onRequestComp: (companyId: string) => void;
   onOpenDepositUnfreeze: () => void;
+  /** Standalone general deposit button (any amount, not only 1:1 unfreeze). */
+  onOpenGeneralDeposit?: () => void;
   onOpenPhoneModal?: () => void;
   onOpenPhoneChangeRequest?: () => void;
   pendingPhoneRequest?: PhoneChangeRequest | null;
@@ -57,6 +59,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
   onGoToReferral,
   onRequestComp,
   onOpenDepositUnfreeze,
+  onOpenGeneralDeposit,
   onOpenPhoneModal,
   onOpenPhoneChangeRequest,
   pendingPhoneRequest,
@@ -150,6 +153,15 @@ export const WalletTab: React.FC<WalletTabProps> = ({
             </span>
           </span>
           <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={onOpenGeneralDeposit}
+              className="h-7 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap shrink-0"
+              title={isAr ? 'إيداع عام في المحفظة' : 'General wallet deposit'}
+            >
+              <DollarSign className="w-3.5 h-3.5" />
+              <span>{isAr ? 'إيداع' : 'Deposit'}</span>
+            </button>
             <button
               type="button"
               onClick={() => handleOpenQrModal('master')}

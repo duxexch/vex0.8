@@ -15,20 +15,27 @@ import {
 } from 'lucide-react';
 import { Language, LotteryPrizeTier } from '../../types';
 import { DEFAULT_PRIZE_TIERS } from '../../services/lotteryService';
+import { formatCurrency } from '../../utils/currency';
 
 interface LotteryPrizeCardsProps {
   lang: Language;
   currentPool?: number;
+  /** Customer's chosen display currency — prize figures follow it. */
+  displayCurrency?: string;
   onSelectPlay?: () => void;
 }
 
 export const LotteryPrizeCards: React.FC<LotteryPrizeCardsProps> = ({
   lang,
-  currentPool = 18450.0,
+  currentPool = 3200.0,
+  displayCurrency = 'USD',
   onSelectPlay,
 }) => {
   const isAr = lang === 'ar';
   const [selectedPrizeTier, setSelectedPrizeTier] = useState<LotteryPrizeTier | null>(null);
+
+  // Money display helper (USD base → customer's currency)
+  const fmt = (usd: number) => formatCurrency(usd, displayCurrency);
 
   return (
     <div className="space-y-4">
@@ -142,7 +149,7 @@ export const LotteryPrizeCards: React.FC<LotteryPrizeCardsProps> = ({
                         : (isAr ? 'قيمة الجائزة التقديرية' : 'Estimated Prize')}
                     </span>
                     <span className="text-xl sm:text-2xl font-black text-amber-400 font-mono tracking-tight">
-                      ${calculatedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {fmt(calculatedAmount)}
                     </span>
                   </div>
                   {tier.sharePercent && (

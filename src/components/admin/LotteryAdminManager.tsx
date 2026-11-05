@@ -49,7 +49,7 @@ export const LotteryAdminManager: React.FC<LotteryAdminManagerProps> = ({
   const [newDrawTitleAr, setNewDrawTitleAr] = useState<string>('');
   const [newDrawTitleEn, setNewDrawTitleEn] = useState<string>('');
   const [newDrawTicketPrice, setNewDrawTicketPrice] = useState<number>(1.0);
-  const [newDrawJackpot, setNewDrawJackpot] = useState<number>(15000.0);
+  const [newDrawJackpot, setNewDrawJackpot] = useState<number>(2500.0);
   const [newDrawCloseDays, setNewDrawCloseDays] = useState<number>(7);
   const [isCreatingDraw, setIsCreatingDraw] = useState<boolean>(false);
 
@@ -263,7 +263,7 @@ export const LotteryAdminManager: React.FC<LotteryAdminManagerProps> = ({
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[11px] font-bold text-slate-400 block">{isAr ? 'إجمالي الجوائز الموزعة' : 'Total Payouts'}</span>
           <span className="text-base sm:text-lg font-black text-emerald-600 font-mono">
-            ${(stats?.totalPrizesPaid || 32500).toLocaleString()}
+            ${(stats?.totalPrizesPaid || 3250).toLocaleString()}
           </span>
         </div>
 
@@ -515,7 +515,7 @@ export const LotteryAdminManager: React.FC<LotteryAdminManagerProps> = ({
                     type="number"
                     step="500"
                     value={newDrawJackpot}
-                    onChange={(e) => setNewDrawJackpot(parseFloat(e.target.value) || 15000)}
+                    onChange={(e) => setNewDrawJackpot(parseFloat(e.target.value) || 2500)}
                     className="w-full p-2 rounded-xl border border-slate-200"
                   />
                 </div>

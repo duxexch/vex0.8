@@ -412,11 +412,11 @@ export const GUIDES: Record<string, Guide> = {
         'السحب يتم بعد انتهاء المدة (ساعة/يوم/أسبوع)',
         'الأرقام الفائزة تُحسب بـ SHA-256 hashing',
         'يمكنك التحقق من عدالة كل سحب',
-        'اربح حتى 10,000$ في Jackpot',
+        'اربح حتى 1,000$ في Jackpot',
       ],
       faq: [
         { q: 'هل السحب عادل؟', a: 'نعم، كل سحب مُثبت بـ SHA-256 server seed + client seed + nonce.' },
-        { q: 'كم قيمة الجائزة؟', a: 'من 2.50$ حتى 10,000$+ حسب الترتيب.' },
+        { q: 'كم قيمة الجائزة؟', a: 'من 1.00$ حتى 1,000$+ حسب الترتيب.' },
       ],
     },
     en: {
@@ -428,11 +428,11 @@ export const GUIDES: Record<string, Guide> = {
         'The draw happens when the timer ends (hour/day/week)',
         'Winning numbers are computed with SHA-256 hashing',
         'You can verify the fairness of every draw',
-        'Win up to $10,000 in the Jackpot',
+        'Win up to $1,000 in the Jackpot',
       ],
       faq: [
         { q: 'Are the draws fair?', a: 'Yes, every draw uses SHA-256 server seed + client seed + nonce.' },
-        { q: 'How big are the prizes?', a: 'From $2.50 up to $10,000+ depending on the tier.' },
+        { q: 'How big are the prizes?', a: 'From $1.00 up to $1,000+ depending on the tier.' },
       ],
     },
     es: {
@@ -444,11 +444,11 @@ export const GUIDES: Record<string, Guide> = {
         'El sorteo se realiza al terminar el tiempo (hora/día/semana)',
         'Los números ganadores se calculan con hashing SHA-256',
         'Puedes verificar la justicia de cada sorteo',
-        'Gana hasta 10.000 $ en el Jackpot',
+        'Gana hasta 1.000 $ en el Jackpot',
       ],
       faq: [
         { q: '¿Los sorteos son justos?', a: 'Sí, cada sorteo usa SHA-256 server seed + client seed + nonce.' },
-        { q: '¿Cuáles son los premios?', a: 'Desde 2,50 $ hasta más de 10.000 $ según la categoría.' },
+        { q: '¿Cuáles son los premios?', a: 'Desde 1,00 $ hasta más de 1.000 $ según la categoría.' },
       ],
     },
     ru: {
@@ -460,11 +460,11 @@ export const GUIDES: Record<string, Guide> = {
         'Розыгрыш проходит по таймеру (час/день/неделя)',
         'Выигрышные числа считаются хешированием SHA-256',
         'Вы можете проверить честность каждого розыгрыша',
-        'Выиграйте до 10 000 $ в Джекпоте',
+        'Выиграйте до 1 000 $ в Джекпоте',
       ],
       faq: [
         { q: 'Розыгрыши честные?', a: 'Да, каждый розыгрыш использует SHA-256 server seed + client seed + nonce.' },
-        { q: 'Каковы призы?', a: 'От 2,50 $ до 10 000 $+ в зависимости от уровня.' },
+        { q: 'Каковы призы?', a: 'От 1,00 $ до 1 000 $+ в зависимости от уровня.' },
       ],
     },
     fr: {
@@ -476,11 +476,11 @@ export const GUIDES: Record<string, Guide> = {
         'Le tirage a lieu à la fin du minuteur (heure/jour/semaine)',
         'Les numéros gagnants sont calculés par hachage SHA-256',
         'Vous pouvez vérifier l’équité de chaque tirage',
-        'Gagnez jusqu’à 10 000 $ au Jackpot',
+        'Gagnez jusqu’à 1 000 $ au Jackpot',
       ],
       faq: [
         { q: 'Les tirages sont-ils équitables ?', a: 'Oui, chaque tirage utilise SHA-256 server seed + client seed + nonce.' },
-        { q: 'Quels sont les prix ?', a: 'De 2,50 $ à plus de 10 000 $ selon la catégorie.' },
+        { q: 'Quels sont les prix ?', a: 'De 1,00 $ à plus de 1 000 $ selon la catégorie.' },
       ],
     },
     de: {
@@ -492,11 +492,11 @@ export const GUIDES: Record<string, Guide> = {
         'Die Ziehung erfolgt nach Ablauf des Timers (Stunde/Tag/Woche)',
         'Die Gewinnzahlen werden mit SHA-256-Hashing berechnet',
         'Sie können die Fairness jeder Ziehung überprüfen',
-        'Gewinnen Sie bis zu 10.000 $ im Jackpot',
+        'Gewinnen Sie bis zu 1.000 $ im Jackpot',
       ],
       faq: [
         { q: 'Sind die Ziehungen fair?', a: 'Ja, jede Ziehung nutzt SHA-256 server seed + client seed + nonce.' },
-        { q: 'Wie hoch sind die Preise?', a: 'Von 2,50 $ bis über 10.000 $ je nach Stufe.' },
+        { q: 'Wie hoch sind die Preise?', a: 'Von 1,00 $ bis über 1.000 $ je nach Stufe.' },
       ],
     },
     tr: {
@@ -508,11 +508,11 @@ export const GUIDES: Record<string, Guide> = {
         'Çekiliş süre bitiminde yapılır (saat/gün/hafta)',
         'Kazanan sayılar SHA-256 hashing ile hesaplanır',
         'Her çekilişin adaletini doğrulayabilirsiniz',
-        'Jackpot’ta 10.000$’a kadar kazanın',
+        'Jackpot’ta 1.000$’a kadar kazanın',
       ],
       faq: [
         { q: 'Çekilişler adil mi?', a: 'Evet, her çekiliş SHA-256 server seed + client seed + nonce kullanır.' },
-        { q: 'Ödüller ne kadar?', a: 'Kategoriye göre 2,50$’dan 10.000$+’ya kadar.' },
+        { q: 'Ödüller ne kadar?', a: 'Kategoriye göre 1,00$’dan 1.000$+’ya kadar.' },
       ],
     },
     pt: {
@@ -524,11 +524,11 @@ export const GUIDES: Record<string, Guide> = {
         'O sorteio ocorre ao fim do temporizador (hora/dia/semana)',
         'Os números vencedores são calculados com hash SHA-256',
         'Você pode verificar a justiça de cada sorteio',
-        'Ganhe até US$ 10.000 no Jackpot',
+        'Ganhe até US$ 1.000 no Jackpot',
       ],
       faq: [
         { q: 'Os sorteios são justos?', a: 'Sim, cada sorteio usa SHA-256 server seed + client seed + nonce.' },
-        { q: 'Quais são os prêmios?', a: 'De US$ 2,50 até mais de US$ 10.000, conforme a categoria.' },
+        { q: 'Quais são os prêmios?', a: 'De US$ 1,00 até mais de US$ 1.000, conforme a categoria.' },
       ],
     },
   },

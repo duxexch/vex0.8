@@ -212,7 +212,7 @@ export async function pullSourcePosts(maxPages = 4): Promise<{ added: number; to
 
 // -------------------------------------------------------------- companies
 
-function resolveCompany(ch: ChannelProfile): CompanyInfo | null {
+export function resolveCompany(ch: ChannelProfile): CompanyInfo | null {
   const companies = loadCompanies().filter((c) => c.is_active !== false);
   if (!companies.length) return null;
   const brandCompany = String(ch.brand?.company || '').trim().toLowerCase();
