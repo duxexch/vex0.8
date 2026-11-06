@@ -4,3 +4,11 @@ dist
 .env
 npm-debug.log
 .DS_Store
+
+# Runtime state lives in ./data and is mounted as a volume (docker-compose:
+# ./data:/app/data) — copying ~1.4 GB of images/logs into every build context
+# exhausted the server disk. Never bake it into the image.
+data/
+VEX-Deals.apk
+promo-media/
+*.log
