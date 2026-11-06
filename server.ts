@@ -1821,6 +1821,40 @@ app.get('/api/admin/growth/tgweb/drip/candidates', (_req, res) => {
   }
 });
 
+// Loopback-only drip status + pass (ops scripts; admin UI uses the session-guarded
+// routes above — /api/admin is behind the Telegram session guard).
+function loopbackOnly(req: any, res: any): boolean {
+  const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || String(req.headers['x-real-ip'] || '').trim()
+    || String(req.socket.remoteAddress || '').trim();
+  if (!isLoopbackOrPrivateIp(rawIp)) {
+    res.status(403).json({ error: 'FORBIDDEN' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/growth/tgweb-drip', (req, res) => {
+  if (!loopbackOnly(req, res)) return;
+  try {
+    res.json({ success: true, drip: growthTgDripStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/growth/tgweb-drip', (req, res) => {
+  if (!loopbackOnly(req, res)) return;
+  try {
+    growthTgWebEnsureWarmup();
+    const max = Math.max(1, Math.min(25, Number(req.body?.max) || 5));
+    const result = growthTgDripRun({ max });
+    res.json({ success: true, result, drip: growthTgDripStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Loopback-only contact import (same handler as admin endpoint, no session needed for ops scripts)
 app.post('/api/growth/import-contacts', (req, res) => {
   const rawIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
