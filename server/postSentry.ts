@@ -302,21 +302,23 @@ function readLog(): any[] {
 /**
  * Main entry: called right before every Telegram send.
  * Returns the (possibly re-targeted) chat id + text. Never throws, never blocks.
+ *
+ * `opts.niche` marks purpose-built agents/marketers content: it is written FOR
+ * that audience, so it is never re-routed out of its niche (and generic posts
+ * are never allowed in — pickAlternative excludes niche channels).
  */
-export function sentryGate(chatId: string, text: string): SentryResult {
+export function sentryGate(chatId: string, text: string, opts?: { niche?: boolean }): SentryResult {
   try {
     const ch = channelsStore.get(chatId);
     if (!ch) return { chatId, text, corrected: false, issues: [], verdict: reviewText(text) };
 
     const verdict = reviewText(text);
+    if (opts?.niche) return { chatId, text, corrected: false, issues: [], verdict };
+
     const issues = fitIssues(ch, verdict);
     if (issues.length === 0) return { chatId, text, corrected: false, issues: [], verdict };
 
-    // Niche channels (agents/marketers) receive only their own purpose-built
-    // content — a mis-read verdict must never eject a niche post into a
-    // generic sports/partner channel. Log it, keep the target.
-    const isNiche = ch.category === 'agents' || ch.category === 'marketers';
-    const alt = isNiche ? null : pickAlternative(chatId, verdict);
+    const alt = pickAlternative(chatId, verdict);
     const target = alt || ch;
     const finalText = alt ? swapSignature(text, ch, alt) : text;
 

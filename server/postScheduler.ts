@@ -151,6 +151,17 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
       continue;
     }
 
+    // 🎯 Niche channels (agents/marketers) are owned by the niche publisher
+    // (server/nichePosts.ts). Queue entries built before the channel was
+    // reclassified must never land there — cancel them instead of deferring.
+    const origin = channelsStore.get(item.chat_id);
+    if (origin && (origin.category === 'agents' || origin.category === 'marketers')) {
+      item.status = 'cancelled';
+      item.lastError = `niche channel (${origin.category}) — served by niche publisher`;
+      changed = true;
+      continue;
+    }
+
     // Resolve the channel that will ACTUALLY receive this post (the sentry may
     // re-route mis-targeted content) — caps/pace/gap must follow the receiver.
     const targetId = previewReroute(item.chat_id, item.text);

@@ -537,12 +537,18 @@ function saveQueue(q: PublishQueueItem[]): void {
   writeJson(PUBLISH_QUEUE_PATH, q);
 }
 
-export async function sendTelegram(chatId: string, text: string, parseMode: string, imagePath?: string | null): Promise<{ ok: boolean; error?: string; sentTo?: string }> {
+export async function sendTelegram(
+  chatId: string,
+  text: string,
+  parseMode: string,
+  imagePath?: string | null,
+  opts?: { niche?: boolean }
+): Promise<{ ok: boolean; error?: string; sentTo?: string }> {
   // 🛡 بوابة الرقيب — verify targeting (lang/category/audience) and reroute if needed.
   let targetChatId = chatId;
   let targetText = text;
   try {
-    const gate = sentryGate(chatId, text);
+    const gate = sentryGate(chatId, text, opts);
     targetChatId = gate.chatId;
     targetText = gate.text;
   } catch {

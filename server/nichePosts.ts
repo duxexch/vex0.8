@@ -197,11 +197,11 @@ const AGENT_TEMPLATES: TemplateFn[] = [
   ].filter((l) => l !== '').join('\n'),
 
   (x) => [
-    `🎯 هدف هذا الأسبوع — ${x.company}`,
+    `🎯 خطة هذا الأسبوع — ${x.company}`,
     '',
-    '• حدّد عدد التسجيلات اللي عايز تحققها',
+    '• اكتب عدد التسجيلات اللي عايز تحققها هذا الأسبوع',
     '• شارك رابطك في 3 أماكن على الأقل',
-    '• ارفع المحتوى في وقت نشاط جمهورك',
+    '• انشر المحتوى في وقت نشاط جمهورك',
     '• راجع النتيجة بعد أسبوع كامل',
     '',
     'ابدأ من:',
@@ -285,7 +285,7 @@ const MARKETER_TEMPLATES: TemplateFn[] = [
     '',
     '• المهتمون بالرياضة: ركّز على المباريات والتوقعات',
     '• المهتمون بالعروض: ركّز على المكافأة والكود',
-    '• العملاء الحاليون: ركّز على الخدمات والمحفظة',
+    '• العملاء الحاليون: ركّز على الخدمات والأرصدة',
     '• لكل شريحة رسالة مختلفة — ونفس الرابط',
     '',
     'روابطك:',
@@ -454,7 +454,7 @@ export function runNichePass(): NichePassResult {
         continue;
       }
       try {
-        const res = await sendTelegram(job.ch.chat_id, job.text, 'HTML');
+        const res = await sendTelegram(job.ch.chat_id, job.text, 'HTML', null, { niche: true });
         if (res.ok) {
           channelsStore.recordPost(res.sentTo ?? job.ch.chat_id);
           state.sent++;

@@ -896,6 +896,26 @@ export async function campaignTick(): Promise<{ posted: number; skipped?: string
   try {
     let state = loadState();
     state.stats.lastTickAt = new Date().toISOString();
+
+    // 🎯 Niche channels (agents/marketers) are owned by the niche publisher
+    // (server/nichePosts.ts) — drop campaign entries built before the channel
+    // was reclassified so generic promos never land on a niche audience.
+    let dropped = 0;
+    for (const e of state.queue) {
+      if (e.status !== 'pending') continue;
+      const c = channelsStore.get(e.chatId);
+      if (c && (c.category === 'agents' || c.category === 'marketers')) {
+        e.status = 'failed';
+        e.error = `niche channel (${c.category}) — served by niche publisher`;
+        state.stats.failed++;
+        dropped++;
+      }
+    }
+    if (dropped) {
+      saveState(state);
+      console.log(`[Campaign] dropped ${dropped} stale entr${dropped === 1 ? 'y' : 'ies'} targeting niche channels`);
+    }
+
     let next = state.queue.find((e) => e.status === 'pending');
     if (!next) {
       // Auto-continue: when the queue drains, refill the next batch of 70
