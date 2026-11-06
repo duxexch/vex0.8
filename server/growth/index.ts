@@ -8,6 +8,7 @@ export * from './intel';
 export * from './sender';
 export * from './outreach';
 export * from './tgWebOutbox';
+export * from './tgDrip';
 export * from './waSafety';
 export * from './predictionCards';
 

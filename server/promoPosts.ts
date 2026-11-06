@@ -180,7 +180,7 @@ export async function runPromoPass(): Promise<{
 
   const channels = channelsStore
     .getAll()
-    .filter((c) => c.active && c.category !== 'users' && c.category !== 'support');
+    .filter((c) => c.active && c.category !== 'users' && c.category !== 'support' && c.category !== 'agents' && c.category !== 'marketers');
   let planned = 0;
   let skipped = 0;
 
@@ -250,7 +250,7 @@ export async function runAppPromoPass(): Promise<{ planned: number; skipped: num
 
   const channels = channelsStore
     .getAll()
-    .filter((c) => c.active && c.category !== 'users' && c.category !== 'support');
+    .filter((c) => c.active && c.category !== 'users' && c.category !== 'support' && c.category !== 'agents' && c.category !== 'marketers');
   let planned = 0;
   let skipped = 0;
   const dayOfYear = Math.floor(

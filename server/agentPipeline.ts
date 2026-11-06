@@ -7,6 +7,7 @@ import { getNewsScraper, ScrapedArticle } from './newsScraper';
 import { fetchPostImage } from './imageFetcher';
 import { channelCtaKeyboard } from './channelCampaign';
 import { agentEngine, availableProviders, AIProvider } from './agentEngine';
+import { prepareTgText } from './tgFormat';
 import { storage } from './storage';
 
 // =========================================================================
@@ -367,6 +368,9 @@ interface ChannelMatch {
 function ruleClassify(item: AnalyzedItem, channels: ChannelProfile[]): ChannelMatch[] {
   const matches: ChannelMatch[] = [];
   for (const ch of channels) {
+    if (ch.category === 'agents' || ch.category === 'marketers') {
+      continue; // niche audiences — served by server/nichePosts.ts, never by news
+    }
     if (ch.category === 'partners') {
       // partner channels take promos + general engagement posts only
       if (item.topics.includes('promo') || item.topics.includes('general') || item.topics.includes('result')) {
@@ -386,7 +390,11 @@ function ruleClassify(item: AnalyzedItem, channels: ChannelProfile[]): ChannelMa
 }
 
 async function classifierAgent(items: AnalyzedItem[]): Promise<{ pairs: Array<{ item: AnalyzedItem; matches: ChannelMatch[] }>; fallback: boolean; detail: string }> {
-  const channels = channelsStore.getPublishable();
+  // agents/marketers channels are a separate niche audience — the news pipeline
+  // must never map generic sports news onto them (nichePosts.ts owns those).
+  const channels = channelsStore
+    .getPublishable()
+    .filter((c) => c.category !== 'agents' && c.category !== 'marketers');
   if (channels.length === 0) return { pairs: [], fallback: false, detail: 'no publishable channels' };
 
   let llmUsed = 0;
@@ -440,11 +448,17 @@ async function generateForChannel(item: AnalyzedItem, ch: ChannelProfile): Promi
 القناة: ${ch.title} (نوعها: ${ch.category}، مواضيعها: ${ch.topics.join(', ')})
 الهوية التجارية: براند "${ch.brand.company || 'VEX'}" دومين "${ch.brand.domain || 'vex.deals'}" توقيع "${ch.brand.signature || 'none'}"
 أسلوب الإيموجي: ${ch.brand.emoji}
-الصيغة: ${ch.format} (إن كان html استخدم تنسيق بسيط <b>/<i>/<a>)
 ${betting
     ? 'القناة مرتبطة بالمراهنة الرياضية: مسموح — وحتى الأفضل — ذكر التوقعات والاحتمالات والأوليات وأسلوب حثّ المتابعة على زيارة الموقع.'
     : 'القناة ليست لها علاقة بالمراهنة (أخبار رياضية عادية): اكتب خبراً رياضياً محايداً ومصفيى تماماً — ممنوع ذكر المراهنة أو الرهانات أو التوقعات أو الأحتماليات أو أوليات أو العروض أو الكاش باك أو أي دعوة للمراهنة.'}
-اكتب منشور مناسب لهذه القناة فقط — بنفس مجالها وطابعها، عربي naturally، من 2 إلى 6 أسطر + المصدر.
+اكتب منشور مناسب لهذه القناة فقط — بنفس مجالها وطابعها، بالعربية، من 2 إلى 6 أسطر + المصدر.
+قواعد التنسيق (إلزامية):
+- السطر الأول: جملة قصيرة تلخّص المنشور (حتى 60 حرفًا) — تُجعل غامقة تلقائيًا.
+- القوائم: كل عنصر في سطر مستقل يبدأ بـ «• » (لا شرطات ولا نجوم ولا أرقام تسلسلية).
+- العناوين الفرعية: سطر قصير مستقل يبدأ بإيموجي واحد (📋 🔥 💡 ⚠️) بلا نقطتين في منتصفه.
+- خلطة اللغات: لا تضع كلمات إنجليزية داخل جملة عربية إلا لما هو لازم (أسماء الفرق، أسماء الشركات، الأرقام، الأكواد، روابط المصدر) — وبقية النص عربي بالكامل.
+- الأكواد وأرقام الهواتف ورموز التفعيل: ضعها في سطر مستقل بين قوسين مزدوجين \`كود\` أو في سطر خالٍ.
+- لا تكتب وسوم HTML ولا رموز markdown يدويًا (لا ** ولا _ ولا \`): التنسيق (غامق/تعداد/كود) يُضاف تلقائيًا بعد الكتابة.
 ${isLive ? 'المنشور مباشر — أضف شغف وإلحاح ومنشن للنتيجة الحالية.' : ''}
 لا تخترع نتائج أو معلومات غير موجودة في النص. ارجع المنشور فقط.`;
 
@@ -548,6 +562,13 @@ export async function sendTelegram(chatId: string, text: string, parseMode: stri
   } catch {
     /* never block a send on buttons */
   }
+
+  // 🎨 تنسيق موحّد — every post leaves this function as one canonical, structured,
+  // bidi-safe HTML body (bold headings • bullets • code spans • LRM isolation),
+  // so mixed Arabic/English never renders scrambled and no path skips parse_mode.
+  const prepared = prepareTgText(text);
+  text = prepared.text;
+  parseMode = prepared.parse_mode;
 
   if (process.env.DRY_RUN === '1') {
     console.log(`[Publisher][DRY_RUN] → ${chatId}: ${text.slice(0, 120).replace(/\n/g, ' ⏎ ')}`);

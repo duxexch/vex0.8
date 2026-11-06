@@ -62,6 +62,10 @@ import {
   tgWebUpdateSafety as growthTgWebUpdateSafety,
   tgWebEnsureWarmup as growthTgWebEnsureWarmup,
   listTgWebMessages as growthTgWebList,
+  runTgDripPass as growthTgDripRun,
+  getTgDripStatus as growthTgDripStatus,
+  tgDripSetEnabled as growthTgDripSetEnabled,
+  tgDripCandidates as growthTgDripCandidates,
 } from './server/growth';
 import {
   extractPrediction,
@@ -102,7 +106,9 @@ import {
   pullSourcePosts,
 } from './server/channelCampaign';
 import { getSentryStatus } from './server/postSentry';
-import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel } from './server/channelOnboard';
+import { prepareTgText } from './server/tgFormat';
+import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel, reclassifyNicheTitles } from './server/channelOnboard';
+import { startNicheScheduler, runNichePass, getNicheStatus } from './server/nichePosts';
 import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
 import { startPromoScheduler, getPromoStatus, runPromoPass, setPromoBotUsername } from './server/promoPosts';
 import { startCurrencyRateScheduler, getCurrencyRates } from './server/currencyRates';
@@ -1377,6 +1383,23 @@ app.get('/api/sentry/status', (_req, res) => {
   res.json({ success: true, ...getSentryStatus() });
 });
 
+// 🎯 Niche publisher status (agents/marketers channels) — admin only
+app.get('/api/admin/niche/status', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ success: true, ...getNicheStatus() });
+});
+
+// 🎯 Manual niche pass (admin trigger) — respects cooldowns/caps like the timer
+app.post('/api/admin/niche/run', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const r = runNichePass();
+    res.json({ success: true, ...r });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'niche pass failed' });
+  }
+});
+
 // Re-run the onboarding agent's classification for one channel (admin)
 app.post('/api/admin/channels/reclassify', async (req, res) => {
   try {
@@ -1735,6 +1758,64 @@ app.get('/api/admin/growth/tgweb/messages', (req, res) => {
     const bucket = req.query.bucket === 'sent' || req.query.bucket === 'failed' ? req.query.bucket : 'pending';
     const limit = Math.min(200, Number(req.query.limit) || 50);
     res.json({ success: true, bucket, messages: growthTgWebList(bucket).slice(0, limit) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 📨 Telegram Web drip — status, manual pass, enable/disable.
+// The pass only QUEUES outbox files; the host worker delivers them under the
+// warm-up ramp + gaps + halt policy. Nothing here bypasses that safety.
+app.get('/api/admin/growth/tgweb/drip', (_req, res) => {
+  try {
+    res.json({ success: true, drip: growthTgDripStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/tgweb/drip/run', (req, res) => {
+  try {
+    growthTgWebEnsureWarmup();
+    const max = Math.max(1, Math.min(25, Number(req.body?.max) || 5));
+    const result = growthTgDripRun({ max });
+    if (result.queued) {
+      io.emit('notification', {
+        message: `📨 ${result.queued} رسالة تواصل تليجرام في طابور التسخين (يوم التسخين ${result.warmup_day}).`,
+        type: 'info',
+        title: 'Telegram Outreach',
+        at: Date.now(),
+      });
+    }
+    res.json({ success: true, result, drip: growthTgDripStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/growth/tgweb/drip/toggle', (req, res) => {
+  try {
+    const enabled = req.body?.enabled !== false;
+    const state = growthTgDripSetEnabled(enabled);
+    res.json({ success: true, enabled: state.enabled, drip: growthTgDripStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/growth/tgweb/drip/candidates', (_req, res) => {
+  try {
+    const candidates = growthTgDripCandidates(50).map((p) => ({
+      lead_id: p.lead.id,
+      username: p.lead.username,
+      first_name: p.lead.first_name,
+      lang: p.lead.lang,
+      started: p.lead.started,
+      status: p.lead.status,
+      score: p.lead.score,
+      target: p.target,
+    }));
+    res.json({ success: true, candidates });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -4310,10 +4391,13 @@ async function sendTelegramMessage(
 ) {
   if (!telegramConfig.bot_token) return null;
   const url = `https://api.telegram.org/bot${telegramConfig.bot_token}/sendMessage`;
+  // 🎨 تنسيق موحّد — one canonical structured/bidi-safe HTML body for every
+  // outbound message (replaces the old Markdown default that broke on `_`/`*`).
+  const prepared = prepareTgText(text, options?.parse_mode);
   const body: any = {
     chat_id: chatId,
-    text,
-    parse_mode: options?.parse_mode || 'Markdown',
+    text: prepared.text,
+    parse_mode: prepared.parse_mode,
   };
 
   if (options?.keyboard) {
@@ -5563,6 +5647,34 @@ function startDockerNotificationWorker() {
 
   // Channel onboarding agent: my_chat_member updates classify new channels.
   initChannelOnboard({ emit: (event, payload) => io.emit(event, payload) });
+
+  // 🎯 Niche migration: «X agents» / «affiliate/creator» channels were lumped
+  // into `partners` and got generic partner posts. Promote them to the
+  // dedicated agents/marketers niche (idempotent — safe on every boot).
+  setTimeout(() => {
+    try {
+      const moved = reclassifyNicheTitles();
+      if (moved.length) {
+        io.emit('notification', {
+          message: `🗂 ${moved.length} قناة أُعيد تصنيفها إلى الوكلاء/المسوقيين`,
+          type: 'info',
+          title: 'Channels',
+          at: Date.now(),
+        });
+      }
+    } catch (err) {
+      console.error('[Onboard] niche migration failed:', err);
+    }
+  }, 20 * 1000);
+
+  // 🎯 Niche publisher: purpose-built content for agents/marketers channels.
+  setTimeout(() => {
+    try {
+      startNicheScheduler();
+    } catch (err) {
+      console.error('[Niche] start failed:', err);
+    }
+  }, 60 * 1000);
 
   // Growth intelligence engine: lead capture, smart replies, prediction drops,
   // drip funnels and segmented campaigns. Delayed start so data files settle.

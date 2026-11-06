@@ -12,6 +12,7 @@ import { SOURCE_POSTS_SEED, SeedSourcePost } from './sourcePosts.seed';
 import { EXPLAINER_TOPICS, ExplainerTopic } from './explainerSeed';
 import { BOT_PROMO_DOMAINS } from './botPromo';
 import { fetchPostImage } from './imageFetcher';
+import { prepareTgText } from './tgFormat';
 
 export interface SourcePost extends SeedSourcePost {
   pulledAt?: string;
@@ -42,7 +43,7 @@ interface CampaignState {
   updatedAt: string;
 }
 
-interface CompanyInfo {
+export interface CompanyInfo {
   id: string;
   name: string;
   promo_code?: string;
@@ -242,7 +243,7 @@ function siteUrl(): string {
  * single link (variety also protects against one domain getting flagged).
  * Deterministic per seed (entry/post id) so every post picks a stable domain.
  */
-function rotateSiteLink(seed: string): string {
+export function rotateSiteLink(seed: string): string {
   const domains = BOT_PROMO_DOMAINS.length ? BOT_PROMO_DOMAINS : [siteUrl()];
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
@@ -563,6 +564,8 @@ function channelVoice(ch: ChannelProfile): string {
   const parts: string[] = [];
   if (ch.lang === 'en') parts.push('اكتب المنشور بالإنجليزية بالكامل');
   else parts.push(`اكتب المنشور بالعربية${ch.dialect && ch.dialect !== 'msa' ? ` بـ${DIALECT_LABEL[ch.dialect] || ch.dialect}` : ''}`);
+  if (ch.category === 'agents') parts.push('الجمهور: وكلاء مراهنات — اجعل المنشور يخدمهم مباشرة (نسب العمولة، الأدوات، النصائح، إنجازات الوكلاء)');
+  if (ch.category === 'marketers') parts.push('الجمهور: مسوّقون ومسوقي أفلييت وصنّاع محتوى — ركّز على روابط الإحالة والحملات وتحسين التحويل');
   if (ch.tone) parts.push(`النبرة: ${ch.tone}`);
   if (ch.content_style) parts.push(`صيغة القناة: ${ch.content_style}`);
   if (ch.brand?.signature) parts.push(`توقيع القناة المتوقع: ${ch.brand.signature}`);
@@ -578,8 +581,8 @@ async function adaptPost(
 ): Promise<{ text: string; llm: boolean }> {
   const system =
     ch.lang === 'en'
-      ? 'You rewrite posts for a Telegram sports-betting channel. Output ONLY the post: no explanation, no quotes, no HTML, max 3500 chars.'
-      : 'أنت محرر محتوى لقنوات مراهنات رياضية في تليجرام. أعد كتابة المنشور فقط: بلا شرح، بلا اقتباسات، بلا وسم HTML، أقصى طول 3500 حرف.';
+      ? 'You rewrite posts for a Telegram sports-betting channel. Output ONLY the post: no explanation, no quotes, no HTML, max 3500 chars.\nFormat rules: first line = one short summary sentence (<=60 chars); lists = one item per line starting with "• "; sub-headings = a short standalone line starting with one emoji; keep codes/phones/links on their own line; never mix English words into Arabic sentences except names, numbers, codes and URLs.'
+      : 'أنت محرر محتوى لقنوات مراهنات رياضية في تليجرام. أعد كتابة المنشور فقط: بلا شرح، بلا اقتباسات، بلا وسم HTML، أقصى طول 3500 حرف.\nقواعد التنسيق (إلزامية): السطر الأول جملة قصيرة تلخّص المنشور (≤60 حرفًا)؛ القوائم: كل عنصر في سطر مستقل يبدأ بـ «• »؛ العناوين: سطر قصير مستقل يبدأ بإيموجي واحد؛ الأكواد وأرقام الهواتف وروابط التسجيل في سطر مستقل؛ لا تخلط كلمات إنجليزية داخل جمل عربية إلا للأسماء والأرقام والأكواد والروابط وبقية النص عربي؛ لا تستخدم رموز markdown ولا وسوم HTML يدوية.';
   const prompt = [
     `القناة المستهدفة: «${ch.title}» — ${channelVoice(ch)}`,
     '',
@@ -627,8 +630,8 @@ async function adaptExplainer(
   const link = rotateSiteLink(seed + topic.id);
   const system =
     ch.lang === 'en'
-      ? 'You write engaging explainer posts for a Telegram channel about a betting-rewards platform. Output ONLY the post: no explanation, max 2500 chars.'
-      : 'أنت تكتب منشورات تعريفية جذابة لقناة تليجرام عن منصة مكافآت رياضية. أخرج المنشور فقط: بلا شرح، أقصى طول 2500 حرف.';
+      ? 'You write engaging explainer posts for a Telegram channel about a betting-rewards platform. Output ONLY the post: no explanation, max 2500 chars.\nFormat rules: first line = one short summary sentence; lists = one item per line starting with "• "; sub-headings = a short standalone line starting with one emoji; codes/links on their own line; never mix English words into Arabic sentences except names, numbers, codes and URLs.'
+      : 'أنت تكتب منشورات تعريفية جذابة لقناة تليجرام عن منصة مكافآت رياضية. أخرج المنشور فقط: بلا شرح، أقصى طول 2500 حرف.\nقواعد التنسيق (إلزامية): السطر الأول جملة قصيرة تلخّص الشرح؛ القوائم: كل عنصر في سطر مستقل يبدأ بـ «• »؛ العناوين: سطر قصير مستقل يبدأ بإيموجي واحد؛ الكود والرابط في سطر مستقل؛ لا تخلط كلمات إنجليزية داخل جمل عربية إلا للأسماء والأرقام والأكواد والروابط وبقية النص عربي؛ لا تستخدم رموز markdown ولا وسوم HTML يدوية.';
   const prompt = [
     `القناة المستهدفة: «${ch.title}» — ${channelVoice(ch)}`,
     '',
@@ -740,7 +743,7 @@ async function sendTextPost(botToken: string, chatId: string, text: string, repl
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
     signal: AbortSignal.timeout(20000),
   });
   const data = await res.json().catch(() => ({}));
@@ -763,6 +766,7 @@ async function sendPhotoPost(botToken: string, chatId: string, photoPath: string
   form.append('chat_id', chatId);
   form.append('photo', new Blob([await fs.promises.readFile(photoPath)], { type: imageContentType(photoPath) }), path.basename(photoPath));
   form.append('caption', caption);
+  form.append('parse_mode', 'HTML');
   if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup));
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
     method: 'POST',
@@ -782,6 +786,9 @@ async function sendChannelPost(
 ): Promise<{ ok: boolean; messageId?: number; error?: string }> {
   const publisher = channelsStore.getPublisher();
   if (!publisher.bot_token) return { ok: false, error: 'no publisher bot token' };
+  // 🎨 تنسيق موحّد — structured/bidi-safe HTML for every campaign post.
+  const prepared = prepareTgText(text);
+  text = prepared.text;
   const replyMarkup = keyboard.length ? { inline_keyboard: keyboard } : undefined;
   // Every campaign post carries a topical photo when it fits Telegram's 1024-char
   // caption cap; longer texts go out as a plain text post so nothing is truncated.
@@ -816,7 +823,7 @@ async function sendChannelPost(
 function eligibleChannels(): ChannelProfile[] {
   return channelsStore
     .getActive()
-    .filter((c) => c.betting_related && c.category !== 'users' && c.category !== 'support' && c.category !== 'payments');
+    .filter((c) => c.betting_related && c.category !== 'users' && c.category !== 'support' && c.category !== 'payments' && c.category !== 'agents' && c.category !== 'marketers');
 }
 
 export function buildCampaignQueue(total = CAMPAIGN_TOTAL): { built: number; skipped: string } {

@@ -193,8 +193,11 @@ export function fitIssues(ch: ChannelProfile, v: SentryVerdict): string[] {
   if (v.kind === 'promo' && ch.category === 'payments') {
     issues.push('category: promo content on payments channel');
   }
-  if ((v.kind === 'forecast' || v.kind === 'live') && ch.category === 'partners') {
-    issues.push(`category: ${v.kind} content on partners channel`);
+  if ((v.kind === 'forecast' || v.kind === 'live') && (ch.category === 'partners' || ch.category === 'agents' || ch.category === 'marketers')) {
+    issues.push(`category: ${v.kind} content on ${ch.category} channel`);
+  }
+  if (v.kind === 'news' && (ch.category === 'agents' || ch.category === 'marketers')) {
+    issues.push(`category: news content on ${ch.category} channel (niche audience)`);
   }
   if ((v.kind === 'forecast' || v.kind === 'live' || v.kind === 'news') && ch.category === 'support') {
     issues.push(`category: ${v.kind} content on support channel`);
@@ -230,6 +233,9 @@ function pickAlternative(fromChatId: string, v: SentryVerdict): ChannelProfile |
   const candidates = channelsStore
     .getPublishable(new Date())
     .filter((c) => c.chat_id !== fromChatId)
+    // Niche audiences (agents/marketers) are never a dumping ground for posts
+    // aimed elsewhere, and a niche post never gets rerouted out of its niche.
+    .filter((c) => c.category !== 'agents' && c.category !== 'marketers')
     .filter((c) => fitIssues(c, v).length === 0);
   if (candidates.length === 0) return null;
   // Company fit first: land the post on a channel dedicated to a brand it
@@ -306,7 +312,11 @@ export function sentryGate(chatId: string, text: string): SentryResult {
     const issues = fitIssues(ch, verdict);
     if (issues.length === 0) return { chatId, text, corrected: false, issues: [], verdict };
 
-    const alt = pickAlternative(chatId, verdict);
+    // Niche channels (agents/marketers) receive only their own purpose-built
+    // content — a mis-read verdict must never eject a niche post into a
+    // generic sports/partner channel. Log it, keep the target.
+    const isNiche = ch.category === 'agents' || ch.category === 'marketers';
+    const alt = isNiche ? null : pickAlternative(chatId, verdict);
     const target = alt || ch;
     const finalText = alt ? swapSignature(text, ch, alt) : text;
 

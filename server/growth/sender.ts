@@ -60,9 +60,9 @@ async function pump(): Promise<void> {
       lastSentAt = Date.now();
       PER_CHAT_LAST[item.chatId] = lastSentAt;
       try {
-        // HTML with escaped entities = literal text, immune to markdown breakage
-        const safe = item.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const res = await sendFn!(item.chatId, safe, { parse_mode: 'HTML' });
+        // 🎨 formatting/escaping is centralised in prepareTgText (server.ts) —
+        // no local escaping here or entities would be double-encoded.
+        const res = await sendFn!(item.chatId, item.text, { parse_mode: 'HTML' });
         const ok = !!res?.ok;
         if (ok) {
           sendStats.sent++;

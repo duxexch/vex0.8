@@ -5,7 +5,7 @@ import * as path from 'path';
 // VEX Channels Store - channel management lives INSIDE VEX (replaces python bot_channels.csv)
 // =========================================================================
 
-export type ChannelCategory = 'sports' | 'partners' | 'payments' | 'support' | 'users';
+export type ChannelCategory = 'sports' | 'partners' | 'agents' | 'marketers' | 'payments' | 'support' | 'users';
 export type ChannelFormat = 'html' | 'markdown' | 'plain';
 
 export interface ChannelProfile {

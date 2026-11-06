@@ -19,7 +19,7 @@ export function initChannelOnboard(opts: { emit?: (event: string, payload: any) 
 const CLASSIFY_SYSTEM = `أنت عميل تصنيف قنوات تيليجرام لمنصة رياضية. ترجع JSON صالح فقط — بدون markdown وبدون شرح.
 الصيغة:
 {
-  "category": "sports|partners|payments|support|users",
+  "category": "sports|partners|agents|marketers|payments|support|users",
   "topics": ["football","basketball","live","transfer","promo","lottery","news","payout","users","general"],
   "betting_related": true,
   "lang": "ar|en",
@@ -31,7 +31,8 @@ const CLASSIFY_SYSTEM = `أنت عميل تصنيف قنوات تيليجرام 
   "summary": "سطر واحد يصف القناة ونوع جمهورها"
 }
 القواعد:
-- category: sports=محتوى رياضي، partners=شركاء/embrochen، payments=مدفوعات وسحب وإيداع، support=دعم فني، users=تحديثات مستخدمين.
+- category: sports=محتوى رياضي جماهيري، partners=شركاء ووكلاء عامون، agents=قناة جمهورها وكلاء مراهنات (يُنشر لها محتوى يخص الوكلاء: نسب عمولة، أدوات، إنجازات، تدريب)، marketers=قناة جمهورها مسوقيين/مسوقي أفلييت وصانعين محتوى (محتوى يخصهم: روابط إحالة، حملات، تحسين تحويل)، payments=مدفوعات وسحب وإيداع، support=دعم فني، users=تحديثات مستخدمين.
+- افرّق بدقّة: قناة اسمها/وصفها «agents» أو فيها وكلاء = agents، وقناة فيها affiliate أو creator أو marketing أو تسويق = marketers. إن كان الجمهور مختلطًا بين الوكلاء والشركاء اختر agents.
 - topics: اختر ما ينطبق فقط من القائمة (3 كحد أقصى). إن لم يتبين ركّز على general/news.
 - betting_related: true إذا كانت القناة عن المراهنة الرياضية أو تنشر توقعات/أوليات/كاش باك/عروض كازينو أو روابط مراهنات. false إذا كانت قناة أخبار رياضية عادية بلا أي صلة بالمراهنة.
 - dialect: استنتج اللهجة من منشورات القناة نفسها (وليس من الوصف فقط): egyptian=مصري، gulf=خليجي، levantine=شامي، maghrebi=مغاربي، msa=فصحى. للقنوات الإنجليزية اكتب msa.
@@ -43,6 +44,32 @@ const CLASSIFY_SYSTEM = `أنت عميل تصنيف قنوات تيليجرام 
 
 const DIALECTS = ['egyptian', 'gulf', 'levantine', 'maghrebi', 'msa'];
 const TONES = ['hype', 'analytical', 'friendly', 'formal', 'playful'];
+const CATEGORIES = ['sports', 'partners', 'agents', 'marketers', 'payments', 'support', 'users'];
+
+/**
+ * Deterministic niche detection from the channel's own identity. Runs AFTER the
+ * LLM so an «X agents» channel can never fall back to generic `partners` just
+ * because the model saw "partner" in the name.
+ */
+export function nicheFromTitle(title?: string, username?: string): 'agents' | 'marketers' | null {
+  const hay = `${title || ''} ${username || ''}`.toLowerCase();
+  if (/(^|[^a-z])agents?([^a-z]|$)|وكلاء|وكيل/.test(hay)) return 'agents';
+  if (/affiliate|creator|marketing|marketer|تسويق|مسو/.test(hay)) return 'marketers';
+  return null;
+}
+
+/** Arabic display label for a channel category (admin notifications). */
+export function categoryLabel(cat: string): string {
+  switch (cat) {
+    case 'agents': return '👥 وكلاء';
+    case 'marketers': return '📣 مسوّقون';
+    case 'partners': return '🤝 شركاء';
+    case 'payments': return '💳 مدفوعات';
+    case 'support': return '🛟 دعم';
+    case 'users': return '🔔 تحديثات مستخدمين';
+    default: return '⚽ رياضي';
+  }
+}
 
 function normalizeClassification(raw: any, chat: { title?: string; username?: string }): {
   category: ChannelProfile['category'];
@@ -56,7 +83,8 @@ function normalizeClassification(raw: any, chat: { title?: string; username?: st
   brand: ChannelProfile['brand'];
   analysis: string;
 } {
-  const cat = ['sports', 'partners', 'payments', 'support', 'users'].includes(raw?.category) ? raw.category : 'sports';
+  const niche = nicheFromTitle(chat.title, chat.username);
+  const cat = niche || (CATEGORIES.includes(raw?.category) ? raw.category : 'sports');
   const topics = Array.isArray(raw?.topics) ? raw.topics.filter((t: any) => typeof t === 'string').slice(0, 3) : [];
   const emoji = ['rich', 'minimal', 'none'].includes(raw?.brand?.emoji) ? raw.brand.emoji : 'rich';
   const cap = typeof raw?.daily_cap === 'number' && raw.daily_cap >= 4 && raw.daily_cap <= 30 ? Math.round(raw.daily_cap) : 12;
@@ -80,7 +108,7 @@ function normalizeClassification(raw: any, chat: { title?: string; username?: st
     analysis:
       typeof raw?.summary === 'string' && raw.summary.trim()
         ? raw.summary.trim().slice(0, 400)
-        : `${chat.title || 'channel'} — ${cat}, ${topics.join(',') || 'general'}, ${cat === 'sports' ? (raw?.betting_related !== false ? 'مراهنة' : 'أخبار') : ''}`.trim(),
+        : `${chat.title || 'channel'} — ${cat}, ${topics.join(',') || 'general'}, ${cat === 'sports' ? (raw?.betting_related !== false ? 'مراهنة' : 'أخبار') : categoryLabel(cat)}`.trim(),
   };
 }
 
@@ -233,7 +261,7 @@ export async function handleBotMembershipUpdate(update: any): Promise<boolean> {
   const summary =
     `✅ <b>تم استلام القناة وتصنيفها</b>\n\n` +
     `📌 ${profile.title}\n` +
-    `🗂 التصنيف: ${profile.category} — ${profile.topics.join(', ')}\n` +
+    `🗂 التصنيف: ${categoryLabel(profile.category)} — ${profile.topics.join(', ')}\n` +
     `🎯 نوع المحتوى: ${profile.betting_related !== false ? 'مراهنة رياضية (توقعات + أوليات)' : 'أخبار رياضية عادية (بلا مراهنة)'}\n` +
     `🔤 اللغة: ${profile.lang} · سُمك اليوم: ${profile.daily_cap}\n` +
     `📝 ${profile.analysis}`;
@@ -280,4 +308,26 @@ export async function reclassifyChannel(chatId: string): Promise<ChannelProfile 
     },
     analysis: cls.analysis,
   } as any);
+}
+
+/**
+ * One-shot (idempotent, safe to run on every boot) migration: channels whose
+ * own title/username clearly says «agents» or «affiliate/creator/marketing»
+ * were previously lumped into `partners` and received generic partner posts.
+ * Promote them to the dedicated `agents` / `marketers` niche so the niche
+ * publisher can target them with content made for their audience.
+ */
+export function reclassifyNicheTitles(): { chat_id: string; title: string; from: string; to: string }[] {
+  const changed: { chat_id: string; title: string; from: string; to: string }[] = [];
+  for (const ch of channelsStore.getAll()) {
+    const niche = nicheFromTitle(ch.title, ch.username);
+    if (!niche || ch.category === niche) continue;
+    channelsStore.upsert({ chat_id: ch.chat_id, category: niche } as any);
+    changed.push({ chat_id: ch.chat_id, title: ch.title, from: ch.category, to: niche });
+    console.log(`[Onboard] niche reclassify «${ch.title}»: ${ch.category} → ${niche}`);
+  }
+  if (changed.length) {
+    console.log(`[Onboard] ${changed.length} channel(s) promoted to agents/marketers niche`);
+  }
+  return changed;
 }

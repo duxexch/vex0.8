@@ -15,6 +15,7 @@ import { createCampaign, sendCampaign, listCampaigns, generateCampaignCopy } fro
 import { listUpcomingPredictions } from '../forecastChain';
 import { matchToCard, renderPredictionCardPng, cardPublicUrl } from './predictionCards';
 import { waRemainingToday, waSafetyState, waSafetyTouch } from './waSafety';
+import { runTgDripPass, tgDripWantsRun } from './tgDrip';
 
 // =========================================================================
 // Outreach: contact-file import, WhatsApp managed-manual batches (outbox
@@ -359,6 +360,17 @@ export function startOutreachTimers(notify: (text: string) => void): void {
     outreachTimer = setTimeout(async () => {
       try {
         const executed = await calendarTick();
+
+        // 🎯 Telegram Web drip — the daily, ban-safe client outreach pass.
+        // Queues only `q:@username` clients, bounded by the 14-day warm-up
+        // allowance and the outbox halt flag (nothing is sent from here).
+        let drip: any = null;
+        try {
+          drip = tgDripWantsRun() ? runTgDripPass() : null;
+        } catch (err: any) {
+          console.warn('[Growth] tgWeb drip failed:', err?.message);
+        }
+
         const safety = waSafetyState();
         const batch = safety.halted
           ? { count: 0, halted: true as const }
@@ -371,6 +383,12 @@ export function startOutreachTimers(notify: (text: string) => void): void {
           lines.push(`🛡 حد اليوم: ${safety.daily_cap} (تسخين يوم ${safety.warmup_day})`);
         }
         if (executed.length) lines.push(...executed.map((e) => `▸ ${e}`));
+        if (drip) {
+          lines.push(
+            `📨 تليجرام: ${drip.queued} رسالة في طابور التسخين (يوم ${drip.warmup_day}، متبقٍ ${drip.remaining_today} اليوم)` +
+              (drip.reason && drip.reason !== 'no_candidates' ? ` — ${drip.reason}` : '')
+          );
+        }
         if (!safety.halted) lines.push(`📱 صندوق واتساب: ${batch.count} رسالة جاهزة للإرسال اليدوي`);
         const neg = listLeads().filter((l) => l.mood === 'negative').length;
         if (neg > 0) lines.push(`⚠️ عملاء بمزاج سلبي: ${neg} — راجع التقرير`);
