@@ -199,19 +199,47 @@ def _names_match(query, name):
 
 
 def _row_matches(query, peer_title, row_text):
-    """True only when the ROW'S NAME is the chat that was asked for.
+    """True only when the ROW is the chat that was asked for.
 
     Matching runs against .peer-title (the chat's name) — never the message
     preview — so a chat that merely quoted the query in its last message can
     not be selected. An `@handle` query additionally requires the exact handle
     inside the row, which separates @Vex_wallet_bot from @VexWallet_bot.
+
+    A global-search hit for an `@handle` renders the peer's OWN handle as a
+    line of its own (`Or Ko\\n@Orko0l`) even when the display name has nothing
+    to do with it ("Jason Jason" vs @BSKB120) — the name gate alone refuses
+    those (observed: every real-client DM failed with "no result row named
+    like"). So for handle queries, accept the row when one line IS exactly
+    the handle: a message preview is time-prefixed (`11:22 @user…`) or longer
+    text, so a chat merely quoting the handle never matches. Otherwise fall
+    back to the original name gate — behavior for every other query is
+    unchanged.
     """
-    if not _names_match(query, peer_title):
-        return False
     if query.strip().startswith("@"):
-        handle = "@" + query.strip().lstrip("@").lower()
-        return handle in (row_text or "").lower()
-    return True
+        handle = _norm_title("@" + query.strip().lstrip("@"))
+        for line in (row_text or "").splitlines():
+            if _norm_title(line) == handle:
+                return True
+        return _names_match(query, peer_title) and handle in _norm_title(row_text or "")
+    return _names_match(query, peer_title)
+
+
+def _opened_matches(query, opened, row_title):
+    """Proof that the chat which opened is the one validated pre-click.
+
+    The header shows the display name, which for handle queries may bear no
+    relation to the handle — but identity was already proven pre-click (a row
+    line IS the exact handle), so header == clicked-row-title proves the
+    click landed on that very row. For name-gated rows this branch is
+    implied by _names_match(query, row_title), so their behavior is
+    unchanged; a wrong click on a different-named chat still fails closed.
+    """
+    if _names_match(query, opened):
+        return True
+    if row_title and _norm_title(opened) and _norm_title(opened) == _norm_title(row_title):
+        return True
+    return False
 
 
 def _open_chat_title(page):
@@ -380,6 +408,7 @@ def open_chat(page, target):
         if not (row["inView"] and row["clickable"]):
             last_err = f"result row for {query!r} is covered - refusing to click"
             continue
+        row_title = row["title"]
         page.mouse.click(row["cx"], row["cy"])
 
         # The composer must be VISIBLE — a hidden one means no chat opened.
@@ -400,12 +429,12 @@ def open_chat(page, target):
         deadline = time.time() + 20
         while True:
             opened = _open_chat_title(page)
-            if _names_match(query, opened):
+            if _opened_matches(query, opened, row_title):
                 break
             if time.time() >= deadline:
                 break
             page.wait_for_timeout(500)
-        if _names_match(query, opened):
+        if _opened_matches(query, opened, row_title):
             return
         last_err = f"opened chat {opened!r} does not match target {query!r}"
 

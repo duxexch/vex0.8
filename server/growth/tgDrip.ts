@@ -24,6 +24,9 @@ const STATE_PATH = path.join(process.cwd(), 'data', 'tg_web_drip.json');
 const RECONTACT_DAYS = 14;  // per-client cooldown between outreach DMs
 const MAX_PER_PASS = 10;    // gentle per run (the warm-up allowance is smaller anyway)
 const DAY_MS = 86400000;
+// e2e / probe fixtures that live in leads.json but are not people — their
+// handles do not resolve on Telegram and would only burn attempts.
+const TEST_USERNAME_RE = /_e2e|e2e_|__|probe/i;
 
 interface DripState {
   enabled: boolean;
@@ -223,8 +226,10 @@ export function tgDripCandidates(limit = MAX_PER_PASS): { lead: Lead; target: st
     if (out.length >= limit) break;
     if (l.status === 'dead' || l.status === 'stopped') continue;
     if (l.mood === 'negative') continue; // never push an angry client
+    if (!l.started) continue; // 🚫 Telegram rule: NEVER DM before /start
     const u = validUsername(l.username);
     if (!u) continue; // phone-only leads are unreachable by the Web worker
+    if (TEST_USERNAME_RE.test(u)) continue; // test fixtures, not real clients
     const target = `q:@${u}`;
     if (pending.has(target)) continue;
     if (sent.has(target)) continue;
