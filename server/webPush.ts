@@ -87,6 +87,9 @@ export async function sendWebPush(payload: {
   body: string;
   url?: string;
   tag?: string;
+  /** Notification category ("domain") — the service worker merges bursts
+   *  of more than 3 notifications of the SAME category into one card. */
+  category?: string;
   /** Per-language variants — delivered according to each subscriber's stored lang */
   translations?: Record<string, { title?: string; body?: string }>;
   /** Optional large image shown alongside the notification (Chrome/Edge/Opera). */
@@ -119,6 +122,10 @@ export async function sendWebPush(payload: {
           body: variant?.body || payload.body,
           url: payload.url || '/#ai-sports',
           tag: payload.tag || 'site-post',
+          // Category ("domain") + subscriber lang → the service worker merges
+          // >3 same-category notifications into one grouped card, localized.
+          ...(payload.category ? { category: payload.category } : {}),
+          ...(raw ? { lang: raw } : {}),
           ...(absImage ? { image: absImage } : {}),
         });
         await webpush.sendNotification(

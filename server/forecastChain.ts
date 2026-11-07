@@ -441,6 +441,7 @@ function publishSitePost(
         body: post.excerpt,
         url: '/#ai-sports',
         tag: `pred-${id}`,
+        category: 'ai_prediction',
         translations: {
           en: { body: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — ${pickLine}` },
           es: { body: `🔮 ${pred.homeTeam} × ${pred.awayTeam} — marcador previsto ${pred.predictedScore}` },

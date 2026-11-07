@@ -1119,6 +1119,7 @@ function settlePredictionByPostId(postId: string, actual: ActualScore, source: s
       body: pushTranslations.en.body,
       url: '/#ai-sports',
       tag: `pred-${postId}`,
+      category: 'ai_prediction',
       translations: pushTranslations,
     });
   }
@@ -1377,6 +1378,7 @@ app.post('/api/site-posts', async (req, res) => {
           body: excerpt,
           url: '/#ai-sports',
           tag: `pred-${post.id}`,
+          category: 'ai_prediction',
         });
       }
     }
@@ -3475,6 +3477,7 @@ app.post('/api/notifications/broadcast', (req, res) => {
       body: notif.message,
       url: notif.data?.actionUrl || '/',
       tag: 'broadcast',
+      category: notif.category || 'system',
       translations: notif.data?.translations,
     }).catch(() => {});
   }
@@ -5562,6 +5565,7 @@ function dispatchLotteryOneHourNotification(drawState: ServerLotteryState, isMan
       body: newNotif.message,
       url: newNotif.data.actionUrl || '/#lottery',
       tag: `lottery-1hr-${drawState.activeDrawId}`,
+      category: 'lottery',
       translations: newNotif.translations,
     }).catch(() => {});
     console.log(`🎟️ [Lottery Engine] Dispatched 1-Hour Pre-Draw Push Notification for ${drawState.activeDrawId}`);
@@ -5659,6 +5663,7 @@ function dispatchLotteryThirtyMinTierNotification(
       body: newNotif.message,
       url: newNotif.data.actionUrl || '/#lottery',
       tag: `lottery-30min-${tierId}`,
+      category: 'lottery',
       translations: newNotif.translations,
     }).catch(() => {});
     console.log(`🎟️ [Lottery Engine] Dispatched 30-Minute Tier Push Alert (${tierId}) for ${drawState.activeDrawId}`);
