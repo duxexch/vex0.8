@@ -20,6 +20,7 @@ import {
   Check,
   MessageCircle,
   Send,
+  ChevronDown,
 } from 'lucide-react';
 import { Language, TabType } from '../types';
 import { triggerHaptic } from '../utils/haptics';
@@ -29,13 +30,28 @@ import TelegramContactButton from './TelegramContactButton';
 
 const WA_CONTACT_URL = 'https://wa.me/201096849170?text=' + encodeURIComponent('أهلاً VEX 👋 عايز أتواصل معاكم');
 
+interface NavChild {
+  sub: string;
+  label: string;
+}
+interface NavSection {
+  id: TabType;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tile: string;
+  badge?: number;
+  children: NavChild[];
+}
+
 interface SideDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   lang: Language;
   activeTab: TabType;
+  /** Sub-view currently applied inside the active tab (for child highlighting). */
+  activeSub?: string;
   isPhoneVerified?: boolean;
-  onSelectTab: (tab: TabType) => void;
+  onSelectTab: (tab: TabType, sub?: string) => void;
   onOpenSettings: () => void;
   onOpenResponsibleGaming: () => void;
   onOpenLegalTerms: () => void;
@@ -51,16 +67,17 @@ interface SideDrawerProps {
 }
 
 /**
- * SideDrawer (redesign): the single menu that holds every navigation +
- * account / notifications / language control. The header only shows the
- * hamburger + brand; the bottom nav keeps the 5 primary tabs.
- * Light panel, slides from the inline-start edge (RTL aware).
+ * SideDrawer (tree redesign): every project section is a gate that expands —
+ * on hover (desktop) or tap — to reveal its real sub-sections. Tapping a
+ * child navigates straight to that sub-view. A dedicated «سجل التوقعات»
+ * quick-action sits on top of the menu.
  */
 export const SideDrawer: React.FC<SideDrawerProps> = ({
   isOpen,
   onClose,
   lang,
   activeTab,
+  activeSub,
   isPhoneVerified = false,
   onSelectTab,
   onOpenSettings,
@@ -82,6 +99,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   const [notifPerm, setNotifPerm] = useState<string>(() =>
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
+  // Expansion: `hoverId` previews on pointer devices, `pinnedId` locks on tap.
+  const [hoverId, setHoverId] = useState<TabType | null>(null);
+  const [pinnedId, setPinnedId] = useState<TabType | null>(null);
 
   const togglePush = async () => {
     triggerHaptic('medium');
@@ -103,9 +123,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     }
   };
 
-  const go = (tab: TabType) => {
+  const go = (tab: TabType, sub?: string) => {
     triggerHaptic('light');
-    onSelectTab(tab);
+    onSelectTab(tab, sub);
     onClose();
   };
 
@@ -115,21 +135,90 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     </span>
   );
 
-  const tabItems: {
-    id: TabType;
-    label: string;
-    icon: React.ComponentType<{ className?: string }>;
-    tile: string;
-    badge?: number;
-  }[] = [
-    { id: 'companies', label: isAr ? 'الشركات' : 'Companies', icon: Building2, tile: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-    { id: 'wallets', label: isAr ? 'المحفظة' : 'Wallets', icon: Wallet, tile: 'text-sky-600 bg-sky-50 border-sky-200' },
-    { id: 'ai-sports', label: isAr ? 'المباريات والذكاء' : 'Sports AI', icon: TrendingUp, tile: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
-    { id: 'lottery', label: isAr ? 'اليانصيب' : 'Lottery', icon: Trophy, tile: 'text-amber-600 bg-amber-50 border-amber-200' },
-    { id: 'transfers', label: isAr ? 'تحويل الرصيد الفوري' : 'Instant Transfers', icon: ArrowRightLeft, tile: 'text-teal-600 bg-teal-50 border-teal-200' },
-    { id: 'referrals', label: isAr ? 'نظام الإحالات (10%)' : 'Referrals (10%)', icon: Users, tile: 'text-orange-600 bg-orange-50 border-orange-200' },
-    { id: 'activity', label: isAr ? 'سجل النشاط وطلبات التعويض' : 'Activity & Claims', icon: History, tile: 'text-sky-600 bg-sky-50 border-sky-200', badge: pendingRequestsCount },
-    { id: 'unlucky-wall', label: isAr ? 'مجتمع المنحوسين 😭' : 'Unlucky Wall 😭', icon: TrendingDown, tile: 'text-rose-600 bg-rose-50 border-rose-200' },
+  const tabItems: NavSection[] = [
+    {
+      id: 'companies',
+      label: isAr ? 'الشركات' : 'Companies',
+      icon: Building2,
+      tile: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+      children: [
+        { sub: 'all', label: isAr ? 'جميع المنصات' : 'All platforms' },
+        { sub: 'registered', label: isAr ? 'حساباتي' : 'My accounts' },
+        { sub: 'apps', label: isAr ? 'التطبيقات' : 'Apps' },
+      ],
+    },
+    {
+      id: 'wallets',
+      label: isAr ? 'المحفظة' : 'Wallets',
+      icon: Wallet,
+      tile: 'text-sky-600 bg-sky-50 border-sky-200',
+      children: [
+        { sub: 'grid', label: isAr ? 'شبكة البطاقات' : 'Cards grid' },
+        { sub: 'table', label: isAr ? 'جدول المحافظ' : 'Wallets table' },
+      ],
+    },
+    {
+      id: 'ai-sports',
+      label: isAr ? 'المباريات والذكاء' : 'Sports AI',
+      icon: TrendingUp,
+      tile: 'text-indigo-600 bg-indigo-50 border-indigo-200',
+      children: [
+        { sub: 'fixtures', label: isAr ? 'المباريات القادمة' : 'Fixtures' },
+        { sub: 'news', label: isAr ? 'الأخبار' : 'News' },
+        { sub: 'predictions', label: isAr ? 'سجل التوقعات' : 'Predictions log' },
+      ],
+    },
+    {
+      id: 'lottery',
+      label: isAr ? 'اليانصيب' : 'Lottery',
+      icon: Trophy,
+      tile: 'text-amber-600 bg-amber-50 border-amber-200',
+      children: [
+        { sub: 'play', label: isAr ? 'العب الآن' : 'Play now' },
+        { sub: 'my_tickets', label: isAr ? 'تذاكري' : 'My tickets' },
+        { sub: 'won_prizes', label: isAr ? 'جوائزي' : 'My prizes' },
+        { sub: 'results', label: isAr ? 'النتائج' : 'Results' },
+        { sub: 'rules', label: isAr ? 'القواعد' : 'Rules' },
+      ],
+    },
+    {
+      id: 'transfers',
+      label: isAr ? 'تحويل الرصيد الفوري' : 'Instant Transfers',
+      icon: ArrowRightLeft,
+      tile: 'text-teal-600 bg-teal-50 border-teal-200',
+      children: [
+        { sub: 'new', label: isAr ? 'تحويل جديد' : 'New transfer' },
+        { sub: 'history', label: isAr ? 'سجل التحويلات' : 'Transfer history' },
+      ],
+    },
+    {
+      id: 'referrals',
+      label: isAr ? 'نظام الإحالات (10%)' : 'Referrals (10%)',
+      icon: Users,
+      tile: 'text-orange-600 bg-orange-50 border-orange-200',
+      children: [
+        { sub: 'link', label: isAr ? 'رابط الإحالة' : 'Referral link' },
+        { sub: 'history', label: isAr ? 'سجل الإحالات' : 'Referrals history' },
+      ],
+    },
+    {
+      id: 'activity',
+      label: isAr ? 'سجل النشاط وطلبات التعويض' : 'Activity & Claims',
+      icon: History,
+      tile: 'text-sky-600 bg-sky-50 border-sky-200',
+      badge: pendingRequestsCount,
+      children: [
+        { sub: 'accounts', label: isAr ? 'الحسابات المسجلة' : 'Linked accounts' },
+        { sub: 'requests', label: isAr ? 'طلبات التعويض' : 'Compensation requests' },
+      ],
+    },
+    {
+      id: 'unlucky-wall',
+      label: isAr ? 'مجتمع المنحوسين 😭' : 'Unlucky Wall 😭',
+      icon: TrendingDown,
+      tile: 'text-rose-600 bg-rose-50 border-rose-200',
+      children: [],
+    },
   ];
 
   const accountItems: {
@@ -237,38 +326,116 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
-              {/* 1. Navigation */}
+              {/* 0. Quick action — سجل التوقعات */}
+              <button
+                type="button"
+                onClick={() => go('ai-sports', 'predictions')}
+                className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 bg-gradient-to-br from-indigo-600 to-violet-700 text-white shadow-md shadow-indigo-500/25 border border-indigo-500/40 transition-all duration-150 cursor-pointer active:scale-[0.98] hover:brightness-110"
+              >
+                <span className="w-9 h-9 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                  <History className="w-4.5 h-4.5" />
+                </span>
+                <span className="text-xs font-black flex-1 text-start">
+                  {isAr ? 'سجل التوقعات' : 'Predictions Log'}
+                </span>
+                <ChevronDown className="w-4 h-4 -rotate-90 opacity-80" />
+              </button>
+
+              {/* 1. Navigation — tree sections */}
               <div className="space-y-1.5">
                 {sectionTitle(isAr ? 'الأقسام' : 'Sections')}
                 <div className="space-y-1">
                   {tabItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = activeTab === item.id;
+                    const expanded = (hoverId === item.id || pinnedId === item.id) && item.children.length > 0;
+                    const hasChildren = item.children.length > 0;
                     return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => go(item.id)}
-                        className={`w-full px-2.5 py-2 rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer active:scale-[0.98] ${
-                          isActive
-                            ? 'bg-emerald-50/90 border border-emerald-200 ring-1 ring-emerald-100'
-                            : 'hover:bg-slate-50 border border-transparent'
-                        }`}
-                      >
-                        <span className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${item.tile}`}>
-                          <Icon className="w-4.5 h-4.5" />
-                        </span>
-                        <span className={`text-xs truncate flex-1 text-start ${isActive ? 'font-black text-emerald-800' : 'font-bold text-slate-700'}`}>
-                          {item.label}
-                        </span>
-                        {item.badge ? (
-                          <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[9px] font-black tabular-nums shrink-0">
-                            {item.badge}
+                      <div key={item.id} className="rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (hasChildren) {
+                              triggerHaptic('light');
+                              setPinnedId((p) => (p === item.id ? null : item.id));
+                            } else {
+                              go(item.id);
+                            }
+                          }}
+                          onMouseEnter={() => hasChildren && setHoverId(item.id)}
+                          onMouseLeave={() => setHoverId((h) => (h === item.id ? null : h))}
+                          aria-expanded={hasChildren ? expanded : undefined}
+                          className={`w-full px-2.5 py-2 rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer active:scale-[0.98] ${
+                            isActive
+                              ? 'bg-emerald-50/90 border border-emerald-200 ring-1 ring-emerald-100'
+                              : 'hover:bg-slate-50 border border-transparent'
+                          }`}
+                        >
+                          <span className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${item.tile}`}>
+                            <Icon className="w-4.5 h-4.5" />
                           </span>
-                        ) : (
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-                        )}
-                      </button>
+                          <span className={`text-xs truncate flex-1 text-start ${isActive ? 'font-black text-emerald-800' : 'font-bold text-slate-700'}`}>
+                            {item.label}
+                          </span>
+                          {item.badge ? (
+                            <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[9px] font-black tabular-nums shrink-0">
+                              {item.badge}
+                            </span>
+                          ) : hasChildren ? (
+                            <ChevronDown
+                              className={`w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 ${
+                                expanded ? 'rotate-180 text-emerald-600' : ''
+                              }`}
+                            />
+                          ) : (
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+                          )}
+                        </button>
+
+                        {/* Children — the sub-sections of this gate */}
+                        <AnimatePresence initial={false}>
+                          {expanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.18, ease: 'easeOut' }}
+                              className="overflow-hidden"
+                            >
+                              <div className="ps-4 pe-1 py-1 ms-4 border-s-2 border-slate-100 space-y-0.5">
+                                {item.children.map((child) => {
+                                  const childActive = isActive && activeSub === child.sub;
+                                  return (
+                                    <button
+                                      key={child.sub}
+                                      type="button"
+                                      onClick={() => go(item.id, child.sub)}
+                                      className={`w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-start transition-all duration-150 cursor-pointer active:scale-[0.98] ${
+                                        childActive
+                                          ? 'bg-emerald-100 border border-emerald-200'
+                                          : 'hover:bg-slate-50 border border-transparent'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                          childActive ? 'bg-emerald-600' : 'bg-slate-300'
+                                        }`}
+                                      />
+                                      <span
+                                        className={`text-[11px] truncate ${
+                                          childActive ? 'font-black text-emerald-800' : 'font-bold text-slate-600'
+                                        }`}
+                                      >
+                                        {child.label}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
                     );
                   })}
                 </div>

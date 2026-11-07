@@ -96,7 +96,7 @@ import {
   startForecastScheduler,
 } from './server/forecastChain';
 import { generateWithFailover, extractJsonObject } from './server/agentEngine';
-import { startPostScheduler, getSchedulerStatus } from './server/postScheduler';
+import { startPostScheduler, getSchedulerStatus, schedulePost } from './server/postScheduler';
 import {
   initCampaign,
   startCampaignScheduler,
@@ -109,6 +109,7 @@ import { getSentryStatus } from './server/postSentry';
 import { prepareTgText } from './server/tgFormat';
 import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel, reclassifyNicheTitles } from './server/channelOnboard';
 import { startNicheScheduler, runNichePass, getNicheStatus } from './server/nichePosts';
+import { startOfferScraper, getOfferScraperStatus, runOfferScrape } from './server/offerScraper';
 import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
 import { startPromoScheduler, getPromoStatus, runPromoPass, setPromoBotUsername } from './server/promoPosts';
 import { startCurrencyRateScheduler, getCurrencyRates } from './server/currencyRates';
@@ -846,11 +847,11 @@ app.get('/api/sports/fixtures', (req, res) => {
   });
 });
 
-// Sports News
+// Sports News (live store — news_watcher/ aggregator, falls back to seed)
 app.get('/api/sports/news', (req, res) => {
   res.json({
-    news: SPORTS_NEWS,
-    updatedAt: new Date().toISOString(),
+    news: getNewsItems(),
+    updatedAt: getNewsUpdatedAt(),
   });
 });
 
@@ -930,6 +931,139 @@ async function geminiPredictionFn(homeTeam: string, awayTeam: string) {
   };
 }
 
+// =========================================================================
+// Prediction series counter (عداد دائم) + settlement announcements
+// =========================================================================
+
+/** عدّاد دائم للتوقعات الناجحة/الفاشلة — محسوب على كل منشورات التوقعات. */
+function computeSeriesStats() {
+  const preds = storage.getSitePosts().filter((p: any) => p && p.prediction);
+  const settled = preds.filter((p: any) => p.prediction.status === 'settled');
+  const pending = preds.filter((p: any) => p.prediction.status === 'pending');
+  const hits = settled.filter((p: any) => p.prediction.verdict === 'hit').length;
+  const misses = settled.filter((p: any) => p.prediction.verdict === 'miss').length;
+  const draws = settled.filter((p: any) => p.prediction.verdict === 'draw').length;
+  const decided = hits + misses;
+  const recent = settled
+    .slice()
+    .sort((a: any, b: any) =>
+      String(b.prediction.settledAt || b.prediction.createdAt || '').localeCompare(
+        String(a.prediction.settledAt || a.prediction.createdAt || '')
+      )
+    )
+    .slice(0, 5);
+  const last5 = recent
+    .map((p: any) => (p.prediction.verdict === 'hit' ? '✅' : p.prediction.verdict === 'miss' ? '❌' : '➖'))
+    .join('');
+  return {
+    total: preds.length,
+    pending: pending.length,
+    settled: settled.length,
+    hits,
+    misses,
+    draws,
+    accuracy: decided > 0 ? Math.round((hits / decided) * 100) : null,
+    last5,
+    // Rich variant for /api/predictions/series (frontend renders its own chips).
+    last5Items: recent.map((p: any) => ({
+      match: `${p.prediction.homeTeam} × ${p.prediction.awayTeam}`,
+      predicted: p.prediction.predictedScore,
+      actual: p.prediction.actualScore || '',
+      verdict: p.prediction.verdict,
+      settledAt: p.prediction.settledAt,
+    })),
+  };
+}
+
+/**
+ * منشور إعلاني عند انتهاء توقع + عداد دائم يُنشر معه.
+ *   • hit  → منشور اعلاني قوي (🎉 توقعنا نجح) بالعداد الكامل.
+ *   • miss/draw → تحديث موجز للعداد.
+ * يُسلَّم عبر المجدول (caps/quiet/gaps مفروضة وقت الإرسال) + منشور للموقع.
+ */
+function publishSettlementAnnouncement(pred: PredictionRecord, verdict: string, stats: ReturnType<typeof computeSeriesStats>): void {
+  try {
+    const score = pred.actualScore || '';
+    const matchLine = `${pred.homeTeam} ${score} ${pred.awayTeam}`;
+    const acc = stats.accuracy !== null ? `${stats.accuracy}%` : '—';
+    const counter = `✅ ناجح: ${stats.hits} | ❌ فاشل: ${stats.misses} | 🎯 الدقة: ${acc} | 🔥 آخر 5: ${stats.last5 || '—'}`;
+    const isHit = verdict === 'hit';
+    const text = isHit
+      ? [
+          '🎉 توقعنا نجح! ✅🔥',
+          '',
+          `⚽ ${matchLine}`,
+          `🎯 توقعنا: ${pred.predictedScore} — تحقق النهائي! 📈`,
+          '',
+          '📊 عداد التوقعات:',
+          counter,
+          '',
+          '📈 تابع توقعات VEX الذكية يوميًا — نتائج شفافة ودقة مثبتة.',
+          '⚠️ (+18) توقعات للمتابعة — ليست نصيحة مالية.',
+        ].join('\n')
+      : [
+          verdict === 'miss' ? '📊 تحديث العداد — توقع لم يتحقق' : '📊 تحديث العداد — تعادل',
+          '',
+          `⚽ ${matchLine}`,
+          counter,
+          '',
+          '📈 تابع سلسلة توقعات VEX الذكية.',
+        ].join('\n');
+
+    // Site post (no `prediction` field → never pollutes the predictions log).
+    const sha1 = crypto.createHash('sha1').update(`settle-announce|${pred.homeTeam}|${pred.awayTeam}|${score}|${verdict}`).digest('hex');
+    if (!storage.findSitePostByHash(sha1)) {
+      const id = `SP-ANN-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const sitePost: any = {
+        id,
+        title: isHit ? `🎉 توقعنا نجح: ${matchLine}` : `📊 ${matchLine} — تحديث العداد`,
+        text: text.slice(0, 4400),
+        excerpt: text.slice(0, 400),
+        company: 'VEX',
+        lang: 'ar',
+        channel: 'forecast-chain',
+        messageId: null,
+        image: null,
+        source: 'prediction_announcement',
+        externalUrl: null,
+        sha1,
+        createdAt: new Date().toISOString(),
+        sourceText: 'settlement_announcement', // skips prediction back-migration
+      };
+      storage.addSitePost(sitePost);
+      io.emit('site_post_updated', { postId: id, post: sitePost });
+    }
+
+    // Telegram sports channels — scheduled so caps/quiet/gaps stay enforced.
+    const targets = channelsStore
+      .getAll()
+      .filter(
+        (c: any) =>
+          c.active &&
+          c.category === 'sports' &&
+          c.betting_related !== false &&
+          (c.topics.length === 0 ||
+            c.topics.some((t: string) => t === 'football' || t === 'all' || t === 'live' || t === 'news' || t === 'general'))
+      );
+    const sendAt = Date.now() + 90 * 1000;
+    for (const ch of targets) {
+      const body =
+        ch.brand?.signature && !text.includes(ch.brand.signature) ? `${text}\n\n${ch.brand.signature}` : text;
+      schedulePost({
+        chat_id: ch.chat_id,
+        channelTitle: ch.title,
+        text: body,
+        parse_mode: 'HTML',
+        kind: 'forecast',
+        sendAt,
+      });
+    }
+    console.log(`📣 [Predictions] ${verdict} announcement queued → ${targets.length} channel(s) (hits=${stats.hits} misses=${stats.misses})`);
+  } catch (err: any) {
+    console.warn('[Predictions] announcement failed:', err.message);
+  }
+}
+
 // Settle a pending prediction: append result to the post, notify + push, emit socket.
 // Shared by the ESPN auto-poller and the manual result endpoint.
 function settlePredictionByPostId(postId: string, actual: ActualScore, source: string): any | null {
@@ -989,6 +1123,9 @@ function settlePredictionByPostId(postId: string, actual: ActualScore, source: s
     });
   }
   console.log(`🏁 [Predictions] Settled ${postId}: ${pred.homeTeam} ${actual.home}-${actual.away} ${pred.awayTeam} (${verdict}, via ${source})`);
+
+  // منشور إعلاني + عداد دائم (يُنشر بعد الحفظ حتى يعكس الأرقام الحالية).
+  publishSettlementAnnouncement(pred, verdict, computeSeriesStats());
   return post;
 }
 
@@ -1324,33 +1461,16 @@ app.post('/api/predictions/:postId/result', (req, res) => {
 // Series stats (سلسلة التوقعات): hit-rate across settled predictions.
 app.get('/api/predictions/series', (_req, res) => {
   try {
-    const preds = storage.getSitePosts().filter((p: any) => p && p.prediction);
-    const settled = preds.filter((p: any) => p.prediction.status === 'settled');
-    const pending = preds.filter((p: any) => p.prediction.status === 'pending');
-    const hits = settled.filter((p: any) => p.prediction.verdict === 'hit').length;
-    const misses = settled.filter((p: any) => p.prediction.verdict === 'miss').length;
-    const draws = settled.filter((p: any) => p.prediction.verdict === 'draw').length;
-    const decided = hits + misses;
-    const last5 = settled
-      .slice()
-      .sort((a: any, b: any) => String(b.prediction.settledAt || '').localeCompare(String(a.prediction.settledAt || '')))
-      .slice(0, 5)
-      .map((p: any) => ({
-        match: `${p.prediction.homeTeam} × ${p.prediction.awayTeam}`,
-        predicted: p.prediction.predictedScore,
-        actual: p.prediction.actualScore || '',
-        verdict: p.prediction.verdict,
-        settledAt: p.prediction.settledAt,
-      }));
+    const stats = computeSeriesStats();
     res.json({
-      total: preds.length,
-      pending: pending.length,
-      settled: settled.length,
-      hits,
-      misses,
-      draws,
-      accuracy: decided > 0 ? Math.round((hits / decided) * 100) : null,
-      last5,
+      total: stats.total,
+      pending: stats.pending,
+      settled: stats.settled,
+      hits: stats.hits,
+      misses: stats.misses,
+      draws: stats.draws,
+      accuracy: stats.accuracy,
+      last5: stats.last5Items,
       updatedAt: new Date().toISOString(),
     });
   } catch (err: any) {
@@ -1397,6 +1517,23 @@ app.post('/api/admin/niche/run', (req, res) => {
     res.json({ success: true, ...r });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'niche pass failed' });
+  }
+});
+
+// 🕷️ Company offers (scraped from affiliate links) — status (admin only)
+app.get('/api/admin/offers/status', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ success: true, ...getOfferScraperStatus() });
+});
+
+// 🕷️ Manual offer scrape (admin trigger)
+app.post('/api/admin/offers/scrape', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const updated = await runOfferScrape();
+    res.json({ success: true, updated, ...getOfferScraperStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'offer scrape failed' });
   }
 });
 
@@ -5709,6 +5846,17 @@ function startDockerNotificationWorker() {
       console.error('[Niche] start failed:', err);
     }
   }, 60 * 1000);
+
+  // 🕷️ Company offer scraper: crawls affiliate links → data/company_offers.json
+  // → offer templates for the niche (agents/marketers) channels. First run 4 min
+  // after boot, then every 6h.
+  setTimeout(() => {
+    try {
+      startOfferScraper(6, 0); // immediate first pass (boot already delayed here)
+    } catch (err) {
+      console.error('[Offers] start failed:', err);
+    }
+  }, 4 * 60 * 1000);
 
   // Growth intelligence engine: lead capture, smart replies, prediction drops,
   // drip funnels and segmented campaigns. Delayed start so data files settle.

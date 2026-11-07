@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Company, Language, Wallet, UserProfile, PhoneChangeRequest, CompensationAccount, PLATFORM_DOMAIN } from '../types';
 import { TRANSLATIONS } from '../data/translations';
 import { formatCurrency } from '../utils/currency';
@@ -48,6 +48,8 @@ interface WalletTabProps {
   onCopyToast?: () => void;
   /** Telegram sign-in finished — parent should reload profile/data. */
   onTelegramLoggedIn?: () => void;
+  /** Tree-drawer: grid/table view requested from the side menu (nonce re-fires). */
+  initialWalletView?: { value: 'grid' | 'table'; n: number };
 }
 
 export const WalletTab: React.FC<WalletTabProps> = ({
@@ -68,11 +70,19 @@ export const WalletTab: React.FC<WalletTabProps> = ({
   displayCurrency,
   onCopyToast,
   onTelegramLoggedIn,
+  initialWalletView,
 }) => {
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrSelectedCompanyId, setQrSelectedCompanyId] = useState<string | null>(null);
   const [walletViewMode, setWalletViewMode] = useState<'grid' | 'table'>('grid');
+
+  // Sync with the side-drawer selection (runs on mount + every drawer pick).
+  useEffect(() => {
+    if (!initialWalletView) return;
+    setWalletViewMode(initialWalletView.value);
+  }, [initialWalletView]);
+
   const t = TRANSLATIONS[lang] || TRANSLATIONS['ar'];
   const isAr = lang === 'ar';
   // Wallet-only build (native APK or /wallet-app route) shows the sign-in card & APK link.

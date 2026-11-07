@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CompensationAccount, CompensationRequest, Language } from '../types';
 import { TRANSLATIONS } from '../data/translations';
 import { ActivityTabSkeleton } from './SkeletonLoader';
@@ -12,6 +12,8 @@ interface ActivityTabProps {
   lang: Language;
   isLoading?: boolean;
   onCopyToast?: () => void;
+  /** Tree-drawer: scroll target requested from the side menu (nonce re-fires). */
+  initialSection?: { value: 'accounts' | 'requests'; n: number };
 }
 
 export const ActivityTab: React.FC<ActivityTabProps> = ({
@@ -21,10 +23,21 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({
   lang,
   isLoading = false,
   onCopyToast,
+  initialSection,
 }) => {
   const [copiedAccountId, setCopiedAccountId] = useState<string | null>(null);
   const [shareSlipReq, setShareSlipReq] = useState<CompensationRequest | null>(null);
   const t = TRANSLATIONS[lang] || TRANSLATIONS['ar'];
+
+  // Tree-drawer: scroll to the requested section (accounts / compensation requests).
+  useEffect(() => {
+    if (!initialSection) return;
+    const id = initialSection.value === 'requests' ? 'activity-requests' : 'activity-accounts';
+    const timer = setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [initialSection]);
 
   const handleCopyAccount = (accNum: string, accId: string) => {
     navigator.clipboard.writeText(accNum);
@@ -139,7 +152,7 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({
       </div>
 
       {/* 1. Registered Accounts Section - Responsive Multi-Column Grid */}
-      <div className="space-y-2.5">
+      <div id="activity-accounts" className="space-y-2.5 scroll-mt-20">
         <div className="flex items-center justify-between px-1">
           <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
             {t.myAccountsTitle} ({accounts.length})
@@ -220,7 +233,7 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({
       </div>
 
       {/* 2. Compensation Requests Section - Responsive Multi-Column Grid */}
-      <div className="space-y-2.5">
+      <div id="activity-requests" className="space-y-2.5 scroll-mt-20">
         <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider px-1">
           {t.requestsHistoryTitle} ({requests.length})
         </h3>

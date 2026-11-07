@@ -118,6 +118,8 @@ interface AiSportsHubTabProps {
   onTriggerAgentBroadcast?: () => void;
   initialNews?: boolean;
   onNewsOpened?: () => void;
+  /** Tree-drawer: sub-tab requested from the side menu (nonce re-fires). */
+  initialSubTab?: { value: 'fixtures' | 'news' | 'predictions'; n: number };
   lang: Language;
   userId?: string;
 }
@@ -133,13 +135,20 @@ export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
   onTriggerAgentBroadcast,
   initialNews = false,
   onNewsOpened,
+  initialSubTab,
   lang,
   userId,
 }) => {
 
   const isAr = lang === 'ar';
-  const [activeSubTab, setActiveSubTab] = useState<'fixtures' | 'news' | 'predictions'>(initialNews ? 'news' : 'fixtures');
+  const [activeSubTab, setActiveSubTab] = useState<'fixtures' | 'news' | 'predictions'>(initialSubTab?.value ?? (initialNews ? 'news' : 'fixtures'));
   const [broadcastLoading, setBroadcastLoading] = useState(false);
+
+  // Sync with the side-drawer selection (runs on mount + every drawer pick).
+  useEffect(() => {
+    if (!initialSubTab) return;
+    setActiveSubTab(initialSubTab.value);
+  }, [initialSubTab]);
 
   // Predictions log — derived live from sitePosts (socket keeps them fresh)
   const predictions = useMemo(() => sitePosts.filter((p) => p && p.prediction), [sitePosts]);
@@ -155,6 +164,33 @@ export const AiSportsHubTab: React.FC<AiSportsHubTabProps> = ({
     .slice(0, 5)
     .map((p) => (p.prediction!.verdict === 'hit' ? '✅' : p.prediction!.verdict === 'miss' ? '❌' : '➖'))
     .join('');
+
+  // عدّاد دائم من السيرفر — يشمل كل توقعات الموقع ولا يتأثر بحد الـ30 منشورًا.
+  const [series, setSeries] = useState<Awaited<ReturnType<typeof vexApi.getPredictionSeries>>>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      vexApi.getPredictionSeries().then((s) => {
+        if (!cancelled && s) setSeries(s);
+      });
+    };
+    load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  // Prefer the authoritative server counter; fall back to the local window.
+  const hits = series?.hits ?? verdictCount('hit');
+  const misses = series?.misses ?? verdictCount('miss');
+  const drawsCount = series?.draws ?? verdictCount('draw');
+  const pendingTotal = series?.pending ?? pendingCount;
+  const accuracyTotal = series && series.accuracy !== null ? series.accuracy : accuracyPct;
+  const last5 = series?.last5?.length
+    ? series.last5.map((x) => (x.verdict === 'hit' ? '✅' : x.verdict === 'miss' ? '❌' : '➖')).join('')
+    : last5Sequence;
   const formatTime = (iso: string) => {
     try {
       return new Date(iso).toLocaleString(isAr ? 'ar-EG' : 'en-GB', {
@@ -1135,25 +1171,25 @@ END:VCALENDAR`;
           {/* Summary strip */}
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
             <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
-              ⏳ {isAr ? 'بانتظار النتيجة' : 'Awaiting'}: {pendingCount}
+              ⏳ {isAr ? 'بانتظار النتيجة' : 'Awaiting'}: {pendingTotal}
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
-              ✅ {isAr ? 'تحقق' : 'Hit'}: {verdictCount('hit')}
+              ✅ {isAr ? 'تحقق' : 'Hit'}: {hits}
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">
-              ❌ {isAr ? 'لم يتحقق' : 'Missed'}: {verdictCount('miss')}
+              ❌ {isAr ? 'لم يتحقق' : 'Missed'}: {misses}
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-              ➖ {isAr ? 'تعادل' : 'Draw'}: {verdictCount('draw')}
+              ➖ {isAr ? 'تعادل' : 'Draw'}: {drawsCount}
             </span>
-            {accuracyPct !== null && (
+            {accuracyTotal !== null && (
               <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
-                🎯 {isAr ? 'دقة السلسلة' : 'Series accuracy'}: {accuracyPct}%
+                🎯 {isAr ? 'دقة السلسلة' : 'Series accuracy'}: {accuracyTotal}%
               </span>
             )}
-            {last5Sequence && (
+            {last5 && (
               <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 font-mono">
-                {isAr ? 'آخر5:' : 'Last 5:'} {last5Sequence}
+                {isAr ? 'آخر5:' : 'Last 5:'} {last5}
               </span>
             )}
           </div>

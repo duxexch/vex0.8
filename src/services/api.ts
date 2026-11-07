@@ -2662,6 +2662,41 @@ class VexMobileApiService {
     return { predictions: [], total: 0, pending: 0, settled: 0 };
   }
 
+  /**
+   * سلسلة التوقعات — عدّاد دائم للناجح/الفاشل محسوب على السيرفر عبر كل
+   * منشورات التوقعات (لا يتأثر بحد الـ30 منشور في القائمة العامة).
+   */
+  public async getPredictionSeries(): Promise<{
+    total: number;
+    pending: number;
+    settled: number;
+    hits: number;
+    misses: number;
+    draws: number;
+    accuracy: number | null;
+    last5: Array<{ match: string; predicted: string; actual: string; verdict: string; settledAt: string }>;
+  } | null> {
+    try {
+      const res = await fetch(`/api/predictions/series`);
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          total: data.total || 0,
+          pending: data.pending || 0,
+          settled: data.settled || 0,
+          hits: data.hits || 0,
+          misses: data.misses || 0,
+          draws: data.draws || 0,
+          accuracy: typeof data.accuracy === 'number' ? data.accuracy : null,
+          last5: Array.isArray(data.last5) ? data.last5 : [],
+        };
+      }
+    } catch (err) {
+      console.warn('Failed to load prediction series:', err);
+    }
+    return null;
+  }
+
   // --------------------------------------------------------------------------
   // Web Push (VAPID) subscriptions
   // --------------------------------------------------------------------------

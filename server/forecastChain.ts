@@ -341,25 +341,29 @@ async function analyzeFixture(f: Fixture, feedTeams: Record<string, { name: stri
 
 // ---------------------------------------------------------------- Stage 4: publish (site + telegram)
 
-function buildPostText(f: Fixture, homeName: string, awayName: string, a: ForecastAnalysis, formH: { text: string } | null, formA: { text: string } | null): string {
+/**
+ * منشور توقعات مبسّط: سطر المباراة + شريط يوضّح التوقع ونسبة الدقة +
+ * النتيجة المتوقعة. بلا شرح تحليلي طويل (المستخدم لا يقرأ النصوص الطويلة).
+ * الشريط: 10 مربعات ممتلئة حسب نسبة الثقة/الدقة.
+ */
+function buildPostText(f: Fixture, homeName: string, awayName: string, a: ForecastAnalysis): string {
+  const pct = Math.max(0, Math.min(100, Math.round(a.confidence)));
+  const filled = Math.max(1, Math.min(10, Math.round(pct / 10)));
+  const bar = '🟩'.repeat(filled) + '⬜'.repeat(10 - filled);
   const lines: string[] = [
     `⚽ ${homeName} × ${awayName}`,
     `🏆 ${f.league} | 📅 ${kickoffLabelMecca(f)}`,
-    `🟢 فوز ${homeName}: ${a.pHome}%`,
-    `🔵 فوز ${awayName}: ${a.pAway}%`,
-    `⚪ التعادل: ${a.pDraw}%`,
-    `🎯 النتيجة المتوقعة: ${a.predictedScore} — 📈 الثقة: ${a.confidence}%`,
     '',
-    a.summary,
+    `📈 التوقع: ${a.recommendedPick}`,
+    `🎯 نسبة الدقة: ${pct}%`,
+    `${bar} ${pct}%`,
+    `🔮 النتيجة المتوقعة: ${a.predictedScore}`,
+    '',
+    `🟢 ${homeName} ${a.pHome}% | ⚪ تعادل ${a.pDraw}% | 🔵 ${awayName} ${a.pAway}%`,
+    '',
+    '⚠️ توقعات تحليلية للمتابعة (+18) — ليست نصيحة مالية.',
+    'المصدر: VEX AI Forecast',
   ];
-  if (a.keyFactors.length > 0) {
-    lines.push('', '🔑 أهم العوامل:');
-    for (const k of a.keyFactors) lines.push(`• ${k}`);
-  }
-  lines.push('', `💡 التوصية: ${a.recommendedPick} (المخاطرة: ${a.risk === 'low' ? 'منخفضة' : a.risk === 'high' ? 'عالية' : 'متوسطة'})`);
-  const formLine = [formH ? `${homeName}: ${formH.text}` : null, formA ? `${awayName}: ${formA.text}` : null].filter(Boolean).join(' | ');
-  if (formLine) lines.push(`📋 ${formLine}`);
-  lines.push('', '⚠️ توقعات تحليلية للمتابعة (+18) — ليست نصيحة مالية.', 'المصدر: VEX AI Forecast');
   return lines.join('\n');
 }
 
@@ -594,9 +598,7 @@ export async function runForecastOnce(trigger: 'manual' | 'schedule' = 'schedule
         report.fixturesAnalyzed++;
         if (a.usedLlm) report.llmUsed++;
 
-        const formH = teamForm(homeName, index);
-        const formA = teamForm(awayName, index);
-        const text = buildPostText(f, homeName, awayName, a, formH, formA);
+        const text = buildPostText(f, homeName, awayName, a);
 
         if (process.env.DRY_RUN === '1') {
           console.log(`[Forecast][DRY_RUN] ${homeName} × ${awayName} → ${a.pHome}/${a.pDraw}/${a.pAway} ${a.predictedScore} (llm=${a.usedLlm})\n${text.slice(0, 300)}…`);

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { channelsStore, ChannelProfile } from './channelsStore';
 import { resolveCompany, rotateSiteLink, type CompanyInfo } from './channelCampaign';
 import { sendTelegram } from './agentPipeline';
+import { getOfferForCompany, type CompanyOffer } from './offerScraper';
 
 // =========================================================================
 // Niche post engine — content FOR the audience of each niche channel.
@@ -72,6 +73,8 @@ interface NicheCtx {
   code: string;
   link: string;
   app: string;
+  /** عرض الشركة الزاحف من offerScraper (أو العرض الثابت) — قد يكون null. */
+  offer: CompanyOffer | null;
 }
 
 function buildCtx(ch: ChannelProfile): NicheCtx {
@@ -83,6 +86,7 @@ function buildCtx(ch: ChannelProfile): NicheCtx {
     code: String(c?.promo_code || '').trim(),
     link,
     app: String(c?.app_link || '').trim(),
+    offer: c ? getOfferForCompany(c.name) : null,
   };
 }
 
@@ -320,8 +324,7 @@ const MARKETER_TEMPLATES: TemplateFn[] = [
   ].filter((l) => l !== '').join('\n'),
 ];
 
-const AGENT_TEMPLATES_EN: TemplateFn[] = [
-  (x) => [
+const AGENT_TEMPLATES_EN: TemplateFn[] = [  (x) => [
     `👥 For agents — ${x.company}`,
     '',
     '• Your own registration link to share with your audience',
@@ -371,10 +374,121 @@ const MARKETER_TEMPLATES_EN: TemplateFn[] = [
   ].filter((l) => l !== '').join('\n'),
 ];
 
+// ------------------------------------------------------------------ عروض الشركات
+// قوالب مبنية على العروض الزاحفة من offerScraper (data/company_offers.json).
+// تُدرَج فقط عندما يكون هناك عرض فعلي للشركة → لا محتوى فارغ أبدًا.
+
+const hasArabic = (s: string) => /[\u0600-\u06FF]/.test(s);
+
+/** أفضل نص عربي متاح للمنشور العربي: headline عربي ← bonus عربي ← أيهما وُجد. */
+function offerAr(x: NicheCtx): string {
+  const h = String(x.offer?.headline || '').trim();
+  const b = String(x.offer?.bonus || '').trim();
+  return (hasArabic(h) && h) || (hasArabic(b) && b) || h || b || '';
+}
+
+/** تفاصيل عربية فقط — النص الإنجليزي الزاحف لا يصلح داخل منشور عربي. */
+function offerDetailsAr(x: NicheCtx): string {
+  const d = String(x.offer?.details || '').trim();
+  return hasArabic(d) ? d : '';
+}
+
+/** أفضل نص إنجليزي (أو أي لغة) لمنشور القناة الإنجليزية. */
+function offerEn(x: NicheCtx): string {
+  return String(x.offer?.headline || '').trim() || String(x.offer?.bonus || '').trim() || '';
+}
+
+function offerDetailsEn(x: NicheCtx): string {
+  return String(x.offer?.details || '').trim();
+}
+
+const OFFER_TEMPLATES: TemplateFn[] = [
+  (x) => [
+    `🎁 عرض ${x.company} — ${offerAr(x) || 'عرض متاح الآن'}`,
+    '',
+    offerDetailsAr(x) || 'عرض متاح الآن للتسجيل عبر الرابط الرسمي.',
+    '',
+    `• كود التسجيل: ${x.code || '—'}`,
+    '• التسجيل عبر الرابط أدناه',
+    '• الشروط تُطبَّق على الموقع مباشرة',
+    '',
+    'سجّل من هنا:',
+    x.link,
+  ].filter((l) => l !== '').join('\n'),
+
+  (x) => [
+    `🔥 ${x.company}: ${offerAr(x) || 'عرض ترحيبي'}`,
+    '',
+    '• فرصة متاحة للتسجيل الجديد',
+    '• استخدم الكود مع الرابط في نفس الرسالة',
+    '• راجع التفاصيل الكاملة على الموقع',
+    '',
+    x.link,
+    x.code ? `كود التسجيل: \`${x.code}\`` : '',
+  ].filter((l) => l !== '').join('\n'),
+
+  (x) => [
+    `💼 للوكلاء — عرض ${x.company} جاهز للنشر`,
+    '',
+    `• ${offerAr(x) || 'عرض حالي على المنصة'}`,
+    '• انسخ الرسالة وانشرها كما هي',
+    '• أرفق الكود بجانب الرابط دائمًا',
+    '',
+    'رابطك:',
+    x.link,
+    x.code ? `كود التسجيل: \`${x.code}\`` : '',
+  ].filter((l) => l !== '').join('\n'),
+
+  (x) => [
+    `📌 ${x.company} — العرض الحالي`,
+    '',
+    `• ${offerAr(x) || 'عرض تسجيل جديد'}`,
+    offerDetailsAr(x) ? `• ${offerDetailsAr(x)}` : '',
+    '• التسجيل بالرابط أدناه',
+    '',
+    x.link,
+    x.code ? `كود التسجيل: \`${x.code}\`` : '',
+  ].filter((l) => l !== '').join('\n'),
+];
+
+const OFFER_TEMPLATES_EN: TemplateFn[] = [
+  (x) => [
+    `🎁 ${x.company} offer — ${offerEn(x) || x.company}`,
+    '',
+    offerDetailsEn(x) || 'Available now via the official link.',
+    '',
+    `• Sign-up code: ${x.code || '—'}`,
+    '• Register through the link below',
+    '• Terms apply on the site directly',
+    '',
+    'Register here:',
+    x.link,
+  ].filter((l) => l !== '').join('\n'),
+
+  (x) => [
+    `🔥 ${x.company}: ${offerEn(x) || 'Welcome offer'}`,
+    '',
+    '• Open to new registrations',
+    '• Send the code together with the link',
+    '• Full terms on the site',
+    '',
+    x.link,
+    x.code ? `Code: \`${x.code}\`` : '',
+  ].filter((l) => l !== '').join('\n'),
+];
+
 function templatesFor(ch: ChannelProfile): TemplateFn[] {
   const en = ch.lang === 'en';
-  if (ch.category === 'agents') return en ? AGENT_TEMPLATES_EN : AGENT_TEMPLATES;
-  return en ? MARKETER_TEMPLATES_EN : MARKETER_TEMPLATES;
+  const base = ch.category === 'agents'
+    ? (en ? AGENT_TEMPLATES_EN : AGENT_TEMPLATES)
+    : (en ? MARKETER_TEMPLATES_EN : MARKETER_TEMPLATES);
+  // عروض الشركات الزاحفة تُدرَج أولًا عندما يتوفر عرض للقناة.
+  const c = resolveCompany(ch);
+  const offer = c ? getOfferForCompany(c.name) : null;
+  if (offer) {
+    return en ? [...OFFER_TEMPLATES_EN, ...base] : [...OFFER_TEMPLATES, ...base];
+  }
+  return base;
 }
 
 // ------------------------------------------------------------------ running

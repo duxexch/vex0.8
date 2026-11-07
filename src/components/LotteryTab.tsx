@@ -51,6 +51,8 @@ interface LotteryTabProps {
   onRefreshWallets?: () => void;
   onCopyToast?: (msg: string) => void;
   onInstallPwa?: () => void | Promise<void>;
+  /** Tree-drawer: lottery sub-tab requested from the side menu (nonce re-fires). */
+  initialSubTab?: { value: 'play' | 'my_tickets' | 'won_prizes' | 'results' | 'rules'; n: number };
 }
 
 export const LotteryTab: React.FC<LotteryTabProps> = ({
@@ -62,6 +64,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
   onRefreshWallets,
   onCopyToast,
   onInstallPwa,
+  initialSubTab,
 }) => {
   const isAr = lang === 'ar';
 
@@ -96,6 +99,12 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
   // Sub-tabs
   type SubTab = 'play' | 'my_tickets' | 'won_prizes' | 'results' | 'rules';
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('play');
+
+  // Sync with the side-drawer selection (runs on mount + every drawer pick).
+  useEffect(() => {
+    if (!initialSubTab) return;
+    setActiveSubTab(initialSubTab.value);
+  }, [initialSubTab]);
 
   // Modal for 30-min custom prize tier alerts (Firebase Cloud Messaging)
   const [isTierAlertsModalOpen, setIsTierAlertsModalOpen] = useState<boolean>(false);

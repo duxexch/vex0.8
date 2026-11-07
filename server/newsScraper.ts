@@ -1,7 +1,7 @@
 import { Browser, Page } from 'playwright-core';
 import * as fs from 'fs';
 import * as path from 'path';
-import { launchBrowser } from './browser';
+import { launchBrowser, newPage } from './browser';
 
 // =========================================================================
 // VEX News Scraper — pattern-based article extraction (probed against live
@@ -114,6 +114,54 @@ const NEWS_SOURCES: NewsSource[] = [
     rateLimitMs: 5000,
     active: true,
   },
+  // ---- Probed 2026-11-07 against live listing pages ----
+  {
+    id: 'aljazeera_sport',
+    name: 'الجزيرة رياضة',
+    url: 'https://sport.aljazeera.net/sport',
+    articlePattern: '/sport/\\d{4}/\\d{1,2}/\\d{1,2}/',
+    excludePattern: '/(?:sports-live|videos)/',
+    category: 'كرة قدم',
+    categoryKey: 'football',
+    lang: 'ar',
+    rateLimitMs: 4000,
+    active: true,
+  },
+  {
+    id: 'guardian_football',
+    name: 'The Guardian Football',
+    url: 'https://www.theguardian.com/football',
+    articlePattern: '/football/\\d{4}/[a-z]{3}/\\d{2}/',
+    excludePattern: '/(?:ng-interactive|video|audio|picture)/',
+    category: 'كرة قدم',
+    categoryKey: 'football',
+    lang: 'en',
+    rateLimitMs: 5000,
+    active: true,
+  },
+  {
+    id: 'espn_soccer',
+    name: 'ESPN Soccer',
+    url: 'https://www.espn.com/soccer/',
+    articlePattern: '/soccer/story/_/id/\\d+/',
+    category: 'كرة قدم',
+    categoryKey: 'football',
+    lang: 'en',
+    rateLimitMs: 5000,
+    active: true,
+  },
+  {
+    id: 'marca_futbol',
+    name: 'MARCA Fútbol',
+    url: 'https://www.marca.com/futbol.html',
+    articlePattern: '/futbol/.+/\\d{4}/\\d{2}/\\d{2}/[^/]+\\.html',
+    excludePattern: '-directo\\.html',
+    category: 'كرة قدم',
+    categoryKey: 'football',
+    lang: 'es',
+    rateLimitMs: 5000,
+    active: true,
+  },
 ];
 
 export class NewsScraper {
@@ -171,7 +219,7 @@ export class NewsScraper {
 
   private async scrapeSource(source: NewsSource): Promise<ScrapedArticle[]> {
     if (!this.browser) await this.init();
-    const page = await this.browser!.newPage();
+    const page = await newPage(this.browser!);
     try {
       await page.goto(source.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
       await page.waitForTimeout(3500);

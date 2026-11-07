@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, MotionConfig } from 'motion/react';
 import { io } from 'socket.io-client';
 import {
@@ -58,7 +58,7 @@ import { AiMatchAnalysisModal } from './components/AiMatchAnalysisModal';
 import { ResponsibleGamingModal } from './components/ResponsibleGamingModal';
 import { LegalTermsModal } from './components/LegalTermsModal';
 import { DirectDepositUnfreezeModal } from './components/DirectDepositUnfreezeModal';
-import { Toast } from './components/Toast';
+import { Toast, ToastMeta } from './components/Toast';
 import { IosInstallModal } from './components/IosInstallModal';
 import { LotteryTickerBar } from './components/LotteryTickerBar';
 import { AppSplashScreen } from './components/AppSplashScreen';
@@ -107,16 +107,46 @@ export default function App() {
     }
   }, []);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
+  // Tree-drawer target: which sub-view inside which tab the user picked.
+  // `n` is a nonce so re-picking the same child re-fires the sync effect.
+  const [navTarget, setNavTarget] = useState<{ tab: TabType; sub: string; n: number } | null>(null);
+  // Drop a stale target as soon as the user leaves its tab by any other route.
+  useEffect(() => {
+    setNavTarget((t) => (t && t.tab !== activeTab ? null : t));
+  }, [activeTab]);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => {
     return localStorage.getItem('vex_display_currency') || detectUserRegionalCurrency();
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMeta, setToastMeta] = useState<ToastMeta | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearToastTimer = () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+  };
 
   const showToast = (msg?: string) => {
+    clearToastTimer();
+    setToastMeta(null);
     setToastMessage(msg || 'copied');
-    setTimeout(() => {
+    toastTimerRef.current = setTimeout(() => {
       setToastMessage(null);
+      toastTimerRef.current = null;
     }, 2500);
+  };
+
+  /** Professional alert card: title + body + category icon/accent. */
+  const showToastMeta = (meta: ToastMeta, ms = 4500) => {
+    clearToastTimer();
+    setToastMessage(null);
+    setToastMeta(meta);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMeta(null);
+      toastTimerRef.current = null;
+    }, ms);
   };
 
   useEffect(() => {
@@ -344,7 +374,7 @@ export default function App() {
       console.log('Foreground push notification received:', payload);
       const title = payload.notification?.title || (lang === 'ar' ? 'تحديث طلب التعويض' : 'Compensation Status Update');
       const body = payload.notification?.body || '';
-      showToast(`${title}: ${body}`);
+      showToastMeta({ title, message: body, category: 'compensation' });
     });
 
     return () => {
@@ -483,7 +513,11 @@ export default function App() {
 
     socket.on('notification', (newNotif: AppNotification) => {
       setNotifications((prev) => [newNotif, ...prev]);
-      showToast(lang === 'ar' ? 'إشعار جديد في الوقت الحقيقي!' : 'New real-time alert!');
+      showToastMeta({
+        title: newNotif.title,
+        message: newNotif.message,
+        category: newNotif.category,
+      });
     });
 
     // Predictions: a site post was created or settled → refresh the feed in place
@@ -741,6 +775,12 @@ export default function App() {
                 lang={lang}
                 isLoading={isLoadingData}
                 onCopyToast={showToast}
+                initialFilterCategory={
+                  navTarget?.tab === 'companies' &&
+                  (navTarget.sub === 'all' || navTarget.sub === 'registered' || navTarget.sub === 'apps')
+                    ? { value: navTarget.sub, n: navTarget.n }
+                    : undefined
+                }
               />
             )}
 
@@ -771,6 +811,11 @@ export default function App() {
                 displayCurrency={displayCurrency}
                 onCopyToast={showToast}
                 onTelegramLoggedIn={loadData}
+                initialWalletView={
+                  navTarget?.tab === 'wallets' && (navTarget.sub === 'grid' || navTarget.sub === 'table')
+                    ? { value: navTarget.sub, n: navTarget.n }
+                    : undefined
+                }
               />
             )}
 
@@ -786,6 +831,12 @@ export default function App() {
                 onTriggerAgentBroadcast={handleTriggerAiPrediction}
                 initialNews={openNewsFeed}
                 onNewsOpened={() => setOpenNewsFeed(false)}
+                initialSubTab={
+                  navTarget?.tab === 'ai-sports' &&
+                  (navTarget.sub === 'fixtures' || navTarget.sub === 'news' || navTarget.sub === 'predictions')
+                    ? { value: navTarget.sub, n: navTarget.n }
+                    : undefined
+                }
                 lang={lang}
                 userId={userId}
               />
@@ -799,6 +850,11 @@ export default function App() {
                 onRefresh={loadData}
                 lang={lang}
                 onCopyToast={showToast}
+                initialSection={
+                  navTarget?.tab === 'referrals' && (navTarget.sub === 'link' || navTarget.sub === 'history')
+                    ? { value: navTarget.sub, n: navTarget.n }
+                    : undefined
+                }
               />
             )}
 
@@ -814,6 +870,11 @@ export default function App() {
                 lang={lang}
                 displayCurrency={displayCurrency}
                 isLoading={isLoadingData}
+                initialSection={
+                  navTarget?.tab === 'transfers' && (navTarget.sub === 'new' || navTarget.sub === 'history')
+                    ? { value: navTarget.sub, n: navTarget.n }
+                    : undefined
+                }
               />
             )}
 
@@ -828,6 +889,11 @@ export default function App() {
                 lang={lang}
                 isLoading={isLoadingData}
                 onCopyToast={showToast}
+                initialSection={
+                  navTarget?.tab === 'activity' && (navTarget.sub === 'accounts' || navTarget.sub === 'requests')
+                    ? { value: navTarget.sub, n: navTarget.n }
+                    : undefined
+                }
               />
             )}
 
@@ -844,6 +910,12 @@ export default function App() {
                 onRefreshWallets={loadData}
                 onCopyToast={showToast}
                 onInstallPwa={handleInstallPwa}
+                initialSubTab={
+                  navTarget?.tab === 'lottery' &&
+                  ['play', 'my_tickets', 'won_prizes', 'results', 'rules'].includes(navTarget.sub)
+                    ? { value: navTarget.sub as 'play' | 'my_tickets' | 'won_prizes' | 'results' | 'rules', n: navTarget.n }
+                    : undefined
+                }
               />
             )}
           </motion.div>
@@ -865,9 +937,11 @@ export default function App() {
         onClose={() => setIsMoreSheetOpen(false)}
         lang={lang}
         activeTab={activeTab}
+        activeSub={navTarget?.tab === activeTab ? navTarget.sub : undefined}
         isPhoneVerified={!!userProfile?.is_phone_verified}
-        onSelectTab={(tab) => {
+        onSelectTab={(tab, sub) => {
           setActiveTab(tab);
+          if (sub) setNavTarget({ tab, sub, n: Date.now() });
           setIsMoreSheetOpen(false);
         }}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -1051,8 +1125,8 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Global Copy Success Toast Notification */}
-      <Toast message={toastMessage} lang={lang} />
+      {/* Global Toast Notification — copy confirm or professional alert card */}
+      <Toast message={toastMessage} meta={toastMeta} lang={lang} />
     </div>
     </MotionConfig>
   );

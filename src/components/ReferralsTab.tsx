@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Company, Language, Referral, PLATFORM_DOMAIN } from '../types';
 import { TRANSLATIONS } from '../data/translations';
 import { vexApi, generateReferralCode, getReferralUrl } from '../services/api';
@@ -22,6 +22,8 @@ interface ReferralsTabProps {
   onRefresh: () => void;
   lang: Language;
   onCopyToast?: () => void;
+  /** Tree-drawer: scroll target requested from the side menu (nonce re-fires). */
+  initialSection?: { value: 'link' | 'history'; n: number };
 }
 
 export const ReferralsTab: React.FC<ReferralsTabProps> = ({
@@ -31,6 +33,7 @@ export const ReferralsTab: React.FC<ReferralsTabProps> = ({
   onRefresh,
   lang,
   onCopyToast,
+  initialSection,
 }) => {
   const [activeCompanyId, setActiveCompanyId] = useState(
     selectedCompanyId || companies[0]?.id || 'CMPMLB002'
@@ -43,6 +46,16 @@ export const ReferralsTab: React.FC<ReferralsTabProps> = ({
   const [applyMsg, setApplyMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
+
+  // Tree-drawer: scroll to the requested section (referral link / history).
+  useEffect(() => {
+    if (!initialSection) return;
+    const id = initialSection.value === 'history' ? 'referrals-history' : 'referrals-link';
+    const timer = setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [initialSection]);
 
   const t = TRANSLATIONS[lang];
   const activeCompany = companies.find((c) => c.id === activeCompanyId) || companies[0];
@@ -174,7 +187,7 @@ export const ReferralsTab: React.FC<ReferralsTabProps> = ({
             </div>
 
             {/* Referral Link & Code Box */}
-            <div className="space-y-3 pt-1">
+            <div id="referrals-link" className="space-y-3 pt-1 scroll-mt-20">
               {/* Link Box */}
               <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between gap-2 text-xs">
@@ -311,7 +324,7 @@ export const ReferralsTab: React.FC<ReferralsTabProps> = ({
           </form>
 
           {/* Referrals History */}
-          <div className="space-y-2 pt-1">
+          <div id="referrals-history" className="space-y-2 pt-1 scroll-mt-20">
             <div className="flex items-center justify-between px-1">
               <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-emerald-600" />

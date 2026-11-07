@@ -29,6 +29,8 @@ interface TransfersTabProps {
   displayCurrency: string;
   isLoading?: boolean;
   onCopyToast?: () => void;
+  /** Tree-drawer: scroll target requested from the side menu (nonce re-fires). */
+  initialSection?: { value: 'new' | 'history'; n: number };
 }
 
 export const TransfersTab: React.FC<TransfersTabProps> = ({
@@ -43,6 +45,7 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
   displayCurrency,
   isLoading = false,
   onCopyToast,
+  initialSection,
 }) => {
   const [selectedCompanyId, setSelectedCompanyId] = useState(
     initialCompanyId || wallets[0]?.company_id || companies[0]?.id || 'CMPMLB002'
@@ -125,6 +128,16 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
     }
     return () => clearInterval(interval);
   }, [cooldown]);
+
+  // Tree-drawer: scroll to the requested section (transfer form / history).
+  useEffect(() => {
+    if (!initialSection) return;
+    const id = initialSection.value === 'history' ? 'transfers-history' : 'transfers-form';
+    const timer = setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [initialSection]);
 
   if (isLoading) {
     return <TransfersTabSkeleton />;
@@ -351,8 +364,9 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
       {/* Transfer Form or OTP Sheet */}
       {!pendingTransferId ? (
         <form
+          id="transfers-form"
           onSubmit={handleInitiateTransfer}
-          className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs"
+          className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs scroll-mt-20"
         >
           {/* 1. Select Company */}
           <div>
@@ -722,7 +736,7 @@ export const TransfersTab: React.FC<TransfersTabProps> = ({
           </div>
 
           {/* Transfer History */}
-          <div className="space-y-2.5">
+          <div id="transfers-history" className="space-y-2.5 scroll-mt-20">
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider px-1 flex items-center gap-1.5">
               <History className="w-3.5 h-3.5 text-emerald-600" />
               <span>{lang === 'ar' ? 'سجل التحويلات' : lang === 'es' ? 'Historial de Transferencias' : lang === 'ru' ? 'История переводов' : 'Transfer History'} ({transfers.length})</span>

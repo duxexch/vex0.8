@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Company, CompensationAccount, Language, AppBranding } from '../types';
 import { TRANSLATIONS } from '../data/translations';
@@ -50,6 +50,8 @@ interface CompaniesTabProps {
   branding?: AppBranding;
   isLoading?: boolean;
   onCopyToast?: () => void;
+  /** Tree-drawer: category filter requested from the side menu (nonce re-fires). */
+  initialFilterCategory?: { value: 'all' | 'registered' | 'apps'; n: number };
 }
 
 export const CompaniesTab: React.FC<CompaniesTabProps> = ({
@@ -62,6 +64,7 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
   branding,
   isLoading = false,
   onCopyToast,
+  initialFilterCategory,
 }) => {
   // Scroll reveal for the quick-action surface (Phase 27/28)
   const quickActionsRef = useScrollReveal<HTMLDivElement>();
@@ -71,6 +74,13 @@ export const CompaniesTab: React.FC<CompaniesTabProps> = ({
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [filterCategory, setFilterCategory] = useState<'all' | 'registered' | 'apps'>('all');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+
+  // Sync with the side-drawer selection (runs on mount + every drawer pick).
+  useEffect(() => {
+    if (!initialFilterCategory) return;
+    setFilterCategory(initialFilterCategory.value);
+    setIsFilterOpen(initialFilterCategory.value !== 'all');
+  }, [initialFilterCategory]);
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('vex_favorites');
