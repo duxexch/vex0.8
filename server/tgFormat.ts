@@ -243,6 +243,10 @@ export function prepareTgText(raw: string, _hint?: string): TgPrepared {
   t = autoCode(t);
   t = isolateBidi(t);
 
+  // 6) contextual word links — raw URLs become a deep link inside a word
+  //    (label line above / same-line text / fallback «اضغط هنا»).
+  t = linkifyTgUrls(t);
+
   t = t
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]+\n/g, '\n')
@@ -254,4 +258,159 @@ export function prepareTgText(raw: string, _hint?: string): TgPrepared {
 /** Convenience: prepare and return just the body. */
 export function tgText(raw: string, hint?: string): string {
   return prepareTgText(raw, hint).text;
+}
+
+// ------------------------------------------------------- contextual word links
+//
+// الروابط الخام (https://…) لا تُعرض كنص أبدًا — تتحط داخل كلمة قابلة للنقر:
+//   1) نفس السطر فيه كلمات قبل الرابط ← الكلمات دي هي الرابط نفسها.
+//   2) السطر = رابط لوحده (مع إيموجي) والسطر اللي قبله «label» (ينتهي بـ: أو
+//      👇 أو فيه كلمات دعوة) ← الـlabel يبقى الرابط وسطر الرابط يُشال.
+//   3) غير كده ← كلمة احتياطية: «اضغط هنا» / «click here» حسب لغة المنشور.
+// يُستدعى داخل prepareTgText فتُغطّي كل رسائل البوت (قنوات + DM + webhook).
+
+/** Strong CTA words that mark a line as a link label. */
+const CTA_RE =
+  /(من\sهنا|هذا\sالرابط|اضغط|سجّل|حمّل|الرابط|رابط\sالتسجيل|التسجيل|التطبيق|اذهب|download|register|sign\s*up|tap\s*here|click\s*here|click\s*on)/i;
+
+/** Strip tags/entities/LRM → plain text for label decisions. */
+function plainOf(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/\u200E/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Is this line a link label (…)؟ */
+function isLabelLine(plain: string): boolean {
+  const s = plain.trim();
+  if (s.length < 3 || s.length > 80) return false;
+  if (/[:：]\s*$/.test(s)) return true; // «سجّل من هنا:» / "Register here:"
+  if (/👇|❗|‼️/.test(s)) return true; // «سجّل في X من هنا 👇»
+  return CTA_RE.test(s);
+}
+
+/** Cut emoji/arabic/punct tails that are not part of the URL. */
+function trimUrl(u: string): string {
+  return u.replace(/[^A-Za-z0-9\-._~:/?#@!$&'()*+,;=%]+$/, '').replace(/[.,!?،؛؟…]+$/, '') || u;
+}
+
+interface UrlHit {
+  url: string;
+  start: number;
+  end: number;
+}
+
+/** Raw http(s) URLs in TEXT segments only (never inside tags/code/anchors). */
+function findRawUrls(line: string): UrlHit[] {
+  const hits: UrlHit[] = [];
+  let pos = 0;
+  let skip = 0; // depth inside <code>/<pre>/<a>
+  for (const seg of line.split(/(<[^>]*>)/)) {
+    if (!seg) continue;
+    if (seg[0] === '<') {
+      if (seg[1] === '/') {
+        if (/^<\/(code|pre|a)>/i.test(seg)) skip = Math.max(0, skip - 1);
+      } else if (/^<(code|pre|a)\b/i.test(seg)) {
+        skip++;
+      }
+      pos += seg.length;
+      continue;
+    }
+    if (skip === 0) {
+      const re = /https?:\/\/[^\s<>"']+/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(seg))) {
+        const url = trimUrl(m[0]);
+        hits.push({ url, start: pos + m.index, end: pos + m.index + url.length });
+      }
+    }
+    pos += seg.length;
+  }
+  return hits;
+}
+
+/** The clickable word taken from the text sitting before the URL, if it is label-like. */
+function anchorFrom(prefixHtml: string): string | null {
+  // Never rebuild a prefix that already carries a link — its href would be lost.
+  if (/<a\s/i.test(prefixHtml)) return null;
+  const raw = plainOf(prefixHtml);
+  const labelLike = /[:：]\s*$/.test(raw) || /👇/.test(raw) || CTA_RE.test(raw);
+  const s = raw
+    .replace(/[\p{Extended_Pictographic}\uFE0F]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .replace(/[^\p{L}\p{N}\s]+$/u, '')
+    .trim();
+  if (s.length < 3 || s.length > 60) return null;
+  if (!labelLike && s.length > 40) return null; // long sentence → not a label
+  return s;
+}
+
+/** Wrap a whole label line (keeping its bold) in the anchor. */
+function wrapAnchor(lineHtml: string, url: string): string {
+  const href = url.replace(/["<>]/g, '');
+  const b = /^(\s*)(<b>)([\s\S]+?)(<\/b>)(\s*)$/.exec(lineHtml);
+  if (b) return `${b[1]}${b[2]}<a href="${href}">${b[3]}</a>${b[4]}${b[5]}`;
+  return `<a href="${href}">${lineHtml}</a>`;
+}
+
+/**
+ * Convert every raw URL into a deep link hidden inside a word (see rules
+ * above). Idempotent: URLs already inside <a>/<code>/<pre> are skipped.
+ */
+export function linkifyTgUrls(t: string): string {
+  const fallback = AR_RE.test(t) ? 'اضغط هنا' : 'click here';
+  const out: string[] = [];
+
+  for (const line of t.split('\n')) {
+    const hits = findRawUrls(line);
+    if (!hits.length) {
+      out.push(line);
+      continue;
+    }
+
+    // Bare URL line (emoji only around it) → fold it into the label line above.
+    if (hits.length === 1) {
+      const rest = plainOf(line.split(hits[0].url).join('')).replace(/[\p{Extended_Pictographic}\uFE0F\s]+/gu, '');
+      if (rest === '') {
+        let li = out.length - 1;
+        while (li >= 0 && !out[li].trim()) li--;
+        const prev = li >= 0 ? out[li] : '';
+        if (prev && !/<a\s/i.test(prev) && isLabelLine(plainOf(prev))) {
+          // Trailing «:» stays OUTSIDE the anchor (reads better as a label).
+          const colon = /([:：]\s*)$/.exec(prev);
+          out[li] = colon
+            ? `${wrapAnchor(prev.slice(0, colon.index), hits[0].url)}${colon[1]}`
+            : wrapAnchor(prev, hits[0].url);
+          out.push('');
+          continue;
+        }
+      }
+    }
+
+    // Same-line label → that text becomes the link; otherwise a fallback word.
+    let built = '';
+    let cursor = 0;
+    for (const h of hits) {
+      const prefix = line.slice(cursor, h.start);
+      const anchor = anchorFrom(prefix);
+      if (anchor) {
+        const lead = /^((?:<[^>]*>|[\p{Extended_Pictographic}\uFE0F\s])*)/u.exec(prefix)?.[0] || '';
+        built += `${lead}<a href="${h.url.replace(/["<>]/g, '')}">${anchor}</a>`;
+      } else {
+        built += `${prefix}<a href="${h.url.replace(/["<>]/g, '')}">${fallback}</a>`;
+      }
+      cursor = h.end;
+    }
+    built += line.slice(cursor);
+    out.push(built);
+  }
+
+  return out.join('\n');
 }

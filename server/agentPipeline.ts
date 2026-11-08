@@ -135,7 +135,14 @@ async function llm(prompt: string, systemInstruction: string, temperature = 0.6)
 }
 
 function stripHtml(v: string): string {
-  return v.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return v
+    // Keep the href as plain text — a parse-fallback message must stay clickable
+    // after its <a> word link is stripped.
+    .replace(/<a\s[^>]*href\s*=\s*"([^"]*)"[^>]*>[\s\S]*?<\/a>/gi, '$1')
+    .replace(/<a\s[^>]*href\s*=\s*'([^']*)'[^>]*>[\s\S]*?<\/a>/gi, '$1')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Tags Telegram's HTML parse_mode actually accepts. */

@@ -1,6 +1,7 @@
 import { generateWithFailover, extractJsonObject, availableProviders } from './agentEngine';
 import { channelsStore, ChannelProfile } from './channelsStore';
 import { parseTmePage } from './channelCampaign';
+import { linkifyTgUrls } from './tgFormat';
 
 // =========================================================================
 // Channel Onboarding Agent — when the publisher bot is added as admin to a
@@ -192,7 +193,8 @@ async function notifyAdmin(fromId: number | undefined, text: string): Promise<vo
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: fromId, text, parse_mode: 'HTML' }),
+      // كل رسالة بوت تمرّ بنفس قاعدة الروابط: URL خام → كلمة قابلة للنقر.
+      body: JSON.stringify({ chat_id: fromId, text: linkifyTgUrls(text), parse_mode: 'HTML' }),
       signal: AbortSignal.timeout(10000),
     });
   } catch {
