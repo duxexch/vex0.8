@@ -6055,7 +6055,7 @@ async function setupServer() {
     };
     const DEFAULT_META = DOMAIN_META['vex.deals'];
 
-    type Profile = ProfileText & { brand: string; focus: string; lang: Lang; dir: 'rtl' | 'ltr' };
+    type Profile = ProfileText & { brand: string; focus: string; lang: Lang; dir: 'rtl' | 'ltr'; domain: string };
     const getProfile = (domain: string, langStr?: string): Profile => {
       const meta = DOMAIN_META[domain] || DEFAULT_META;
       const lang: Lang = isLang(langStr) ? langStr : 'ar';
@@ -6063,14 +6063,23 @@ async function setupServer() {
         brand: meta.brand, focus: meta.focus, lang,
         dir: lang === 'ar' ? 'rtl' : 'ltr',
         ...getProfileText(domain, lang),
+        domain,
       };
+    };
+    // Base language of a domain = the language served on the bare URL (no ?lang):
+    // English-first domains (titleLocale 'en', e.g. 1xbetservices.com) default to English,
+    // Arabic-first domains default to Arabic. Single source of truth for getLang + langQ so
+    // canonical, hreflang, sitemap and internal links can never disagree about it.
+    // Accepts a host ("1xbetservices.com") or a full origin URL ("https://1xbetservices.com").
+    const baseLang = (domainOrUrl: string): Lang => {
+      const host = domainOrUrl.replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0].replace(/:\d+$/, '');
+      return DOMAIN_MATRIX[host]?.titleLocale === 'en' ? 'en' : 'ar';
     };
     // Default language follows the domain: global English-first domains (titleLocale 'en')
     // serve English unless the visitor explicitly picks another language via ?lang=
     const getLang = (req: { query: Record<string, unknown>; headers?: { host?: string } }): Lang => {
       if (isLang(req.query.lang)) return req.query.lang;
-      const host = (req.headers?.host || '').replace(/^www\./, '');
-      return DOMAIN_MATRIX[host]?.titleLocale === 'en' ? 'en' : 'ar';
+      return baseLang(req.headers?.host || '');
     };
 
     // Date of the last full content re-verification (editorial policy: shown dates reflect real reviews,
@@ -6078,11 +6087,11 @@ async function setupServer() {
     const CONTENT_VERIFIED = '2026-09-27';
 
     // Inline links to trust & policy pages (E-E-A-T) — used in seoBlock and page footers
-    const trustLinks = (lang: Lang): string =>
-      TRUST_NAV.map(n => `<a href="/${n.slug}${langQ(lang)}" style="color:#94a3b8;text-decoration:none;margin:0 8px;white-space:nowrap;">${tt(n.key, lang)}</a>`).join('');
+    const trustLinks = (lang: Lang, domain: string): string =>
+      TRUST_NAV.map(n => `<a href="/${n.slug}${langQ(lang, domain)}" style="color:#94a3b8;text-decoration:none;margin:0 8px;white-space:nowrap;">${tt(n.key, lang)}</a>`).join('');
 
     // Proper 404 (status code matters for SEO — no soft-404 redirects)
-    const send404 = (res: import('express').Response, profile: { brand: string; tagline: string; dir: string; lang: string }, notFound?: string) => {
+    const send404 = (res: import('express').Response, profile: { brand: string; tagline: string; dir: string; lang: string; domain: string }, notFound?: string) => {
       const lang = profile.lang as Lang;
       res.status(404).set('Content-Type', 'text/html; charset=utf-8').send(`<!doctype html>
 <html lang="${lang}" dir="${profile.dir}">
@@ -6095,24 +6104,24 @@ async function setupServer() {
 .lnk{display:inline-block;color:#34d399;text-decoration:none;margin:5px 8px;font-size:0.92rem}</style>
 </head>
 <body><div class="box"><h1>404</h1>${notFound ? `<p>${notFound}</p>` : ''}<p>${tt('e404.msg', lang)}</p><p>${profile.brand} — ${profile.tagline}</p>
-<a class="btn" href="/${langQ(lang)}">${tt('nav.home', lang)}</a>
+<a class="btn" href="/${langQ(lang, profile.domain)}">${tt('nav.home', lang)}</a>
 <p style="margin-top:20px;color:#e2e8f0;font-weight:bold;">${tt('e404.popular', lang)}</p>
 <div>
-<a class="lnk" href="/companies${langQ(lang)}">${tt('hub.companies_h1', lang)}</a>
-<a class="lnk" href="/guides${langQ(lang)}">${tt('hub.guides_h1', lang)}</a>
-<a class="lnk" href="/best-betting-sites${langQ(lang)}">${tt('link.best', lang)}</a>
-<a class="lnk" href="/compare${langQ(lang)}">${tt('link.compare', lang)}</a>
-<a class="lnk" href="/predictions${langQ(lang)}">${tt('nav.predictions', lang)}</a>
+<a class="lnk" href="/companies${langQ(lang, profile.domain)}">${tt('hub.companies_h1', lang)}</a>
+<a class="lnk" href="/guides${langQ(lang, profile.domain)}">${tt('hub.guides_h1', lang)}</a>
+<a class="lnk" href="/best-betting-sites${langQ(lang, profile.domain)}">${tt('link.best', lang)}</a>
+<a class="lnk" href="/compare${langQ(lang, profile.domain)}">${tt('link.compare', lang)}</a>
+<a class="lnk" href="/predictions${langQ(lang, profile.domain)}">${tt('nav.predictions', lang)}</a>
 </div>
-<div style="margin-top:14px;font-size:0.85rem;">${trustLinks(lang)}</div>
+<div style="margin-top:14px;font-size:0.85rem;">${trustLinks(lang, profile.domain)}</div>
 </div></body></html>`);
     };
 
 
     // hreflang alternate tags for a page (all 8 languages + x-default)
-    // ar = default = base URL (no ?lang) so each hreflang URL is self-canonical
+    // The bare URL = the domain's default language (x-default) so each hreflang URL is self-canonical
     const hreflangs = (domainUrl: string, path: string): string => {
-      return LANGS.map(l => `  <link rel="alternate" hreflang="${l}" href="${domainUrl}${path}${langQ(l)}" />`).join('\n')
+      return LANGS.map(l => `  <link rel="alternate" hreflang="${l}" href="${domainUrl}${path}${langQ(l, domainUrl)}" />`).join('\n')
         + `\n  <link rel="alternate" hreflang="x-default" href="${domainUrl}${path}" />`;
     };
 
@@ -6155,10 +6164,12 @@ async function setupServer() {
     const siteSchemaTag = (domainUrl: string, profile: Profile): string =>
       `  <script type="application/ld+json">${siteSchema(domainUrl, profile)}</script>\n`;
 
-    // Self-canonical: base URL (default ar = x-default) has no ?lang; other languages keep ?lang=xx
+    // Self-canonical: the bare URL carries the domain's default language (= x-default, no ?lang);
+    // every other language keeps ?lang=xx. langQ takes the domain (host or origin URL) so it
+    // knows which language the bare URL serves.
+    const langQ = (lang: Lang, domain: string): string => lang === baseLang(domain) ? '' : '?lang=' + lang;
     const canonicalUrl = (domainUrl: string, path: string, lang: Lang): string =>
-      `${domainUrl}${path}${langQ(lang)}`;
-    const langQ = (lang: Lang): string => lang === 'ar' ? '' : '?lang=' + lang;
+      `${domainUrl}${path}${langQ(lang, domainUrl)}`;
 
     // ==================== GEO: llms.txt for AI Search Engines ====================
     app.get('/llms.txt', (req, res) => {
@@ -6651,16 +6662,16 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>1.0</priority>
 `;
       for (const l of langs) {
-        urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/${langQ(l)}"/>
+        urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/${langQ(l, domain)}"/>
 `;
       }
       urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/"/>
   </url>
 `;
 
-      // Language variants (ar = base URL, already listed above)
+      // Language variants (base language = bare URL, already listed above)
       for (const l of langs) {
-        if (l === 'ar') continue;
+        if (l === baseLang(domain)) continue;
         urls += `  <url>
     <loc>https://${domain}/?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6681,7 +6692,7 @@ Sitemap: https://${domain}/sitemap.xml
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}/company/${slug}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6702,14 +6713,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.9</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/guides/${slug}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/guides/${slug}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/guides/${slug}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}/guides/${slug}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6729,14 +6740,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.6</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/${slug}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/${slug}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/${slug}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}/${slug}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6755,14 +6766,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.9</priority>
 `;
       for (const l of langs) {
-        urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/predictions${langQ(l)}"/>
+        urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/predictions${langQ(l, domain)}"/>
 `;
       }
       urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/predictions"/>
   </url>
 `;
       for (const l of langs) {
-        if (l === 'ar') continue;
+        if (l === baseLang(domain)) continue;
         urls += `  <url>
     <loc>https://${domain}/predictions?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6780,14 +6791,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.9</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/predictions/${day}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/predictions/${day}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/predictions/${day}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}/predictions/${day}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6809,14 +6820,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.9</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${page}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${page}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}${page}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}${page}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6838,14 +6849,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.8</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${page}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${page}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}${page}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}${page}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6875,14 +6886,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.9</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${hub}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${hub}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}${hub}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}${hub}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6901,14 +6912,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>1.0</priority>
 `;
       for (const l of langs) {
-        urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/best-betting-sites${langQ(l)}"/>
+        urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/best-betting-sites${langQ(l, domain)}"/>
 `;
       }
       urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/best-betting-sites"/>
   </url>
 `;
       for (const l of langs) {
-        if (l === 'ar') continue;
+        if (l === baseLang(domain)) continue;
         urls += `  <url>
     <loc>https://${domain}/best-betting-sites?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6928,14 +6939,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.9</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${page}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${page}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}${page}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}${page}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6956,14 +6967,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.9</priority>
 `;
         for (const l of langs) {
-          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${newsHub}${langQ(l)}"/>
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${newsHub}${langQ(l, domain)}"/>
 `;
         }
         urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}${newsHub}"/>
   </url>
 `;
         for (const l of langs) {
-          if (l === 'ar') continue;
+          if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}${newsHub}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
@@ -6983,14 +6994,14 @@ Sitemap: https://${domain}/sitemap.xml
     <priority>0.8</priority>
 `;
           for (const l of langs) {
-            urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${npage}${langQ(l)}"/>
+            urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}${npage}${langQ(l, domain)}"/>
 `;
           }
           urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}${npage}"/>
   </url>
 `;
           for (const l of langs) {
-            if (l === 'ar') continue;
+            if (l === baseLang(domain)) continue;
             urls += `  <url>
     <loc>https://${domain}${npage}?lang=${l}</loc>
     <lastmod>${nlast}</lastmod>
@@ -7099,7 +7110,7 @@ ${urls}</urlset>`;
 ${hreflangs(domainUrl, pagePath)}
   <meta property="og:title" content="${name} - ${profile.brand}" />
   <meta property="og:description" content="${escAttr(metaDesc)}" />
-  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="article" />
   <meta property="og:locale" content="${lang === 'ar' ? 'ar_AR' : lang + '_' + lang.toUpperCase()}" />
 ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('company.og_desc')))}
@@ -7188,14 +7199,14 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
 <body>
   <nav class="nav">
     <a href="/">🏠 ${tt('nav.home', lang)}</a>
-    <a href="/companies${langQ(lang)}">🏢 ${tt('nav.companies', lang)}</a>
+    <a href="/companies${langQ(lang, domain)}">🏢 ${tt('nav.companies', lang)}</a>
     <a href="/#wallets">💳 ${tt('nav.wallets', lang)}</a>
     <a href="/#ai-sports">⚽ ${tt('nav.predictions', lang)}</a>
     <a href="/#lottery">🎰 ${tt('nav.lottery', lang)}</a>
     <a href="/download/apk">📱 ${tt('nav.download', lang)}</a>
   </nav>
   <nav class="langbar">
-    ${LANGS.map(l => `<a href="${pagePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('    ')}
+    ${LANGS.map(l => `<a href="${pagePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('    ')}
   </nav>
   <div class="container">
     <h1>${name}</h1>
@@ -7253,7 +7264,7 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
 
     <h2>🔗 ${T_('company.related_title')}</h2>
     <div class="related">
-      ${companies.filter(c => c.id !== company.id).slice(0, 6).map(c => `<a href="/company/${c.id}${langQ(lang)}">${c.name}</a>`).join('')}
+      ${companies.filter(c => c.id !== company.id).slice(0, 6).map(c => `<a href="/company/${c.id}${langQ(lang, domain)}">${c.name}</a>`).join('')}
     </div>
 
     ${(() => {
@@ -7261,20 +7272,20 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
       return myPairs.length ? `
     <h2>⚖️ ${tt('link.compare', lang)}</h2>
     <div class="related">
-      ${myPairs.map(p => `<a href="/compare/${p.slug}${langQ(lang)}">${p.a.name} vs ${p.b.name}</a>`).join('')}
+      ${myPairs.map(p => `<a href="/compare/${p.slug}${langQ(lang, domain)}">${p.a.name} vs ${p.b.name}</a>`).join('')}
     </div>` : '';
     })()}
 
     <div style="margin-top:30px;text-align:center;">
-      <a href="/companies${langQ(lang)}" class="cta">🏢 ${tt('cta.companies', lang)}</a>
+      <a href="/companies${langQ(lang, domain)}" class="cta">🏢 ${tt('cta.companies', lang)}</a>
       <a href="/download/apk" class="cta">📱 ${tt('cta.download', lang)}</a>
-      <a href="/predictions${langQ(lang)}" class="cta">⚽ ${tt('cta.ai', lang)}</a>
+      <a href="/predictions${langQ(lang, domain)}" class="cta">⚽ ${tt('cta.ai', lang)}</a>
     </div>
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
     <p>${T_('company.footer_page')} ${CONTENT_VERIFIED}</p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
   <script>
   function copyPromo(btn) {
@@ -7318,7 +7329,7 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
         .filter(s => s !== req.params.slug)
         .map(s => {
           const g = GUIDES[s][lang] || GUIDES[s]['en'] || GUIDES[s]['ar'];
-          return `<a href="/guides/${s}${langQ(lang)}">${escAttr(g.title)}</a>`;
+          return `<a href="/guides/${s}${langQ(lang, domain)}">${escAttr(g.title)}</a>`;
         }).join('');
 
       const html = `<!doctype html>
@@ -7333,7 +7344,7 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
 ${hreflangs(domainUrl, pagePath)}
   <meta property="og:title" content="${escAttr(guide.title)} | ${profile.brand}" />
   <meta property="og:description" content="${escAttr(guide.desc)}" />
-  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="article" />
 ${socialMeta(domainUrl, escAttr(`${guide.title} | ${profile.brand}`), escAttr(guide.desc))}
 
@@ -7367,7 +7378,7 @@ ${socialMeta(domainUrl, escAttr(`${guide.title} | ${profile.brand}`), escAttr(gu
 <body>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="${pagePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="${pagePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
     <h1>${guide.title}</h1>
     <p style="font-size:1.1rem;color:#e2e8f0;">${guide.desc}</p>
@@ -7384,14 +7395,14 @@ ${socialMeta(domainUrl, escAttr(`${guide.title} | ${profile.brand}`), escAttr(gu
     <div class="related">${relatedGuides}</div>
 
     <div style="margin-top:30px;text-align:center;">
-      <a href="/${langQ(lang)}" class="cta">🏠 ${tt('guides.cta_home', lang)}</a>
+      <a href="/${langQ(lang, domain)}" class="cta">🏠 ${tt('guides.cta_home', lang)}</a>
       <a href="/download/apk" class="cta">📱 ${tt('cta.download', lang)}</a>
-      <a href="/predictions${langQ(lang)}" class="cta">⚽ ${tt('cta.ai', lang)}</a>
+      <a href="/predictions${langQ(lang, domain)}" class="cta">⚽ ${tt('cta.ai', lang)}</a>
     </div>
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -7555,7 +7566,7 @@ ${socialMeta(domainUrl, escAttr(`${guide.title} | ${profile.brand}`), escAttr(gu
         <h2>📅 ${date}</h2>
         ${list.map(f => {
           const p = predictMatch(f, lang);
-          return `<a class="match" href="/predictions/${f.slug}${langQ(lang)}">
+          return `<a class="match" href="/predictions/${f.slug}${langQ(lang, domain)}">
             <span class="teams">${esc(TEAMS[f.home].name)} vs ${esc(TEAMS[f.away].name)}</span>
             <span class="league">${esc(f.league)} • ${tt('pred.kickoff', lang)} ${f.kickOff}</span>
             <span class="pred">${p.pH}% / ${p.pD}% / ${p.pA}% — ${p.score}</span>
@@ -7575,23 +7586,23 @@ ${socialMeta(domainUrl, escAttr(`${guide.title} | ${profile.brand}`), escAttr(gu
         : dayKey ? tt('pred.day_desc', lang, { date: dayDate!, brand: profile.brand }) : tt('pred.list_desc', lang, { brand: profile.brand });
       const h1 = team ? `🛡️ ${teamTitle}` : league ? `🏆 ${leagueTitle}` : dayKey ? `📅 ${dayTitle}` : `⚽ ${tt('pred.list_h1', lang)}`;
       const canonical = canonicalUrl(domainUrl, basePath, lang);
-      const ogUrl = `${domainUrl}${basePath}${langQ(lang)}`;
+      const ogUrl = `${domainUrl}${basePath}${langQ(lang, domain)}`;
       const crumbName = team?.name || league || dayTitle || tt('pred.list_h1', lang);
       const breadcrumbLd = (dayKey || leagueSlug || teamSlug) ? `,"breadcrumb":{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"${esc(profile.brand)}","item":"${domainUrl}/"},{"@type":"ListItem","position":2,"name":"${esc(tt('pred.list_h1', lang))}","item":"${domainUrl}/predictions"},{"@type":"ListItem","position":3,"name":"${esc(crumbName)}","item":"${domainUrl}${basePath}"}]}` : '';
       const dayLinks = `
         <div class="daynav">
-          <a href="/predictions/today${langQ(lang)}" class="${dayKey === 'today' ? 'active' : ''}">📅 ${tt('pred.today_h1', lang)}</a>
-          <a href="/predictions/tomorrow${langQ(lang)}" class="${dayKey === 'tomorrow' ? 'active' : ''}">📅 ${tt('pred.tomorrow_h1', lang)}</a>
-          <a href="/predictions${langQ(lang)}" class="${!dayKey && !leagueSlug && !teamSlug ? 'active' : ''}">⚽ ${tt('pred.list_h1', lang)}</a>
+          <a href="/predictions/today${langQ(lang, domain)}" class="${dayKey === 'today' ? 'active' : ''}">📅 ${tt('pred.today_h1', lang)}</a>
+          <a href="/predictions/tomorrow${langQ(lang, domain)}" class="${dayKey === 'tomorrow' ? 'active' : ''}">📅 ${tt('pred.tomorrow_h1', lang)}</a>
+          <a href="/predictions${langQ(lang, domain)}" class="${!dayKey && !leagueSlug && !teamSlug ? 'active' : ''}">⚽ ${tt('pred.list_h1', lang)}</a>
         </div>`;
       const leagueLinks = `
         <div class="daynav">
-          ${leagues.map(n => `<a href="/predictions/league/${slugify(n)}${langQ(lang)}" class="${n === league ? 'active' : ''}">${esc(n)}</a>`).join('\n          ')}
+          ${leagues.map(n => `<a href="/predictions/league/${slugify(n)}${langQ(lang, domain)}" class="${n === league ? 'active' : ''}">${esc(n)}</a>`).join('\n          ')}
         </div>`;
       const leagueKeys = league ? leagueTeamKeys(league) : [];
       const teamLinks = (league && leagueKeys.length) ? `
         <div class="daynav">
-          ${leagueKeys.map(k => `<a href="/predictions/team/${slugify(TEAMS[k].name)}${langQ(lang)}" class="${k === teamKey ? 'active' : ''}">${esc(TEAMS[k].name)}</a>`).join('\n          ')}
+          ${leagueKeys.map(k => `<a href="/predictions/team/${slugify(TEAMS[k].name)}${langQ(lang, domain)}" class="${k === teamKey ? 'active' : ''}">${esc(TEAMS[k].name)}</a>`).join('\n          ')}
         </div>` : '';
       const rankRows = leagueKeys
         .map(k => ({ key: k, t: TEAMS[k] }))
@@ -7600,7 +7611,7 @@ ${socialMeta(domainUrl, escAttr(`${guide.title} | ${profile.brand}`), escAttr(gu
     <h2>📊 ${tt('pred.rank_title', lang, { league })}</h2>
     <table class="rank">
       <tr><th>#</th><th>${lang === 'ar' ? 'الفريق' : 'Team'}</th><th>${lang === 'ar' ? 'القوة' : 'Rating'}</th></tr>
-      ${rankRows.map((r, i) => `<tr><td>${i + 1}</td><td><a href="/predictions/team/${slugify(r.t.name)}${langQ(lang)}">${esc(r.t.name)}</a></td><td>${r.t.rating}</td></tr>`).join('\n      ')}
+      ${rankRows.map((r, i) => `<tr><td>${i + 1}</td><td><a href="/predictions/team/${slugify(r.t.name)}${langQ(lang, domain)}">${esc(r.t.name)}</a></td><td>${r.t.rating}</td></tr>`).join('\n      ')}
     </table>` : '';
 
       const html = `<!doctype html>
@@ -7651,7 +7662,7 @@ ${socialMeta(domainUrl, esc(listTitle), esc(listDesc))}
 <body>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="/predictions${basePath.slice('/predictions'.length)}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="/predictions${basePath.slice('/predictions'.length)}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
     <h1>${h1}</h1>
     <p>${profile.intro}</p>
@@ -7664,13 +7675,13 @@ ${socialMeta(domainUrl, esc(listTitle), esc(listDesc))}
     ${dayFallback ? `<p>⚠️ ${lang === 'ar' ? 'لا توجد مباريات مبرَّمة في هذا التاريخ حاليًا — هذه أقرب المباريات القادمة.' : 'No matches scheduled on this date right now — showing the next upcoming fixtures.'}</p>` : ''}
     ${rows}
     <div style="margin-top:30px;text-align:center;">
-      <a href="/guides/ai-predictions-guide${langQ(lang)}" class="cta">📖 ${tt('pred.cta_guide', lang)}</a>
+      <a href="/guides/ai-predictions-guide${langQ(lang, domain)}" class="cta">📖 ${tt('pred.cta_guide', lang)}</a>
       <a href="/#ai-sports" class="cta">🤖 ${tt('cta.ai', lang)}</a>
     </div>
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -7727,7 +7738,7 @@ ${socialMeta(domainUrl, esc(listTitle), esc(listDesc))}
 ${hreflangs(domainUrl, pagePath)}
   <meta property="og:title" content="${escAttr(title)}" />
   <meta property="og:description" content="${escAttr(ogDesc)}" />
-  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="article" />
 ${socialMeta(domainUrl, escAttr(`${title} | ${profile.brand}`), escAttr(ogDesc))}
 
@@ -7769,10 +7780,10 @@ ${socialMeta(domainUrl, escAttr(`${title} | ${profile.brand}`), escAttr(ogDesc))
 <body>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="${pagePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="${pagePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
-    <p style="color:#94a3b8;"><a href="/predictions${langQ(lang)}" style="color:#10b981;text-decoration:none;">${tt('pred.breadcrumb', lang)}</a> ← <a href="/predictions/league/${slugify(fixture.league)}${langQ(lang)}" style="color:#94a3b8;text-decoration:none;">${esc(fixture.league)}</a></p>
-    <h1><a href="/predictions/team/${slugify(H.name)}${langQ(lang)}" style="color:#10b981;text-decoration:none;">${esc(H.name)}</a> vs <a href="/predictions/team/${slugify(A.name)}${langQ(lang)}" style="color:#10b981;text-decoration:none;">${esc(A.name)}</a></h1>
+    <p style="color:#94a3b8;"><a href="/predictions${langQ(lang, domain)}" style="color:#10b981;text-decoration:none;">${tt('pred.breadcrumb', lang)}</a> ← <a href="/predictions/league/${slugify(fixture.league)}${langQ(lang, domain)}" style="color:#94a3b8;text-decoration:none;">${esc(fixture.league)}</a></p>
+    <h1><a href="/predictions/team/${slugify(H.name)}${langQ(lang, domain)}" style="color:#10b981;text-decoration:none;">${esc(H.name)}</a> vs <a href="/predictions/team/${slugify(A.name)}${langQ(lang, domain)}" style="color:#10b981;text-decoration:none;">${esc(A.name)}</a></h1>
     <div>
       <span class="badge">📅 ${fixture.date}</span>
       <span class="badge">🕐 ${tt('pred.kickoff', lang)} ${fixture.kickOff}</span>
@@ -7805,17 +7816,17 @@ ${socialMeta(domainUrl, escAttr(`${title} | ${profile.brand}`), escAttr(ogDesc))
 
     <h2>🔗 ${tt('pred.related', lang)}</h2>
     <div class="related">
-      ${getFixtures().filter(f => f.slug !== fixture.slug && f.date === fixture.date).slice(0, 6).map(f => `<a href="/predictions/${f.slug}${langQ(lang)}">${esc(TEAMS[f.home].name)} vs ${esc(TEAMS[f.away].name)}</a>`).join('')}
+      ${getFixtures().filter(f => f.slug !== fixture.slug && f.date === fixture.date).slice(0, 6).map(f => `<a href="/predictions/${f.slug}${langQ(lang, domain)}">${esc(TEAMS[f.home].name)} vs ${esc(TEAMS[f.away].name)}</a>`).join('')}
     </div>
 
     <div style="margin-top:30px;text-align:center;">
-      <a href="/predictions${langQ(lang)}" class="cta">⚽ ${tt('pred.cta_all', lang)}</a>
-      <a href="/guides/ai-predictions-guide${langQ(lang)}" class="cta">📖 ${tt('pred.cta_guide', lang)}</a>
+      <a href="/predictions${langQ(lang, domain)}" class="cta">⚽ ${tt('pred.cta_all', lang)}</a>
+      <a href="/guides/ai-predictions-guide${langQ(lang, domain)}" class="cta">📖 ${tt('pred.cta_guide', lang)}</a>
     </div>
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -7845,9 +7856,9 @@ ${socialMeta(domainUrl, escAttr(`${title} | ${profile.brand}`), escAttr(ogDesc))
       if (kind === 'companies') {
         const companies = storage.getCompanies();
         items = companies.map(c => {
-          const u = `${domainUrl}/company/${c.id}${langQ(lang)}`;
+          const u = `${domainUrl}/company/${c.id}${langQ(lang, domain)}`;
           itemUrls.push(u);
-          return `<a class="match" href="/company/${c.id}${langQ(lang)}">
+          return `<a class="match" href="/company/${c.id}${langQ(lang, domain)}">
             <span class="teams">${escT(c.name)}</span>
             <span class="league">${escT((c.details || '').substring(0, 130))}</span>
             <span class="pred">→</span>
@@ -7856,9 +7867,9 @@ ${socialMeta(domainUrl, escAttr(`${title} | ${profile.brand}`), escAttr(ogDesc))
       } else {
         items = Object.keys(GUIDES).map(slug => {
           const g = GUIDES[slug][lang] || GUIDES[slug]['en'] || GUIDES[slug]['ar'];
-          const u = `${domainUrl}/guides/${slug}${langQ(lang)}`;
+          const u = `${domainUrl}/guides/${slug}${langQ(lang, domain)}`;
           itemUrls.push(u);
-          return `<a class="match" href="/guides/${slug}${langQ(lang)}">
+          return `<a class="match" href="/guides/${slug}${langQ(lang, domain)}">
             <span class="teams">${escT(g.title)}</span>
             <span class="league">${escT(g.desc.substring(0, 130))}</span>
             <span class="pred">→</span>
@@ -7894,7 +7905,7 @@ ${socialMeta(domainUrl, escAttr(`${title} | ${profile.brand}`), escAttr(ogDesc))
 ${hreflangs(domainUrl, pagePath)}
   <meta property="og:title" content="${escA(pageTitle)}" />
   <meta property="og:description" content="${escA(desc)}" />
-  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="website" />
 ${socialMeta(domainUrl, escA(pageTitle), escA(desc))}
   <script type="application/ld+json">${ld}</script>
@@ -7920,21 +7931,21 @@ ${socialMeta(domainUrl, escA(pageTitle), escA(desc))}
 <body>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="${pagePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="${pagePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
     <h1>${h1}</h1>
     <p>${desc}</p>
     <p>ℹ️ ${note}</p>
     ${items}
     <div style="margin-top:30px;text-align:center;">
-      <a href="/${langQ(lang)}" class="cta">🏠 ${tt('guides.cta_home', lang)}</a>
-      <a href="/predictions${langQ(lang)}" class="cta">⚽ ${tt('cta.ai', lang)}</a>
+      <a href="/${langQ(lang, domain)}" class="cta">🏠 ${tt('guides.cta_home', lang)}</a>
+      <a href="/predictions${langQ(lang, domain)}" class="cta">⚽ ${tt('cta.ai', lang)}</a>
       <a href="/download/apk" class="cta">📱 ${tt('cta.download', lang)}</a>
     </div>
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -7955,7 +7966,7 @@ ${socialMeta(domainUrl, escA(pageTitle), escA(desc))}
       const title = `${tt('cmp.hub_h1', lang)} — ${profile.brand}`;
       const desc = tt('cmp.hub_desc', lang, { brand: profile.brand });
       const jstr = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
-      const cards = pairs.map(p => `<a class="card" href="/compare/${p.slug}${langQ(lang)}">${esc(p.a.name)} <b>VS</b> ${esc(p.b.name)}</a>`).join('\n        ');
+      const cards = pairs.map(p => `<a class="card" href="/compare/${p.slug}${langQ(lang, domain)}">${esc(p.a.name)} <b>VS</b> ${esc(p.b.name)}</a>`).join('\n        ');
 
       const html = `<!doctype html>
 <html lang="${lang}" dir="${profile.dir}">
@@ -7969,7 +7980,7 @@ ${socialMeta(domainUrl, escA(pageTitle), escA(desc))}
 ${hreflangs(domainUrl, basePath)}
   <meta property="og:title" content="${esc(title)}" />
   <meta property="og:description" content="${esc(desc)}" />
-  <meta property="og:url" content="${domainUrl}${basePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${basePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="website" />
 ${socialMeta(domainUrl, esc(title), esc(desc))}
   <script type="application/ld+json">
@@ -7993,7 +8004,7 @@ ${socialMeta(domainUrl, esc(title), esc(desc))}
 <body>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="${basePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="${basePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
     <h1>⚖️ ${tt('cmp.hub_h1', lang)}</h1>
     <p>${tt('cmp.hub_desc', lang, { brand: profile.brand })}</p>
@@ -8003,7 +8014,7 @@ ${socialMeta(domainUrl, esc(title), esc(desc))}
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -8050,7 +8061,7 @@ ${socialMeta(domainUrl, esc(title), esc(desc))}
 ${hreflangs(domainUrl, basePath)}
   <meta property="og:title" content="${escAttr(title)}" />
   <meta property="og:description" content="${escAttr(desc)}" />
-  <meta property="og:url" content="${domainUrl}${basePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${basePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="article" />
 ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
   <script type="application/ld+json">
@@ -8086,7 +8097,7 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
 <body>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="${basePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="${basePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
     <h1>⚖️ ${title}</h1>
     <p>${T_('cmp.intro')}</p>
@@ -8097,15 +8108,15 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
       <tr><td>${T_('cmp.row_bonus')}</td><td>${esc(a.bonus_text || '—')}</td><td>${esc(b.bonus_text || '—')}</td></tr>
       <tr><td>${T_('cmp.row_promo')}</td><td>${a.promo_code ? `<code>${esc(a.promo_code)}</code>` : '—'}</td><td>${b.promo_code ? `<code>${esc(b.promo_code)}</code>` : '—'}</td></tr>
       <tr><td>${T_('cmp.row_about')}</td><td>${esc(about(a))}</td><td>${esc(about(b))}</td></tr>
-      <tr><td>${T_('cmp.row_app')}</td><td>✅ <a href="/company/${a.id}${langQ(lang)}" style="color:#10b981;">${esc(a.name)}</a></td><td>✅ <a href="/company/${b.id}${langQ(lang)}" style="color:#10b981;">${esc(b.name)}</a></td></tr>
+      <tr><td>${T_('cmp.row_app')}</td><td>✅ <a href="/company/${a.id}${langQ(lang, domain)}" style="color:#10b981;">${esc(a.name)}</a></td><td>✅ <a href="/company/${b.id}${langQ(lang, domain)}" style="color:#10b981;">${esc(b.name)}</a></td></tr>
     </table>
 
     <h2>⚖️ ${T_('cmp.verdict_title')}</h2>
     <p>${T_('cmp.verdict')}</p>
 
     <div style="margin-top:20px;">
-      <a href="/company/${a.id}${langQ(lang)}" class="cta">👉 ${tt('cmp.cta_visit', lang, { name: a.name })}</a>
-      <a href="/company/${b.id}${langQ(lang)}" class="cta">👉 ${tt('cmp.cta_visit', lang, { name: b.name })}</a>
+      <a href="/company/${a.id}${langQ(lang, domain)}" class="cta">👉 ${tt('cmp.cta_visit', lang, { name: a.name })}</a>
+      <a href="/company/${b.id}${langQ(lang, domain)}" class="cta">👉 ${tt('cmp.cta_visit', lang, { name: b.name })}</a>
     </div>
 
     <h2>❓ FAQ</h2>
@@ -8113,12 +8124,12 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
 
     ${morePairs.length ? `<h2>🔗 ${T_('cmp.more_title')}</h2>
     <div class="grid">
-      ${morePairs.map(p => `<a class="card" href="/compare/${p.slug}${langQ(lang)}">${esc(p.a.name)} <b>VS</b> ${esc(p.b.name)}</a>`).join('\n      ')}
+      ${morePairs.map(p => `<a class="card" href="/compare/${p.slug}${langQ(lang, domain)}">${esc(p.a.name)} <b>VS</b> ${esc(p.b.name)}</a>`).join('\n      ')}
     </div>` : ''}
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -8152,11 +8163,11 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
       <div class="rank">
         <div class="pos">#${i + 1}</div>
         <div class="body">
-          <a class="name" href="/company/${c.id}${langQ(lang)}">${esc(c.name)}</a>
+          <a class="name" href="/company/${c.id}${langQ(lang, domain)}">${esc(c.name)}</a>
           ${c.badge ? `<span class="badge">${esc(c.badge)}</span>` : ''}
           ${c.bonus_text ? `<span class="bonus">${esc(c.bonus_text)}</span>` : ''}
           ${c.promo_code ? `<div class="promo"><code>${esc(c.promo_code)}</code></div>` : ''}
-          <a class="cta" href="/company/${c.id}${langQ(lang)}">${tt('cmp.cta_visit', lang, { name: c.name })}</a>
+          <a class="cta" href="/company/${c.id}${langQ(lang, domain)}">${tt('cmp.cta_visit', lang, { name: c.name })}</a>
         </div>
       </div>`).join('\n');
 
@@ -8172,7 +8183,7 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
 ${hreflangs(domainUrl, basePath)}
   <meta property="og:title" content="${escAttr(title)}" />
   <meta property="og:description" content="${escAttr(desc)}" />
-  <meta property="og:url" content="${domainUrl}${basePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${basePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="article" />
 ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
   <script type="application/ld+json">
@@ -8209,7 +8220,7 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
 <body>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="${basePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="${basePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
     <h1>🏆 ${title}</h1>
     <p>${T_('best.intro')}</p>
@@ -8223,7 +8234,7 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -8253,19 +8264,19 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
         return iso;
       }
     };
-    const newsTopNav = (lang: Lang): string => `<nav class="topnav">
-    <a href="/${langQ(lang)}">${tt('nav.home', lang)}</a>
-    <a href="/companies${langQ(lang)}">${tt('nav.companies', lang)}</a>
-    <a href="/guides${langQ(lang)}">${tt('hub.guides_h1', lang)}</a>
-    <a href="/news${langQ(lang)}">${tt('news.h1', lang)}</a>
-    <a href="/best-betting-sites${langQ(lang)}">${tt('link.best', lang)}</a>
+    const newsTopNav = (lang: Lang, domain: string): string => `<nav class="topnav">
+    <a href="/${langQ(lang, domain)}">${tt('nav.home', lang)}</a>
+    <a href="/companies${langQ(lang, domain)}">${tt('nav.companies', lang)}</a>
+    <a href="/guides${langQ(lang, domain)}">${tt('hub.guides_h1', lang)}</a>
+    <a href="/news${langQ(lang, domain)}">${tt('news.h1', lang)}</a>
+    <a href="/best-betting-sites${langQ(lang, domain)}">${tt('link.best', lang)}</a>
   </nav>`;
-    const newsLangBar = (pagePath: string, lang: Lang): string => `<nav class="langbar">
-      ${LANGS.map(l => `<a href="${pagePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+    const newsLangBar = (pagePath: string, lang: Lang, domain: string): string => `<nav class="langbar">
+      ${LANGS.map(l => `<a href="${pagePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>`;
     const newsFooter = (domainUrl: string, domain: string, profile: Profile, lang: Lang): string => `<footer>
     <p>&copy; 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <div style="margin-top:8px;font-size:0.8rem;">${trustLinks(lang)}</div>
+    <div style="margin-top:8px;font-size:0.8rem;">${trustLinks(lang, domain)}</div>
   </footer>`;
 
     app.get('/news', (req, res) => {
@@ -8282,7 +8293,7 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
       const pageQ = (p: number): string => {
         const parts: string[] = [];
         if (p > 1) parts.push(`page=${p}`);
-        if (lang !== 'ar') parts.push(`lang=${lang}`);
+        if (lang !== baseLang(domain)) parts.push(`lang=${lang}`);
         return parts.length ? `?${parts.join('&')}` : '';
       };
 
@@ -8292,7 +8303,7 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
       const note = tt('news.updated', lang, { date: newsDate(getNewsUpdatedAt(), lang) });
       const robots = page > 1 ? 'noindex,follow' : 'index, follow, max-snippet:-1, max-image-preview:large';
 
-      const cards = items.map(n => `<a class="card" href="/news/${newsSlug(n)}${langQ(lang)}">
+      const cards = items.map(n => `<a class="card" href="/news/${newsSlug(n)}${langQ(lang, domain)}">
       <div class="thumb">${n.imageUrl ? `<img src="${newsEsc(n.imageUrl)}" alt="${newsEsc(newsTitleOf(n, lang))}" loading="lazy" referrerpolicy="no-referrer" />` : ''}<span class="cat">${newsEsc(n.category)}</span></div>
       <div class="body">
         <div class="meta"><span class="src">${newsEsc(n.source)}</span><span class="date">${newsEsc(newsDate(n.publishedAt, lang))}</span></div>
@@ -8349,7 +8360,7 @@ ${socialMeta(domainUrl, escAttr(title), escAttr(desc))}
 ${page === 1 ? hreflangs(domainUrl, pagePath) : ''}
   <meta property="og:title" content="${newsEsc(pageTitle)}" />
   <meta property="og:description" content="${newsEsc(desc)}" />
-  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="website" />
 ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
   <script type="application/ld+json">${ld}</script>
@@ -8390,9 +8401,9 @@ ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
   </style>
   ${siteSchemaTag(domainUrl, profile)}</head>
 <body>
-  ${newsTopNav(lang)}
+  ${newsTopNav(lang, domain)}
   <div class="container">
-    ${newsLangBar(pagePath, lang)}
+    ${newsLangBar(pagePath, lang, domain)}
     <h1>${h1}</h1>
     <p class="desc">${desc}</p>
     <p class="note">${newsEsc(note)}</p>
@@ -8402,8 +8413,8 @@ ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
     </div>
     ${pager}
     <div style="margin-top:30px;text-align:center;">
-      <a href="/${langQ(lang)}" class="cta">${tt('nav.home', lang)}</a>
-      <a href="/predictions${langQ(lang)}" class="cta">${tt('nav.predictions', lang)}</a>
+      <a href="/${langQ(lang, domain)}" class="cta">${tt('nav.home', lang)}</a>
+      <a href="/predictions${langQ(lang, domain)}" class="cta">${tt('nav.predictions', lang)}</a>
       <a href="/download/apk" class="cta">${tt('cta.download', lang)}</a>
     </div>
   </div>
@@ -8445,7 +8456,7 @@ ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
             ...(pubIso ? { datePublished: pubIso, dateModified: pubIso || undefined } : {}),
             inLanguage: lang,
             articleSection: item.category,
-            mainEntityOfPage: `${domainUrl}${pagePath}${langQ(lang)}`,
+            mainEntityOfPage: `${domainUrl}${pagePath}${langQ(lang, domain)}`,
             author: { '@type': 'Organization', name: profile.brand },
             publisher: { '@id': `${domainUrl}/#organization` },
             ...(srcUrl ? { isBasedOn: srcUrl } : {}),
@@ -8455,7 +8466,7 @@ ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
             itemListElement: [
               { '@type': 'ListItem', position: 1, name: tt('nav.home', lang), item: `${domainUrl}/` },
               { '@type': 'ListItem', position: 2, name: tt('news.h1', lang), item: `${domainUrl}/news` },
-              { '@type': 'ListItem', position: 3, name: title, item: `${domainUrl}${pagePath}${langQ(lang)}` },
+              { '@type': 'ListItem', position: 3, name: title, item: `${domainUrl}${pagePath}${langQ(lang, domain)}` },
             ],
           },
         ],
@@ -8469,7 +8480,7 @@ ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
       const relatedHtml = related.length ? `
     <h2>${tt('news.related', lang)}</h2>
     <div class="related">
-      ${related.map(n => `<a href="/news/${newsSlug(n)}${langQ(lang)}">${newsEsc(newsTitleOf(n, lang))}</a>`).join('      ')}
+      ${related.map(n => `<a href="/news/${newsSlug(n)}${langQ(lang, domain)}">${newsEsc(newsTitleOf(n, lang))}</a>`).join('      ')}
     </div>` : '';
 
       const html = `<!doctype html>
@@ -8484,7 +8495,7 @@ ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
 ${hreflangs(domainUrl, pagePath)}
   <meta property="og:title" content="${newsEsc(pageTitle)}" />
   <meta property="og:description" content="${newsEsc(desc)}" />
-  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="article" />
   <meta property="og:image" content="${newsEsc(ogImage)}" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -8521,10 +8532,10 @@ ${hreflangs(domainUrl, pagePath)}
   </style>
   ${siteSchemaTag(domainUrl, profile)}</head>
 <body>
-  ${newsTopNav(lang)}
+  ${newsTopNav(lang, domain)}
   <div class="container">
-    ${newsLangBar(pagePath, lang)}
-    <p class="crumbs"><a href="/${langQ(lang)}">${tt('nav.home', lang)}</a> › <a href="/news${langQ(lang)}">${tt('news.h1', lang)}</a></p>
+    ${newsLangBar(pagePath, lang, domain)}
+    <p class="crumbs"><a href="/${langQ(lang, domain)}">${tt('nav.home', lang)}</a> › <a href="/news${langQ(lang, domain)}">${tt('news.h1', lang)}</a></p>
     <h1>${newsEsc(title)}</h1>
     <div class="meta"><span class="src">${newsEsc(item.source)}</span> · ${newsEsc(newsDate(item.publishedAt, lang))}${item.category ? `<span class="cat">${newsEsc(item.category)}</span>` : ''}</div>
     ${item.imageUrl ? `<img class="hero" src="${newsEsc(item.imageUrl)}" alt="${newsEsc(title)}" referrerpolicy="no-referrer" />` : ''}
@@ -8534,7 +8545,7 @@ ${hreflangs(domainUrl, pagePath)}
     ${srcUrl ? `<a class="cta" href="${newsEsc(srcUrl)}" rel="nofollow noopener noreferrer" target="_blank">${tt('news.read_source', lang, { source: item.source })} ↗</a>` : ''}
     ${relatedHtml}
     <div style="margin-top:30px;text-align:center;">
-      <a href="/news${langQ(lang)}" class="cta" style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #334155;">${tt('news.all', lang)}</a>
+      <a href="/news${langQ(lang, domain)}" class="cta" style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #334155;">${tt('news.all', lang)}</a>
     </div>
   </div>
   ${newsFooter(domainUrl, domain, profile, lang)}
@@ -8585,7 +8596,7 @@ ${hreflangs(domainUrl, pagePath)}
               '@id': `${domainUrl}${pagePath}#breadcrumb`,
               itemListElement: [
                 { '@type': 'ListItem', position: 1, name: tt('nav.home', lang), item: `${domainUrl}/` },
-                { '@type': 'ListItem', position: 2, name: h1, item: `${domainUrl}${pagePath}${langQ(lang)}` },
+                { '@type': 'ListItem', position: 2, name: h1, item: `${domainUrl}${pagePath}${langQ(lang, domain)}` },
               ],
             },
           ],
@@ -8603,7 +8614,7 @@ ${hreflangs(domainUrl, pagePath)}
 ${hreflangs(domainUrl, pagePath)}
   <meta property="og:title" content="${escA(title)}" />
   <meta property="og:description" content="${escA(desc)}" />
-  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
   <meta property="og:type" content="website" />
 ${socialMeta(domainUrl, escA(title), escA(desc))}
   <script type="application/ld+json">${ld}</script>
@@ -8625,23 +8636,23 @@ ${socialMeta(domainUrl, escA(title), escA(desc))}
   ${siteSchemaTag(domainUrl, profile)}</head>
 <body>
   <nav class="topnav">
-    <a href="/${langQ(lang)}">${tt('nav.home', lang)}</a>
-    <a href="/companies${langQ(lang)}">${tt('nav.companies', lang)}</a>
-    <a href="/guides${langQ(lang)}">${tt('hub.guides_h1', lang)}</a>
-    <a href="/best-betting-sites${langQ(lang)}">${tt('link.best', lang)}</a>
+    <a href="/${langQ(lang, domain)}">${tt('nav.home', lang)}</a>
+    <a href="/companies${langQ(lang, domain)}">${tt('nav.companies', lang)}</a>
+    <a href="/guides${langQ(lang, domain)}">${tt('hub.guides_h1', lang)}</a>
+    <a href="/best-betting-sites${langQ(lang, domain)}">${tt('link.best', lang)}</a>
   </nav>
   <div class="container">
     <nav class="langbar">
-      ${LANGS.map(l => `<a href="${pagePath}${langQ(l)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
+      ${LANGS.map(l => `<a href="${pagePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('      ')}
     </nav>
     <h1>${escA(h1)}</h1>
     <p style="font-size:1.05rem;color:#e2e8f0;">${escA(intro)}</p>
 ${secsHtml}
-    <p style="margin-top:25px;">${trustLinks(lang)}</p>
+    <p style="margin-top:25px;">${trustLinks(lang, domain)}</p>
   </div>
   <footer>
     <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
-    <p style="font-size:0.8rem;">${trustLinks(lang)}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
   </footer>
 </body>
 </html>`;
@@ -8675,17 +8686,16 @@ ${secsHtml}
       const filePath = path.join(distPath, 'index.html');
       let html = fs.readFileSync(filePath, 'utf8');
 
-      // vex0.9 SPA tab routes keep seoEngine's per-route meta injection (same as production today)
-      if (isSpaTab) {
-        res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        return res.send(renderSeoMetaHead(req, html));
-      }
-
+      // ---- Shared fixes for every index.html route (home + SPA tab routes) ----
       // Replace all vex.deals references with actual domain
       html = html.replace(/https:\/\/vex\.deals/g, domainUrl);
 
-      // Language-aware document direction
-      html = html.replace(/<html lang="[^"]*"/, `<html lang="${lang}" dir="${profile.dir}"`);
+      // Language-aware document direction: replace the whole <html ...> opening tag —
+      // index.html ships lang="ar" dir="rtl", so replacing only the lang attr left a duplicate dir
+      html = html.replace(/<html[^>]*>/, `<html lang="${lang}" dir="${profile.dir}">`);
+
+      // Strip static hreflang tags (they hardcode vex.deals) — routes re-inject correct ones below
+      html = html.replace(/<link rel="alternate" hreflang=[^>]*\/?>\s*\n?/g, '');
 
       // Domain-specific title + description (avoid duplicate content penalty)
       html = html.replace(/<title>[^<]*<\/title>/,
@@ -8701,15 +8711,20 @@ ${secsHtml}
           `<meta property="og:locale" content="en_US" />`);
       }
 
-      // hreflang alternates (all 8 languages) — strip static ones from index.html first to avoid duplicates
-      html = html.replace(/<link rel="alternate" hreflang=[^>]*\/?>\s*\n?/g, '');
-      const homeLinks = LANGS.map(l => `  <link rel="alternate" hreflang="${l}" href="${domainUrl}/${langQ(l)}" />`).join('\n')
+      // vex0.9 SPA tab routes keep seoEngine's per-route meta injection (same as production today)
+      if (isSpaTab) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.send(renderSeoMetaHead(req, html));
+      }
+
+      // hreflang alternates (all 8 languages) — static ones already stripped above
+      const homeLinks = LANGS.map(l => `  <link rel="alternate" hreflang="${l}" href="${domainUrl}/${langQ(l, domain)}" />`).join('\n')
         + `\n  <link rel="alternate" hreflang="x-default" href="${domainUrl}/" />`;
       html = html.replace('</head>', `${homeLinks}\n  </head>`);
 
       // Canonical points to this language variant
       html = html.replace(/<link rel="canonical"[^>]*\/?>/,
-        `<link rel="canonical" href="${domainUrl}/${langQ(lang)}" />`);
+        `<link rel="canonical" href="${domainUrl}/${langQ(lang, domain)}" />`);
 
       // Unique visible SEO block (different visible text per domain + language)
       const seoBlock = `
@@ -8727,24 +8742,24 @@ ${secsHtml}
       <h2 style="color:#34d399;font-size:1.2rem;margin-top:25px;">${tt('home.faq_title', lang)}</h2>
       ${[1, 2, 3, 4].map(i => `<p style="margin-top:14px;line-height:1.8;"><strong style="color:#e2e8f0;">${tt(`home.faq${i}q`, lang)}</strong><br /><span style="color:#94a3b8;">${tt(`home.faq${i}a`, lang)}</span></p>`).join('\n      ')}
       <p style="color:#94a3b8;font-size:0.9rem;margin-top:15px;">
-        ${tt('home.keywords_label', lang)}: <a href="${domainUrl}/guides/claim-compensation${langQ(lang)}" style="color:#10b981;">${tt('link.guide_comp', lang)}</a> |
-        <a href="${domainUrl}/guides/ai-predictions-guide${langQ(lang)}" style="color:#10b981;">${tt('link.guide_ai', lang)}</a> |
-        <a href="${domainUrl}/guides/provably-fair-lottery${langQ(lang)}" style="color:#10b981;">${tt('link.guide_lottery', lang)}</a> |
-        <a href="${domainUrl}/guides/1xbet-bonus-promo-guide${langQ(lang)}" style="color:#10b981;">${tt('link.guide_1xbet', lang)}</a> |
-        <a href="${domainUrl}/guides/betting-wallet-tracking-guide${langQ(lang)}" style="color:#10b981;">${tt('link.guide_wallet', lang)}</a> |
-        <a href="${domainUrl}/guides/betting-odds-explained${langQ(lang)}" style="color:#10b981;">${tt('link.guide_odds', lang)}</a> |
-        <a href="${domainUrl}/guides/bankroll-management-guide${langQ(lang)}" style="color:#10b981;">${tt('link.guide_bankroll', lang)}</a> |
-        <a href="${domainUrl}/guides/live-betting-guide${langQ(lang)}" style="color:#10b981;">${tt('link.guide_live', lang)}</a> |
-        <a href="${domainUrl}/guides/responsible-gambling-guide${langQ(lang)}" style="color:#10b981;">${tt('link.guide_responsible', lang)}</a> |
-        <a href="${domainUrl}/compare${langQ(lang)}" style="color:#10b981;">${tt('link.compare', lang)}</a> |
-        <a href="${domainUrl}/best-betting-sites${langQ(lang)}" style="color:#10b981;">${tt('link.best', lang)}</a> |
-        <a href="${domainUrl}/companies${langQ(lang)}" style="color:#10b981;">${tt('hub.companies_h1', lang)}</a> |
-        <a href="${domainUrl}/guides${langQ(lang)}" style="color:#10b981;">${tt('hub.guides_h1', lang)}</a>
+        ${tt('home.keywords_label', lang)}: <a href="${domainUrl}/guides/claim-compensation${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_comp', lang)}</a> |
+        <a href="${domainUrl}/guides/ai-predictions-guide${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_ai', lang)}</a> |
+        <a href="${domainUrl}/guides/provably-fair-lottery${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_lottery', lang)}</a> |
+        <a href="${domainUrl}/guides/1xbet-bonus-promo-guide${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_1xbet', lang)}</a> |
+        <a href="${domainUrl}/guides/betting-wallet-tracking-guide${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_wallet', lang)}</a> |
+        <a href="${domainUrl}/guides/betting-odds-explained${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_odds', lang)}</a> |
+        <a href="${domainUrl}/guides/bankroll-management-guide${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_bankroll', lang)}</a> |
+        <a href="${domainUrl}/guides/live-betting-guide${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_live', lang)}</a> |
+        <a href="${domainUrl}/guides/responsible-gambling-guide${langQ(lang, domain)}" style="color:#10b981;">${tt('link.guide_responsible', lang)}</a> |
+        <a href="${domainUrl}/compare${langQ(lang, domain)}" style="color:#10b981;">${tt('link.compare', lang)}</a> |
+        <a href="${domainUrl}/best-betting-sites${langQ(lang, domain)}" style="color:#10b981;">${tt('link.best', lang)}</a> |
+        <a href="${domainUrl}/companies${langQ(lang, domain)}" style="color:#10b981;">${tt('hub.companies_h1', lang)}</a> |
+        <a href="${domainUrl}/guides${langQ(lang, domain)}" style="color:#10b981;">${tt('hub.guides_h1', lang)}</a>
       </p>
       <nav style="margin-top:12px;font-size:0.9rem;">
-        ${LANGS.map(l => `<a href="${domainUrl}/${langQ(l)}" hreflang="${l}" style="color:${l === lang ? '#10b981' : '#94a3b8'};text-decoration:none;display:inline-block;padding:6px 8px;margin:0 4px;min-width:24px;min-height:24px;text-align:center;">${l.toUpperCase()}</a>`).join('')}
+        ${LANGS.map(l => `<a href="${domainUrl}/${langQ(l, domain)}" hreflang="${l}" style="color:${l === lang ? '#10b981' : '#94a3b8'};text-decoration:none;display:inline-block;padding:6px 8px;margin:0 4px;min-width:24px;min-height:24px;text-align:center;">${l.toUpperCase()}</a>`).join('')}
       </nav>
-      <p style="margin-top:6px;font-size:0.85rem;">${trustLinks(lang)}</p>
+      <p style="margin-top:6px;font-size:0.85rem;">${trustLinks(lang, domain)}</p>
     </section>`;
       // Inject inside #root so React's initial render replaces it in place
       // (avoids pushing the section down = CLS 1.0 layout shift)
