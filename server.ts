@@ -6213,6 +6213,7 @@ async function setupServer() {
 - ${url}/guides/live-betting-guide - How in-play betting works (odds shifts, cash out)
 - ${url}/guides/responsible-gambling-guide - Money and time limits, self-exclusion
 - ${url}/guides/betting-glossary - 20 betting terms explained (odds, handicap, cash out)
+- ${url}/guides/motorsport-betting-guide - Best motorsports betting sites: F1, racing markets and exchanges
 
 ## Sports Predictions
 - ${url}/best-betting-sites - Best betting sites ranking (bonuses, promo codes, apps)
@@ -6306,6 +6307,7 @@ It helps users:
 - ${url}/guides/live-betting-guide - Live betting explained: reacting to events, odds movement, cash out, discipline
 - ${url}/guides/responsible-gambling-guide - Responsible gambling: deposit/loss limits, session timers, self-exclusion
 - ${url}/guides/betting-glossary - Betting glossary: odds, favorite, handicap, Asian handicap, Over/Under, BTTS, accumulator, cash out, stake, bankroll, value bet, rollover, free bet and more
+- ${url}/guides/motorsport-betting-guide - Best motorsports betting sites and exchanges: F1 outrights, podium, fastest lap, rally, each-way and ante-post explained
 
 ## Sports Predictions
 - ${url}/predictions - Full list of AI match predictions grouped by date
@@ -6704,7 +6706,7 @@ Sitemap: https://${domain}/sitemap.xml
       }
 
       // How-to guide pages (Programmatic SEO) — base + 8 language variants
-      const guideSlugs = ['claim-compensation', 'unfreeze-balance', 'ai-predictions-guide', 'provably-fair-lottery', '1xbet-bonus-promo-guide', 'betting-wallet-tracking-guide', 'betting-odds-explained', 'bankroll-management-guide', 'parlay-accumulator-guide', 'how-to-choose-betting-site', 'live-betting-guide', 'responsible-gambling-guide', 'betting-glossary'];
+      const guideSlugs = ['claim-compensation', 'unfreeze-balance', 'ai-predictions-guide', 'provably-fair-lottery', '1xbet-bonus-promo-guide', 'betting-wallet-tracking-guide', 'betting-odds-explained', 'bankroll-management-guide', 'parlay-accumulator-guide', 'how-to-choose-betting-site', 'live-betting-guide', 'responsible-gambling-guide', 'betting-glossary', 'motorsport-betting-guide'];
       for (const slug of guideSlugs) {
         urls += `  <url>
     <loc>https://${domain}/guides/${slug}</loc>
@@ -8432,6 +8434,19 @@ ${socialMeta(domainUrl, newsEsc(pageTitle), newsEsc(desc))}
       const domainUrl = `https://${domain}`;
       const lang = getLang(req);
       const profile = getProfile(domain, lang);
+      // Retired high-value news pages -> permanent guides (301 preserves their ranking signals)
+      const NEWS_REDIRECTS: Record<string, string> = {
+        'motor-sports-betting-guide-2026-best-f1-racing-sites-apps': '/guides/motorsport-betting-guide',
+      };
+      const newsRedirect = NEWS_REDIRECTS[req.params.slug];
+      if (newsRedirect) {
+        // Keep the original query string, but drop ?lang=<base> (the bare URL already serves it — self-canonical)
+        const params = new URLSearchParams(req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '');
+        if (params.get('lang') === baseLang(domain)) params.delete('lang');
+        const qs = params.toString();
+        res.set('X-Robots-Tag', 'index, follow');
+        return res.redirect(301, `${newsRedirect}${qs ? '?' + qs : langQ(lang, domain)}`);
+      }
       const item = getNewsItems().find(n => newsSlug(n) === req.params.slug);
       if (!item) return send404(res, profile, tt('news.not_found', lang));
       const pagePath = `/news/${newsSlug(item)}`;
