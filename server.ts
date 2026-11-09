@@ -97,6 +97,15 @@ import {
 } from './server/forecastChain';
 import { generateWithFailover, extractJsonObject } from './server/agentEngine';
 import { startPostScheduler, getSchedulerStatus, schedulePost } from './server/postScheduler';
+import { renderRecordsCardPng, renderCompanyCardPng } from './server/growth/predictionCards';
+import {
+  recordsPayloadFromStats,
+  companyCardPayload,
+  enqueueRecordsPost,
+  enqueueCompanyPosts,
+  startCardPostQueue,
+  getCardPostQueueStatus,
+} from './server/cardPosts';
 import {
   initCampaign,
   startCampaignScheduler,
@@ -287,6 +296,7 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/api/channel-campaign/build', // queue rebuild — loopback only (checked inside the route)
     '/api/channel-campaign/pull-source', // source refresh — loopback only (checked inside the route)
     '/api/indexnow', // machine-to-machine SEO endpoint (domain-restricted inside the route + rate limited)
+    '/api/admin/card-posts/*', // card-posts trigger/status — machine callers (deploy hook) have no browser session; ADMIN_TOKEN enforced inside the route via requireAdmin
   ],
   redirectPath: '/auth-required',
   apiMode: false,
@@ -2100,6 +2110,58 @@ app.get('/api/prediction-card.png', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Records card (سجل التوقعات) — public shareable 1080×1080 PNG built from live stats
+app.get('/api/records-card.png', async (_req, res) => {
+  try {
+    const payload = recordsPayloadFromStats(computeSeriesStats());
+    const file = await renderRecordsCardPng(payload);
+    if (!file) return res.status(503).json({ error: 'RENDER_FAILED' });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.sendFile(file);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Company card — one PNG per partner bookmaker, same design language
+app.get('/api/company-card.png', async (req, res) => {
+  try {
+    const id = String(req.query.c || '');
+    const company = storage.getCompanies().find((c: any) => c && c.id === id);
+    if (!company) return res.status(404).json({ error: 'unknown company' });
+    const file = await renderCompanyCardPng(companyCardPayload(company));
+    if (!file) return res.status(503).json({ error: 'RENDER_FAILED' });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.sendFile(file);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Card Studio — queue records/company card posts (site feed + paced channels)
+app.post('/api/admin/card-posts/publish', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const type = String(req.body?.type || 'all');
+    if (type !== 'records' && type !== 'companies' && type !== 'all') {
+      return res.status(400).json({ error: 'type must be records|companies|all' });
+    }
+    const out: any = {};
+    if (type === 'records' || type === 'all') out.records = await enqueueRecordsPost(computeSeriesStats());
+    if (type === 'companies' || type === 'all') out.companies = await enqueueCompanyPosts();
+    res.json({ success: true, ...out, queue: getCardPostQueueStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/card-posts/status', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(getCardPostQueueStatus());
 });
 
 // Manual trigger for the forecast chain (admin)
@@ -5820,6 +5882,16 @@ function startDockerNotificationWorker() {
       console.error('[Scheduler] start failed:', err);
     }
   }, 15 * 1000);
+
+  // Card Studio: publishes queued card posts (records log + partner companies)
+  // one every 30 minutes — site feed immediately, channels via the scheduler.
+  setTimeout(() => {
+    try {
+      startCardPostQueue(30, (postId, post) => io.emit('site_post_updated', { postId, post }));
+    } catch (err) {
+      console.error('[CardPosts] start failed:', err);
+    }
+  }, 20 * 1000);
 
   // Channel onboarding agent: my_chat_member updates classify new channels.
   initChannelOnboard({ emit: (event, payload) => io.emit(event, payload) });

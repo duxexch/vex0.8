@@ -598,7 +598,9 @@ export async function sendTelegram(
       form.append('chat_id', chatId);
       form.append('caption', caption.replace(/<[^>]*$/, ''));
       form.append('parse_mode', parseMode);
-      form.append('photo', new Blob([fs.readFileSync(imagePath)], { type: 'image/jpeg' }), path.basename(imagePath));
+      const photoExt = path.extname(imagePath).toLowerCase();
+      const photoMime = photoExt === '.png' ? 'image/png' : photoExt === '.webp' ? 'image/webp' : photoExt === '.gif' ? 'image/gif' : 'image/jpeg';
+      form.append('photo', new Blob([fs.readFileSync(imagePath)], { type: photoMime }), path.basename(imagePath));
       if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup));
       const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
       const data: any = await res.json();

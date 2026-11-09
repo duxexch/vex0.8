@@ -25,6 +25,8 @@ export interface ScheduledPost {
   expiresAt?: number;
   /** extra daily slots beyond daily_cap this post may use (0 = strict cap) */
   overflow?: number;
+  /** optional local image file sent with the post (sendPhoto); falls back to text on failure */
+  photoPath?: string;
   status: 'pending' | 'sent' | 'failed' | 'cancelled';
   attempts: number;
   deferrals: number;
@@ -74,6 +76,7 @@ export function schedulePost(p: {
   sendAt: number;
   expiresAt?: number;
   overflow?: number;
+  photoPath?: string;
 }): ScheduledPost {
   const items = load();
   const item: ScheduledPost = {
@@ -86,6 +89,7 @@ export function schedulePost(p: {
     sendAt: p.sendAt,
     expiresAt: p.expiresAt,
     overflow: p.overflow ?? 0,
+    photoPath: p.photoPath,
     status: 'pending',
     attempts: 0,
     deferrals: 0,
@@ -228,7 +232,7 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
       continue;
     }
 
-    const result = await sendTelegram(item.chat_id, item.text, item.parse_mode);
+    const result = await sendTelegram(item.chat_id, item.text, item.parse_mode, item.photoPath);
     lastGlobalSendAt = Date.now();
     if (result.ok) {
       const deliveredTo = result.sentTo ?? item.chat_id;
