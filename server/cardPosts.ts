@@ -211,10 +211,14 @@ export async function enqueueRecordsPost(stats: any): Promise<{ enqueued: boolea
   const payload = recordsPayloadFromStats(stats);
   if (payload.settled === 0) return { enqueued: false, reason: 'no settled predictions yet' };
   const sha1 = sha1Of(`records|${JSON.stringify(payload)}`);
-  const q = loadQueue();
-  if (q.items.some((i) => i.sha1 === sha1)) return { enqueued: false, reason: 'same snapshot already queued' };
+  // ⚠️ No await may sit between loadQueue() and saveQueue(): dispatchNext() runs
+  // on a timer, and a save that lands after it would wipe the dispatchedAt flag
+  // it just wrote (that race once double-posted a card to 14 channels).
+  if (loadQueue().items.some((i) => i.sha1 === sha1)) return { enqueued: false, reason: 'same snapshot already queued' };
   const file = await renderRecordsCardPng(payload);
   if (!file) return { enqueued: false, reason: 'RENDER_FAILED' };
+  const q = loadQueue();
+  if (q.items.some((i) => i.sha1 === sha1)) return { enqueued: false, reason: 'same snapshot already queued' };
   q.items.push({
     id: `CP-${Date.now()}-rec-${Math.random().toString(36).slice(2, 6)}`,
     kind: 'records',
@@ -233,10 +237,11 @@ export async function enqueueRecordsPost(stats: any): Promise<{ enqueued: boolea
 
 export async function enqueueCompanyPosts(): Promise<{ enqueued: number; skipped: number; reasons: string[] }> {
   const companies = storage.getCompanies().filter((c: any) => c && c.is_active !== false);
-  const q = loadQueue();
-  let enqueued = 0;
   let skipped = 0;
   const reasons: string[] = [];
+  // Phase 1 (async): render every card — the queue file is NOT touched while
+  // awaiting (see the race note in enqueueRecordsPost).
+  const ready: Array<{ payload: CompanyCardPayload; sha1: string; file: string }> = [];
   for (const c of companies) {
     const payload = companyCardPayload(c);
     if (!payload.id || !payload.name) {
@@ -244,7 +249,7 @@ export async function enqueueCompanyPosts(): Promise<{ enqueued: number; skipped
       continue;
     }
     const sha1 = sha1Of(`company|${JSON.stringify(payload)}`);
-    if (q.items.some((i) => i.sha1 === sha1)) {
+    if (loadQueue().items.some((i) => i.sha1 === sha1)) {
       skipped++;
       continue;
     }
@@ -254,15 +259,25 @@ export async function enqueueCompanyPosts(): Promise<{ enqueued: number; skipped
       reasons.push(`${payload.name}: RENDER_FAILED`);
       continue;
     }
+    ready.push({ payload, sha1, file });
+  }
+  // Phase 2 (sync critical section): load → push → save with no await between.
+  const q = loadQueue();
+  let enqueued = 0;
+  for (const r of ready) {
+    if (q.items.some((i) => i.sha1 === r.sha1)) {
+      skipped++;
+      continue;
+    }
     q.items.push({
-      id: `CP-${Date.now()}-${payload.id}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `CP-${Date.now()}-${r.payload.id}-${Math.random().toString(36).slice(2, 6)}`,
       kind: 'company',
-      sha1,
-      title: companyTitle(payload),
-      text: companyCaption(payload),
-      image: companyCardPublicUrl(payload.id),
-      cardPath: file,
-      companyLabel: payload.name,
+      sha1: r.sha1,
+      title: companyTitle(r.payload),
+      text: companyCaption(r.payload),
+      image: companyCardPublicUrl(r.payload.id),
+      cardPath: r.file,
+      companyLabel: r.payload.name,
       createdAt: new Date().toISOString(),
     });
     enqueued++;
