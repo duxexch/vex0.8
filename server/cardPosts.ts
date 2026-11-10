@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { storage } from './storage';
 import { channelsStore } from './channelsStore';
-import { resolveCompany } from './channelCampaign';
+import { channelBrandCompany } from './channelCampaign';
 import { schedulePost } from './postScheduler';
 import { getOfferForCompany } from './offerScraper';
 import {
@@ -326,9 +326,9 @@ function companyTargets(companyLabel: string): any[] {
         c.category !== 'payments'
     )
     .filter((c: any) => {
-      const comp = resolveCompany(c);
-      if (!comp) return true; // neutral channel accepts any brand
-      return comp.name.toLowerCase() === label; // dedicated channel: own brand only
+      const comp = channelBrandCompany(c);
+      if (!comp) return true; // neutral / our-own (VEX) channel accepts any brand
+      return comp.toLowerCase() === label; // dedicated channel: own brand only
     });
 }
 

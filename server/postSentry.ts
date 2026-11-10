@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { channelsStore, ChannelProfile } from './channelsStore';
-import { resolveCompany } from './channelCampaign';
+import { channelBrandCompany } from './channelCampaign';
 import { BOT_PROMO_DOMAINS } from './botPromo';
 import { storage } from './storage';
 
@@ -220,12 +220,17 @@ export function fitIssues(ch: ChannelProfile, v: SentryVerdict): string[] {
   }
   // 🏢 company — a post promoting brand X must not land in a channel dedicated
   // to a different brand Y. Neutral channels accept any brand; multi-brand
-  // posts are fine when they include the channel's own brand.
-  const chCompany = resolveCompany(ch)?.name || '';
+  // posts are fine when they include the channel's own brand. The channel's
+  // identity covers declared brands missing from the companies list too.
+  const chCompany = channelBrandCompany(ch) || '';
   if (
     chCompany &&
     v.companies.length > 0 &&
-    !v.companies.some((p) => p.toLowerCase() === chCompany.toLowerCase())
+    !v.companies.some((p) => {
+      const a = p.toLowerCase();
+      const b = chCompany.toLowerCase();
+      return a === b || a.includes(b) || b.includes(a);
+    })
   ) {
     issues.push(`company: post=${v.companies.join('/')} channel=${chCompany}`);
   }
@@ -240,7 +245,7 @@ function usageWeight(ch: ChannelProfile): number {
 /** Does this channel's dedicated brand appear among the post's brands? */
 function matchesPostCompany(ch: ChannelProfile, v: SentryVerdict): boolean {
   if (v.companies.length === 0) return false;
-  const name = resolveCompany(ch)?.name || '';
+  const name = channelBrandCompany(ch) || '';
   return Boolean(name) && v.companies.some((p) => p.toLowerCase() === name.toLowerCase());
 }
 

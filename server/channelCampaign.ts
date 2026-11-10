@@ -234,6 +234,21 @@ export function resolveCompany(ch: ChannelProfile): CompanyInfo | null {
   return null;
 }
 
+/**
+ * The company a channel is DEDICATED to: the resolved partner when it exists
+ * in the companies list, otherwise the DECLARED brand.company — a channel for
+ * a brand missing from the list (e.g. Betongame) is still a dedicated channel
+ * and must only receive its own brand's posts. 'VEX' = our own brand → null
+ * (our channels may host any partner's promo).
+ */
+export function channelBrandCompany(ch: ChannelProfile): string | null {
+  const comp = resolveCompany(ch);
+  if (comp) return comp.name;
+  const declared = String(ch.brand?.company || '').trim();
+  if (!declared || declared.toLowerCase() === 'vex') return null;
+  return declared;
+}
+
 function siteUrl(): string {
   return String(process.env.APP_URL || 'https://vex.deals').replace(/\/+$/, '');
 }
