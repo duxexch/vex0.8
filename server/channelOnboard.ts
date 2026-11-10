@@ -2,6 +2,7 @@ import { generateWithFailover, extractJsonObject, availableProviders } from './a
 import { channelsStore, ChannelProfile } from './channelsStore';
 import { parseTmePage } from './channelCampaign';
 import { linkifyTgUrls } from './tgFormat';
+import { storage } from './storage';
 
 // =========================================================================
 // Channel Onboarding Agent — when the publisher bot is added as admin to a
@@ -132,6 +133,165 @@ async function fetchChatDescription(chatId: string | number): Promise<string> {
   return '';
 }
 
+// =========================================================================
+// Description-based identity — the bot is ADMIN in every channel, so the
+// About/bio is readable and is the source of truth for what the channel
+// publishes and whether it is a DEDICATED COMPANY channel. Deterministic
+// (no LLM): partners list first, then a distinctive brand domain/name.
+// =========================================================================
+
+/** Hosts that never identify a brand (our domains, social, shorteners). */
+const NON_BRAND_HOSTS = new Set([
+  't.me', 'telegram.me', 'www.t.me', 'telegram.org',
+  'vex.deals', '1xbetservices.com', 'betjam.sbs', 'betongame.cloud', 'vixo.uno',
+  'youtube.com', 'youtu.be', 'instagram.com', 'facebook.com', 'x.com', 'twitter.com',
+  'google.com', 'linktr.ee', 'linktree.me', 'chatgpt.com', 'openai.com',
+]);
+
+/** Generic words that start channel titles but are never a brand. */
+const NON_BRAND_TITLE_WORDS = new Set([
+  'support', 'admin', 'admins', 'administrator', 'official', 'channel', 'news', 'bot',
+  'gift', 'gifts', 'payment', 'payments', 'affiliate', 'affiliates', 'wallet', 'tips',
+  'vip', 'live', 'results', 'sports', 'football', 'predictions', 'prediction', 'promo',
+  'free', 'chat', 'page', 'hub', 'center', 'club', 'team', 'store', 'app', 'link',
+  'links', 'earn', 'money', 'media', 'games', 'game', 'arabic', 'english', 'betting',
+  'bookmaker', 'casino', 'company', 'services', 'service', 'info', 'help', 'group',
+]);
+
+const BETTING_DESC_RE =
+  /مراهنة|رهان|كازينو|قمار|بونص|كاش باك|توصيات|\bbetting\b|\bbookmaker\b|\bcasino\b|\bodds\b|\bwager\b|\bbonus\b/i;
+
+export interface CompanyDerivation { company: string; source: 'partners' | 'domain' | 'title' | 'none' }
+
+/**
+ * Which company is this channel DEDICATED to, judging from bio + name?
+ *  1) exactly ONE partner from the companies list appears → that partner
+ *     (a bio mentioning several partners = multi-brand → neutral '');
+ *  2) otherwise a distinctive brand domain in the bio (avabet.xyz → 'Avabet')
+ *     — brands missing from the partners list are still dedicated channels;
+ *  3) otherwise the first brand-like word of the title ('Avabet support').
+ * '' = nothing conclusive → the channel stays neutral (receives any brand).
+ */
+export function deriveCompanyFromDescription(
+  description: string,
+  title?: string,
+  username?: string
+): CompanyDerivation {
+  const text = `${description || ''}\n${title || ''}\n@${username || ''}`.toLowerCase();
+  if (!text.trim()) return { company: '', source: 'none' };
+  // Our own brand in the bio → this is a VEX channel (neutral by design).
+  if (/\bvex\b|vex\.deals/.test(text)) return { company: '', source: 'none' };
+
+  const partners = (storage.getCompanies() || []).filter((c) => c.is_active !== false);
+  const hits = partners.filter((c) => {
+    const n = String(c.name || '').trim().toLowerCase();
+    return n.length > 3 && text.includes(n);
+  });
+  if (hits.length === 1) return { company: String(hits[0].name), source: 'partners' };
+  if (hits.length > 1) return { company: '', source: 'none' }; // multi-brand → neutral
+
+  // Distinctive brand domain in the bio: https://avabet.xyz/support → 'Avabet'
+  const hosts = [...(description || '').matchAll(/https?:\/\/(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/gi)].map(
+    (m) => m[1].toLowerCase()
+  );
+  for (const host of hosts) {
+    const label = host.split('.')[0];
+    if (label.length < 4 || NON_BRAND_HOSTS.has(host)) continue;
+    if (/^(www|blog|support|help|mail|cdn|api|my|go|u)$/.test(label)) continue;
+    if (label.includes('vex')) continue;
+    return { company: label.charAt(0).toUpperCase() + label.slice(1), source: 'domain' };
+  }
+
+  // Brand-like first word of the title: 'Avabet support' → 'Avabet'
+  for (const raw of String(title || '').split(/[\s_\-.|]+/)) {
+    const tok = raw.replace(/[^\p{L}\p{N}]/gu, '');
+    if (tok.length < 4 || !/^[A-Za-z]/.test(tok)) continue;
+    if (NON_BRAND_TITLE_WORDS.has(tok.toLowerCase())) continue;
+    if (/^\d+$/.test(tok)) continue;
+    return { company: tok.charAt(0).toUpperCase() + tok.slice(1), source: 'title' };
+  }
+  return { company: '', source: 'none' };
+}
+
+/** Betting keywords in the bio → the channel is betting-related.
+ *  Only ever returns true (never auto-false: a missing bio must not silently
+ *  disqualify a channel — undefined keeps the existing default). */
+export function deriveBettingFromDescription(description: string, title?: string): boolean | undefined {
+  return BETTING_DESC_RE.test(`${description || ''}\n${title || ''}`) ? true : undefined;
+}
+
+export interface DescriptionRow {
+  chat_id: string;
+  title: string;
+  category: string;
+  description: string;
+  company: string;
+  company_source: 'existing' | 'partners' | 'domain' | 'title' | 'none';
+  betting_related: boolean | undefined;
+  changed: string[];
+}
+
+/**
+ * Fetch the About/bio of EVERY channel (the bot is admin) and fill the gaps:
+ *  - store `description` (so routing/reporting can see it),
+ *  - fill empty `brand.company` from the bio/name (dedicated-company rule),
+ *  - set `betting_related` when undefined and the bio clearly says betting.
+ * Never touches fields that are already set. Deterministic, no LLM.
+ */
+export async function refreshChannelDescriptions(): Promise<{ rows: DescriptionRow[]; updated: number }> {
+  const rows: DescriptionRow[] = [];
+  let updated = 0;
+  for (const ch of channelsStore.getAll()) {
+    const fetched = await fetchChatDescription(ch.chat_id);
+    const desc = fetched || ch.description || '';
+    const changed: string[] = [];
+
+    const existingCompany = String(ch.brand?.company || '').trim();
+    let company = existingCompany;
+    let source: DescriptionRow['company_source'] = existingCompany ? 'existing' : 'none';
+    if (!existingCompany) {
+      const d = deriveCompanyFromDescription(desc, ch.title, ch.username);
+      if (d.company) {
+        company = d.company;
+        source = d.source;
+        changed.push(`company=${d.company} (from ${d.source})`);
+      }
+    }
+
+    let betting = ch.betting_related;
+    if (betting === undefined) {
+      const b = deriveBettingFromDescription(desc, ch.title);
+      if (b !== undefined) {
+        betting = b;
+        changed.push('betting_related=true (from bio)');
+      }
+    }
+
+    if (desc && desc !== ch.description) changed.push('description saved');
+    if (changed.length) {
+      channelsStore.upsert({
+        chat_id: ch.chat_id,
+        description: desc || undefined,
+        brand: { ...(ch.brand || ({} as any)), company },
+        ...(betting !== ch.betting_related ? { betting_related: betting } : {}),
+      } as any);
+      updated++;
+    }
+    rows.push({
+      chat_id: ch.chat_id,
+      title: ch.title,
+      category: ch.category,
+      description: desc,
+      company,
+      company_source: source,
+      betting_related: betting,
+      changed,
+    });
+    await new Promise((r) => setTimeout(r, 250)); // be gentle with getChat
+  }
+  return { rows, updated };
+}
+
 /** Read a public channel's recent posts via the t.me/s web preview (best-effort). */
 async function fetchRecentChannelPosts(username?: string): Promise<string> {
   if (!username) return '';
@@ -241,6 +401,7 @@ export async function handleBotMembershipUpdate(update: any): Promise<boolean> {
     chat_id: chatId,
     username: chat.username || existing?.username || '',
     title: chat.title || existing?.title || chatId,
+    description: description || existing?.description,
     category: cls.category,
     topics: cls.topics,
     betting_related: cls.betting_related,
@@ -294,6 +455,7 @@ export async function reclassifyChannel(chatId: string): Promise<ChannelProfile 
   );
   return channelsStore.upsert({
     chat_id: chatId,
+    description: description || existing.description,
     category: cls.category,
     topics: cls.topics,
     betting_related: cls.betting_related,

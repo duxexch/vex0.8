@@ -13,6 +13,10 @@ export interface ChannelProfile {
   chat_id: string;          // -100xxxxxxxxxx
   username?: string;        // @channelusername
   title: string;
+  /** Channel About/bio as shown on Telegram (fetched via getChat — the bot is
+   *  admin in these channels). Source of truth for what the channel publishes
+   *  and whether it is a dedicated COMPANY channel. */
+  description?: string;
   category: ChannelCategory;
   /** Sub-topics this channel accepts (e.g. football, basketball, live, promo) */
   topics: string[];
@@ -154,6 +158,7 @@ export const channelsStore = {
       chat_id: channel.chat_id,
       username: channel.username || '',
       title: channel.title || channel.chat_id,
+      description: channel.description,
       category: channel.category || 'sports',
       topics: channel.topics || ['football'],
       format: channel.format || 'html',

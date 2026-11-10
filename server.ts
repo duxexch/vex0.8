@@ -116,7 +116,7 @@ import {
 } from './server/channelCampaign';
 import { getSentryStatus } from './server/postSentry';
 import { prepareTgText } from './server/tgFormat';
-import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel, reclassifyNicheTitles } from './server/channelOnboard';
+import { initChannelOnboard, handleBotMembershipUpdate, reclassifyChannel, reclassifyNicheTitles, refreshChannelDescriptions } from './server/channelOnboard';
 import { startNicheScheduler, runNichePass, getNicheStatus } from './server/nichePosts';
 import { startOfferScraper, getOfferScraperStatus, runOfferScrape } from './server/offerScraper';
 import { initLiveCommentary, startLiveCommentary, getLiveStatus } from './server/liveCommentary';
@@ -1563,6 +1563,19 @@ app.post('/api/admin/channels/reclassify', async (req, res) => {
       return;
     }
     res.json({ success: true, channel: profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Refresh every channel's About/bio (bot is admin) + derive company identity
+// from it — fills empty brand.company so a company card can never land on
+// another company's channel (admin trigger; deterministic, no LLM).
+app.post('/api/admin/channels/refresh-descriptions', async (_req, res) => {
+  if (!requireAdmin(_req, res)) return;
+  try {
+    const out = await refreshChannelDescriptions();
+    res.json({ success: true, ...out });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
