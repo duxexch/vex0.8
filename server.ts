@@ -297,6 +297,7 @@ const authRequiredMiddleware = createAuthRequiredMiddleware({
     '/api/channel-campaign/pull-source', // source refresh — loopback only (checked inside the route)
     '/api/indexnow', // machine-to-machine SEO endpoint (domain-restricted inside the route + rate limited)
     '/api/admin/card-posts/*', // card-posts trigger/status — machine callers (deploy hook) have no browser session; ADMIN_TOKEN enforced inside the route via requireAdmin
+    '/api/admin/channels/refresh-descriptions', // bio refresh — machine caller; ADMIN_TOKEN enforced inside the route via requireAdmin
   ],
   redirectPath: '/auth-required',
   apiMode: false,
