@@ -169,6 +169,16 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
     // Resolve the channel that will ACTUALLY receive this post (the sentry may
     // re-route mis-targeted content) — caps/pace/gap must follow the receiver.
     const targetId = previewReroute(item.chat_id, item.text);
+    if (targetId === '') {
+      // ⛔ Sentry blocked it: company/audience mismatch with no fitting channel.
+      // Cancel (like niche/expired) — deferring would only retry the same dead end.
+      item.status = 'cancelled';
+      item.lastError = 'sentry blocked: no channel fits this content';
+      changed = true;
+      failed++;
+      console.warn(`[Scheduler] ⛔ blocked by sentry → ${item.channelTitle}`);
+      continue;
+    }
     const ch = channelsStore.get(targetId);
     if (!ch || !ch.active) {
       item.status = 'cancelled';
@@ -247,6 +257,13 @@ export async function dispatchDuePosts(): Promise<{ sent: number; deferred: numb
       sent++;
       changed = true;
       console.log(`[Scheduler] ✓ ${item.kind} → ${item.channelTitle}`);
+    } else if (result.blocked) {
+      // ⛔ Hard mismatch with no fitting channel — cancel instead of retrying.
+      item.status = 'cancelled';
+      item.lastError = result.error;
+      failed++;
+      changed = true;
+      console.warn(`[Scheduler] ⛔ blocked by sentry → ${item.channelTitle}`);
     } else {
       item.attempts++;
       if (item.attempts >= MAX_ATTEMPTS) {

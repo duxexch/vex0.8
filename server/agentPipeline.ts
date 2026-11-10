@@ -550,7 +550,7 @@ export async function sendTelegram(
   parseMode: string,
   imagePath?: string | null,
   opts?: { niche?: boolean }
-): Promise<{ ok: boolean; error?: string; sentTo?: string }> {
+): Promise<{ ok: boolean; error?: string; sentTo?: string; blocked?: boolean }> {
   // 🛡 بوابة الرقيب — verify targeting (lang/category/audience) and reroute if needed.
   let targetChatId = chatId;
   let targetText = text;
@@ -560,6 +560,11 @@ export async function sendTelegram(
     targetText = gate.text;
   } catch {
     /* never block a send on the gate */
+  }
+  // ⛔ '' = hard mismatch (wrong company/audience) with no fitting channel:
+  // skip the send instead of landing the post on the wrong channel.
+  if (!targetChatId) {
+    return { ok: false, error: 'sentry: no fitting channel for this content', blocked: true };
   }
   chatId = targetChatId;
   text = targetText;
@@ -661,6 +666,9 @@ export async function publishToCategory(
       sent++;
       channels.push(ch.title);
       await new Promise((r) => setTimeout(r, 4000));
+    } else if (result.blocked) {
+      failed++;
+      console.warn(`[Forecast→TG] ⛔ blocked (no fitting channel) → ${ch.title}`);
     } else {
       failed++;
       const q = loadQueue();
@@ -737,6 +745,10 @@ async function publisherAgent(posts: GeneratedPost[], items: AnalyzedItem[], rep
       report.stages.push({ stage: 'publish', ok: true, fallback: false, detail: `→ ${post.channelTitle}` });
       emitFn?.('pipeline_post', { channel: post.channelTitle, title: item?.title || '' });
       await new Promise((r) => setTimeout(r, MIN_GAP_MS));
+    } else if (result.blocked) {
+      // Blocked by the sentry — retrying cannot help: report and move on.
+      report.errors.push(`publish ${post.channelTitle}: ${result.error}`);
+      console.warn(`[Publisher] ⛔ blocked (no fitting channel) → ${post.channelTitle}`);
     } else {
       queued++;
       const q = loadQueue();
@@ -795,6 +807,10 @@ export async function processPublishQueue(): Promise<{ sent: number; failed: num
       if (process.env.DRY_RUN !== '1') channelsStore.recordPost(res.sentTo ?? item.chat_id);
       sent++;
       await new Promise((r) => setTimeout(r, 3000));
+    } else if (res.blocked) {
+      failed++;
+      console.warn(`[Publisher] ⛔ blocked (no fitting channel) → ${item.channelTitle} — dropped`);
+      // Blocked content can never succeed on retry — dead-letter it now.
     } else {
       item.attempts += 1;
       item.lastAttempt = new Date().toISOString();

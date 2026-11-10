@@ -8,9 +8,11 @@ import { storage } from './storage';
 // =========================================================================
 // 🛡 بوابة الرقيب — POST SENTRY
 // Pre-send targeting gate: every outgoing post is reviewed for language,
-// category and audience fit. Mis-targeted posts are REROUTED to a publishable
-// channel that actually fits (with signature swap); if no alternative exists
-// the post keeps its target and the issue is logged. Never blocks a send.
+// category and audience fit. Mis-targeted posts are RE-TARGETED to a
+// publishable channel that actually fits (headline/domain/signature adapted);
+// a company/audience mismatch with NO fitting channel is BLOCKED (chatId='')
+// rather than delivered to the wrong brand's channel. Other issues fall back
+// to the original target with a log entry. Never throws.
 // =========================================================================
 
 export type TextLang = 'ar' | 'en';
@@ -47,14 +49,19 @@ export function detectLang(text: string): TextLang {
   return arCount / Math.max(letters.length, 1) >= 0.25 || ARABIC_RE.test(text.slice(0, 80)) ? 'ar' : 'en';
 }
 
-const PAYMENT_RE = new RegExp(
+/** Real payment-METHOD phrases — only these alone mean 'payment' content. */
+const PAYMENT_METHOD_RE = new RegExp(
   [
-    'فودفون كاش', 'انستاباي', 'اتصالات كاش', 'أورنج كاش', 'ميزة', 'محفظة', 'سحب الأرباح',
-    'تحويل بنكي', 'دفع', 'ايداع', 'إيداع', 'كاش اوت',
-    'vodafone cash', 'instapay', 'meeza', 'withdraw', 'deposit', 'payout', 'bank transfer',
+    'فودفون كاش', 'انستاباي', 'اتصالات كاش', 'أورنج كاش', 'سحب الأرباح',
+    'تحويل بنكي', 'كاش اوت',
+    'vodafone cash', 'instapay', 'meeza', 'withdraw', 'payout', 'bank transfer',
   ].join('|'),
   'i'
 );
+
+/** Weak payment words that appear INSIDE promo copy («بونص إيداع», «ميزة الرهان»)
+ *  — they only count as payment when no promo/forecast intent is present. */
+const PAYMENT_WEAK_RE = /دفع|ايداع|إيداع|ميزة|محفظة|\bdeposit\b|\bpay\b/i;
 
 const PROMO_RE = new RegExp(
   [
@@ -83,9 +90,13 @@ const BETTING_AR_RE = /رهان|مراهنة|مكتب رهان|رهونات|ال
 
 export function detectKind(text: string): ContentKind {
   const t = text.toLowerCase();
-  if (PAYMENT_RE.test(text)) return 'payment';
+  // Method phrases first (a genuine withdrawal/how-to post), then intent:
+  // a company card whose bonus says «بونص إيداع» is a PROMO, not a payment —
+  // misclassifying it as payment once stranded it on the wrong channel.
+  if (PAYMENT_METHOD_RE.test(text)) return 'payment';
   if (FORECAST_RE.test(text) || /\d{1,2}\s*[-–:]\s*\d{1,2}/.test(t) && ODDS_RE.test(text)) return 'forecast';
   if (PROMO_RE.test(text)) return 'promo';
+  if (PAYMENT_WEAK_RE.test(text)) return 'payment';
   if (LIVE_RE.test(text)) return 'live';
   if (ARABIC_RE.test(text) || /\b(news|report|transfer|injury)\b/.test(t)) return 'news';
   return 'generic';
@@ -96,6 +107,11 @@ export function detectBetting(text: string): boolean {
   if (/\b(bet|wager|stake|odds|bookmaker|parlay)\b/i.test(text)) return true;
   if (PROMO_RE.test(text) && /registration|تسجيل|كود/i.test(text)) return true;
   if (ODDS_RE.test(text) && (FORECAST_RE.test(text) || /\bwin\b|فوز/i.test(text))) return true;
+  // Betting-adjacent offers/records the rules above miss — cashback promos,
+  // records/counter cards and 18+ notices must never leak into football-news
+  // channels (betting_related === false).
+  if (/كاش باك|cashback|بونص|bonus|كود الخصم|promo code|سجّل الآن|سجل الآن|register now/i.test(text)) return true;
+  if (/سجل توقعات|تحديث العداد|دقة السلسلة|تعويض|استرداد|\+18|18\+/i.test(text)) return true;
   return false;
 }
 
@@ -263,6 +279,47 @@ function swapSignature(text: string, from: ChannelProfile, to: ChannelProfile): 
   return out;
 }
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Fully re-brand a rerouted post for the RECEIVING channel: signature, the
+ * headline that names the source channel («🔥 {title} —», «⚽ {title} —») and
+ * every brand-domain link («🌐 {domain}») must belong to the destination —
+ * otherwise a Betjam promo lands in another channel still reading
+ * «🔥 Betjam … 🌐 betjam.sbs» (the exact complaint we fixed here).
+ * Body brand mentions (e.g. «🏆 MOSTBET —» on a card ABOUT MOSTBET) are
+ * content, not channel branding, and are left untouched.
+ */
+function adaptForTarget(text: string, from: ChannelProfile, to: ChannelProfile): string {
+  let out = swapSignature(text, from, to);
+
+  const fromTitle = String(from.title || '').trim();
+  const toTitle = String(to.title || '').trim();
+  if (fromTitle && toTitle && fromTitle !== toTitle && out.includes(fromTitle)) {
+    out = out.replace(new RegExp(`(🔥|⚽)\\s*${escapeRe(fromTitle)}`, 'g'), `$1 ${toTitle}`);
+    out = out.replace(new RegExp(`(^|\\n)${escapeRe(fromTitle)}(?=\\s*—)`, 'gm'), `$1${toTitle}`);
+  }
+
+  const fromDom = String(from.brand?.domain || '').trim().replace(/\/+$/, '');
+  const toDom = String(to.brand?.domain || '').trim().replace(/\/+$/, '');
+  if (fromDom && out.includes(fromDom) && fromDom !== toDom) {
+    if (toDom) {
+      out = out.split(fromDom).join(toDom);
+    } else {
+      // Destination has no brand domain → drop the link lines entirely.
+      out = out
+        .split('\n')
+        .filter((l) => !l.includes(fromDom))
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trimEnd();
+    }
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------- logging
 
 function logEntry(entry: any): void {
@@ -301,7 +358,9 @@ function readLog(): any[] {
 
 /**
  * Main entry: called right before every Telegram send.
- * Returns the (possibly re-targeted) chat id + text. Never throws, never blocks.
+ * Returns the (possibly re-targeted) chat id + text. Never throws.
+ * `chatId === ''` means BLOCKED: a company/audience mismatch with no fitting
+ * channel — the caller must skip the send (never deliver to the wrong channel).
  *
  * `opts.niche` marks purpose-built agents/marketers content: it is written FOR
  * that audience, so it is never re-routed out of its niche (and generic posts
@@ -319,16 +378,22 @@ export function sentryGate(chatId: string, text: string, opts?: { niche?: boolea
     if (issues.length === 0) return { chatId, text, corrected: false, issues: [], verdict };
 
     const alt = pickAlternative(chatId, verdict);
-    const target = alt || ch;
-    const finalText = alt ? swapSignature(text, ch, alt) : text;
+
+    // 🚫 Hard mismatch (wrong company / wrong audience) with nowhere to go must
+    // NOT fall back to the original target — that fallback is exactly how a
+    // company card landed in another brand's channel. '' = blocked: callers
+    // skip the send instead of delivering to a channel the content doesn't fit.
+    const blocked =
+      !alt && issues.some((i) => i.startsWith('company:') || i.startsWith('audience:'));
 
     logEntry({
       ts: new Date().toISOString(),
       from: ch.title,
       fromChatId: ch.chat_id,
-      to: alt ? alt.title : ch.title,
-      toChatId: alt ? alt.chat_id : ch.chat_id,
+      to: alt ? alt.title : blocked ? '⛔ blocked' : ch.title,
+      toChatId: alt ? alt.chat_id : blocked ? '' : ch.chat_id,
       corrected: Boolean(alt),
+      blocked,
       issues,
       lang: verdict.lang,
       kind: verdict.kind,
@@ -341,11 +406,15 @@ export function sentryGate(chatId: string, text: string, opts?: { niche?: boolea
       console.warn(
         `[Sentry] ↪ rerouted ${verdict.kind}/${verdict.lang} → ${alt.title}: ${issues.join(' | ')}`
       );
+    } else if (blocked) {
+      console.warn(`[Sentry] ⛔ blocked (no fitting channel): ${issues.join(' | ')}`);
+      return { chatId: '', text, corrected: false, issues, verdict };
     } else {
       console.warn(
         `[Sentry] ⚠ mis-targeted but no alternative → ${ch.title}: ${issues.join(' | ')}`
       );
     }
+    const finalText = alt ? adaptForTarget(text, ch, alt) : text;
     return { chatId: alt ? alt.chat_id : chatId, text: finalText, corrected: Boolean(alt), issues, verdict };
   } catch (err: any) {
     console.warn('[Sentry] gate error (send continues):', err?.message);
@@ -355,16 +424,21 @@ export function sentryGate(chatId: string, text: string, opts?: { niche?: boolea
 
 /**
  * Lightweight preview for the dispatcher: which channel will actually receive
- * this post after targeting review? No logging, no side effects.
+ * this post after targeting review? Returns '' when the post would be BLOCKED
+ * (company/audience mismatch, no fitting channel) — callers must skip/cancel.
+ * No logging, no side effects.
  */
 export function previewReroute(chatId: string, text: string): string {
   try {
     const ch = channelsStore.get(chatId);
     if (!ch) return chatId;
     const verdict = reviewText(text);
-    if (fitIssues(ch, verdict).length === 0) return chatId;
+    const issues = fitIssues(ch, verdict);
+    if (issues.length === 0) return chatId;
     const alt = pickAlternative(chatId, verdict);
-    return alt ? alt.chat_id : chatId;
+    if (alt) return alt.chat_id;
+    if (issues.some((i) => i.startsWith('company:') || i.startsWith('audience:'))) return '';
+    return chatId;
   } catch {
     return chatId;
   }

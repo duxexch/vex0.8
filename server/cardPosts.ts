@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { storage } from './storage';
 import { channelsStore } from './channelsStore';
+import { resolveCompany } from './channelCampaign';
 import { schedulePost } from './postScheduler';
 import { getOfferForCompany } from './offerScraper';
 import {
@@ -291,8 +292,9 @@ export async function enqueueCompanyPosts(): Promise<{ enqueued: number; skipped
 // Dispatch — ONE entry per interval: site post + paced Telegram schedule
 // ---------------------------------------------------------------------------
 
-/** Same targeting rule as the settlement announcements: sports + betting-related. */
-function telegramTargets(): any[] {
+/** Records card — same targeting rule as the settlement announcements:
+ *  sports + betting-related (a football-news channel never gets it). */
+function recordsTargets(): any[] {
   return channelsStore
     .getAll()
     .filter(
@@ -303,6 +305,36 @@ function telegramTargets(): any[] {
         (c.topics.length === 0 ||
           c.topics.some((t: string) => t === 'football' || t === 'all' || t === 'live' || t === 'news' || t === 'general'))
     );
+}
+
+/** Company card — ONLY channels of that company plus neutral channels
+ *  (resolveCompany === null). Niche/users/support/payments are never targets,
+ *  and a football-news channel (betting_related === false) never gets a
+ *  betting promo — the three routing rules the user asked for. */
+function companyTargets(companyLabel: string): any[] {
+  const label = String(companyLabel || '').trim().toLowerCase();
+  return channelsStore
+    .getAll()
+    .filter(
+      (c: any) =>
+        c.active &&
+        c.betting_related !== false &&
+        c.category !== 'agents' &&
+        c.category !== 'marketers' &&
+        c.category !== 'users' &&
+        c.category !== 'support' &&
+        c.category !== 'payments'
+    )
+    .filter((c: any) => {
+      const comp = resolveCompany(c);
+      if (!comp) return true; // neutral channel accepts any brand
+      return comp.name.toLowerCase() === label; // dedicated channel: own brand only
+    });
+}
+
+function telegramTargets(entry?: CardPostEntry): any[] {
+  if (entry?.kind === 'company') return companyTargets(entry.companyLabel);
+  return recordsTargets();
 }
 
 function dispatchNext(): boolean {
@@ -345,7 +377,7 @@ function dispatchNext(): boolean {
   }
 
   try {
-    const targets = telegramTargets();
+    const targets = telegramTargets(next);
     const sendAt = Date.now() + 90 * 1000;
     for (const ch of targets) {
       const sig = ch.brand?.signature;
