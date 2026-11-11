@@ -458,7 +458,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
 
             <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-2">
               <span className="flex-1 flex items-center justify-center gap-2 min-w-0">
-                <span>{isAr ? 'سعر التذكرة:' : 'Ticket:'} <strong className="text-emerald-400 font-mono">{fmt(activeDraw?.ticketPrice ?? 1)}</strong></span>
+                <span>{isAr ? 'سعر التذكرة:' : 'Ticket:'} <strong className="text-emerald-400 font-mono">{fmt(activeDraw?.ticketPrice ?? 0.5)}</strong></span>
                 <span>•</span>
                 <span className="font-mono text-slate-400">
                   {activeDraw ? new Date(activeDraw.closeAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
@@ -873,7 +873,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
                   </div>
                 </div>
                 <span className="text-xs font-black text-slate-900">
-                  {fmt(activeDraw?.ticketPrice ?? 1)}
+                  {fmt(activeDraw?.ticketPrice ?? 0.5)}
                 </span>
               </button>
             </div>
@@ -907,8 +907,8 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
                   <Ticket className="w-4 h-4" />
                   <span>
                     {isAr 
-                      ? `تأكيد وشراء التذكرة (${selectedPaymentMethod === 'compassion_free_ticket' ? 'مجاناً' : fmt(activeDraw?.ticketPrice ?? 1)})`
-                      : `Confirm & Buy Ticket (${selectedPaymentMethod === 'compassion_free_ticket' ? 'FREE' : fmt(activeDraw?.ticketPrice ?? 1)})`}
+                      ? `تأكيد وشراء التذكرة (${selectedPaymentMethod === 'compassion_free_ticket' ? 'مجاناً' : fmt(activeDraw?.ticketPrice ?? 0.5)})`
+                      : `Confirm & Buy Ticket (${selectedPaymentMethod === 'compassion_free_ticket' ? 'FREE' : fmt(activeDraw?.ticketPrice ?? 0.5)})`}
                   </span>
                 </>
               )}

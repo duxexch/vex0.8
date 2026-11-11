@@ -289,6 +289,103 @@ class LotteryService {
     }
   }
 
+  /** Tier figures still on the OLD prize scale (seed tiers are fixed at
+   *  100/25/10/2/1 — never sales-driven, so big values mean stale data). */
+  private hasStaleTierScale(draws: LotteryDraw[]): boolean {
+    return draws.some(
+      (d) =>
+        Array.isArray(d?.tiers) &&
+        d.tiers.some((t) => Number(t?.guaranteedAmount) > 500 || Number(t?.fixedPrize) > 500)
+    );
+  }
+
+  /** Old-seed evidence: exact legacy seed figures anywhere on the draw. */
+  private isOldScaleDraw(d: LotteryDraw | null | undefined): boolean {
+    if (!d) return false;
+    if (this.hasStaleTierScale([d])) return true;
+    return LEGACY_SEED_AMOUNTS.some(
+      (m) =>
+        Number(d.jackpotAmount) === m.jackpot ||
+        Number(d.initialJackpot) === m.initial ||
+        Number(d.totalPool) === m.pool
+    );
+  }
+
+  /**
+   * Rewrite ONE draw from the old seed figures to the current small scale:
+   * exact legacy figures are remapped, every tier field is renewed from the
+   * current structure (cached copies still carry the $1,000-scale wording,
+   * and stale guaranteedAmount on fixed-prize tiers is dropped) and anything
+   * still on the big scale is capped down. Idempotent — returns the same
+   * reference when nothing changes.
+   */
+  private normalizeDraw(input: LotteryDraw): LotteryDraw {
+    if (!input) return input;
+    const d = input;
+    // Always renew the WHOLE tier figure set from the current structure.
+    const tiers = Array.isArray(d.tiers)
+      ? d.tiers.map((t) => {
+          const fresh = DEFAULT_PRIZE_TIERS.find((x) => x.id === t?.id);
+          if (!fresh) return t;
+          return {
+            ...t,
+            ...fresh,
+            ...(fresh.guaranteedAmount === undefined ? { guaranteedAmount: undefined } : null),
+            ...(fresh.fixedPrize === undefined ? { fixedPrize: undefined } : null),
+          } as LotteryPrizeTier;
+        })
+      : d.tiers;
+    const tiersChanged = JSON.stringify(tiers) !== JSON.stringify(d.tiers);
+    const legacy = LEGACY_SEED_AMOUNTS.find((m) => Number(d.jackpotAmount) === m.jackpot);
+    let out: LotteryDraw;
+    if (legacy) {
+      out = {
+        ...d,
+        jackpotAmount: legacy.jackpotTo,
+        initialJackpot: Number(d.initialJackpot) === legacy.initial ? legacy.initialTo : d.initialJackpot,
+        totalPool: Number(d.totalPool) === legacy.pool ? legacy.poolTo : d.totalPool,
+        totalPaidOut:
+          legacy.paidOut !== undefined && Number(d.totalPaidOut) === legacy.paidOut
+            ? legacy.paidOutTo
+            : d.totalPaidOut,
+        tiers,
+      } as LotteryDraw;
+    } else if (tiersChanged) {
+      out = { ...d, tiers } as LotteryDraw;
+    } else {
+      out = d;
+    }
+    // Safety cap: any figure still on the OLD big scale (sales-grown or
+    // admin-set) is brought down to the small starting scale — the board must
+    // show small numbers everywhere after this version.
+    const big = (v: unknown) => Number(v) > 500;
+    const needsCap =
+      big(out.jackpotAmount) ||
+      big(out.initialJackpot) ||
+      big(out.totalPool) ||
+      big(out.totalPaidOut) ||
+      Number(out.ticketPrice) > 0.5;
+    if (!needsCap) return out;
+    return {
+      ...out,
+      ticketPrice: Number(out.ticketPrice) > 0.5 ? 0.5 : out.ticketPrice,
+      jackpotAmount: big(out.jackpotAmount) ? 100 : out.jackpotAmount,
+      initialJackpot: big(out.initialJackpot) ? 100 : out.initialJackpot,
+      totalPool: big(out.totalPool) ? 100 : out.totalPool,
+      totalPaidOut: big(out.totalPaidOut) ? 40 : out.totalPaidOut,
+    } as LotteryDraw;
+  }
+
+  private normalizeDrawList(list: LotteryDraw[]): { draws: LotteryDraw[]; changed: boolean } {
+    let changed = false;
+    const draws = list.map((d) => {
+      const fixed = this.normalizeDraw(d);
+      if (fixed !== d) changed = true;
+      return fixed;
+    });
+    return { draws, changed };
+  }
+
   /**
    * One-time seed normalization: cached draws that still hold the OLD prize
    * figures are rewritten to the current reduced amounts. Draws whose jackpot
@@ -299,76 +396,12 @@ class LotteryService {
     try {
       // The version marker alone can be lying: a background tab running an older
       // bundle re-saves its stale in-memory draws AFTER this migration already
-      // ran and wrote the current marker. Old-scale tier figures (seed tiers are
-      // fixed at 100/25/10/2/1, never sales-driven) therefore force a re-run
-      // even when the marker matches.
+      // ran and wrote the current marker. Old-scale tier figures therefore
+      // force a re-run even when the marker matches.
       const markerCurrent = localStorage.getItem(STORAGE_KEYS.SEED_VERSION) === SEED_VERSION;
-      const staleTierScale = this.draws.some((d) =>
-        Array.isArray(d?.tiers) &&
-        d.tiers.some((t) => Number(t?.guaranteedAmount) > 500 || Number(t?.fixedPrize) > 500)
-      );
-      if (markerCurrent && !staleTierScale) return;
-      let changed = false;
-      this.draws = this.draws.map((d) => {
-        if (!d) return d;
-        // Always renew the WHOLE tier figure set (names, odds, terms, amounts)
-        // from the current structure — cached copies still carry the old
-        // $1,000-scale wording — and drop amount fields the current structure
-        // no longer defines (stale guaranteedAmount on fixed-prize tiers).
-        const tiers = Array.isArray(d.tiers)
-          ? d.tiers.map((t) => {
-              const fresh = DEFAULT_PRIZE_TIERS.find((x) => x.id === t?.id);
-              if (!fresh) return t;
-              return {
-                ...t,
-                ...fresh,
-                ...(fresh.guaranteedAmount === undefined ? { guaranteedAmount: undefined } : null),
-                ...(fresh.fixedPrize === undefined ? { fixedPrize: undefined } : null),
-              } as LotteryPrizeTier;
-            })
-          : d.tiers;
-        const tiersChanged = JSON.stringify(tiers) !== JSON.stringify(d.tiers);
-        const legacy = LEGACY_SEED_AMOUNTS.find((m) => Number(d.jackpotAmount) === m.jackpot);
-        if (!legacy) {
-          if (tiersChanged) {
-            changed = true;
-            return { ...d, tiers } as LotteryDraw;
-          }
-          return d;
-        }
-        changed = true;
-        return {
-          ...d,
-          jackpotAmount: legacy.jackpotTo,
-          initialJackpot: Number(d.initialJackpot) === legacy.initial ? legacy.initialTo : d.initialJackpot,
-          totalPool: Number(d.totalPool) === legacy.pool ? legacy.poolTo : d.totalPool,
-          totalPaidOut:
-            legacy.paidOut !== undefined && Number(d.totalPaidOut) === legacy.paidOut
-              ? legacy.paidOutTo
-              : d.totalPaidOut,
-          tiers,
-        } as LotteryDraw;
-      });
-      // v3 safety cap: any figure still on the OLD big scale (sales-grown or
-      // admin-set) is brought down to the small starting scale — the board must
-      // show small numbers everywhere after this version. Tier figures were
-      // already refreshed to the current structure by the pass above.
-      this.draws = this.draws.map((d) => {
-        if (!d) return d;
-        const big = (v: any) => Number(v) > 500;
-        const needsCap =
-          big(d.jackpotAmount) || big(d.initialJackpot) || big(d.totalPool) || big(d.totalPaidOut) || Number(d.ticketPrice) > 0.5;
-        if (!needsCap) return d;
-        changed = true;
-        return {
-          ...d,
-          ticketPrice: Number(d.ticketPrice) > 0.5 ? 0.5 : d.ticketPrice,
-          jackpotAmount: big(d.jackpotAmount) ? 100 : d.jackpotAmount,
-          initialJackpot: big(d.initialJackpot) ? 100 : d.initialJackpot,
-          totalPool: big(d.totalPool) ? 100 : d.totalPool,
-          totalPaidOut: big(d.totalPaidOut) ? 40 : d.totalPaidOut,
-        } as LotteryDraw;
-      });
+      if (markerCurrent && !this.hasStaleTierScale(this.draws)) return;
+      const { draws, changed } = this.normalizeDrawList(this.draws);
+      this.draws = draws;
       if (changed) this.saveDraws();
       localStorage.setItem(STORAGE_KEYS.SEED_VERSION, SEED_VERSION);
     } catch {
@@ -395,9 +428,29 @@ class LotteryService {
           if (remoteDraws.length > 0) {
             // merge
             remoteDraws.sort((a, b) => b.drawNumber - a.drawNumber);
-            this.draws = remoteDraws;
+            // The Firestore collection still stores pre-v3 seed documents (old
+            // big figures + $1,000 terms wording). Heal old-scale documents on
+            // read so the board NEVER shows the old numbers, and write the
+            // fixed document back so the source heals for every client.
+            // Live/admin-adjusted new-scale draws pass through untouched.
+            const changedDocs: LotteryDraw[] = [];
+            const normalized = remoteDraws.map((d) => {
+              if (!this.isOldScaleDraw(d)) return d;
+              const fixed = this.normalizeDraw(d);
+              if (fixed !== d) changedDocs.push(fixed);
+              return fixed;
+            });
+            this.draws = normalized;
             this.saveDraws();
-            return remoteDraws;
+            if (changedDocs.length > 0 && db) {
+              changedDocs.forEach((d) => {
+                if (!d?.id) return;
+                setDoc(doc(db, 'lottery_draws', d.id), d, { merge: true }).catch(() => {
+                  // best-effort write-back — read normalization already healed this client
+                });
+              });
+            }
+            return [...this.draws].sort((a, b) => b.drawNumber - a.drawNumber);
           }
         }
       }

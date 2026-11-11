@@ -70,8 +70,8 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       badgeText: isAr ? 'سحب جديد متاح الآن 🎟️' : 'NEW DRAW ACTIVE 🎟️',
       badgeColor: 'text-rose-300 border-rose-500/40',
       mainText: isAr ? (activeDraw?.titleAr || 'سحب VEX الذهبي الأسبوعي #88') : (activeDraw?.titleEn || 'VEX Weekly Mega Draw #88'),
-      highlightText: fmt(1),
-      subText: isAr ? `سعر التذكرة ${fmt(1)} فقط` : `Only ${fmt(1)} per ticket`,
+      highlightText: fmt(activeDraw?.ticketPrice ?? 0.5),
+      subText: isAr ? `سعر التذكرة ${fmt(activeDraw?.ticketPrice ?? 0.5)} فقط` : `Only ${fmt(activeDraw?.ticketPrice ?? 0.5)} per ticket`,
     },
     {
       id: '5',
