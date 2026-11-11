@@ -31,7 +31,9 @@ const STORAGE_KEYS = {
 
 // Bumped whenever the seed prize structure changes — one-time normalization of
 // cached draws so existing installs show the current (reduced) amounts too.
-const SEED_VERSION = 'v3';
+// v4: re-run forced for installs whose draws were re-saved stale by a background
+// tab still running an older bundle after the v3 migration had already run.
+const SEED_VERSION = 'v4';
 
 // Old seed money values → current values (only these exact figures are rewritten,
 // so admin-adjusted or sales-driven jackpots are never clobbered).
@@ -295,15 +297,34 @@ class LotteryService {
   private migrateSeedAmounts(): void {
     if (typeof window === 'undefined') return;
     try {
-      if (localStorage.getItem(STORAGE_KEYS.SEED_VERSION) === SEED_VERSION) return;
+      // The version marker alone can be lying: a background tab running an older
+      // bundle re-saves its stale in-memory draws AFTER this migration already
+      // ran and wrote the current marker. Old-scale tier figures (seed tiers are
+      // fixed at 100/25/10/2/1, never sales-driven) therefore force a re-run
+      // even when the marker matches.
+      const markerCurrent = localStorage.getItem(STORAGE_KEYS.SEED_VERSION) === SEED_VERSION;
+      const staleTierScale = this.draws.some((d) =>
+        Array.isArray(d?.tiers) &&
+        d.tiers.some((t) => Number(t?.guaranteedAmount) > 500 || Number(t?.fixedPrize) > 500)
+      );
+      if (markerCurrent && !staleTierScale) return;
       let changed = false;
       this.draws = this.draws.map((d) => {
         if (!d) return d;
-        // Always refresh tier prize figures to the current structure.
+        // Always renew the WHOLE tier figure set (names, odds, terms, amounts)
+        // from the current structure — cached copies still carry the old
+        // $1,000-scale wording — and drop amount fields the current structure
+        // no longer defines (stale guaranteedAmount on fixed-prize tiers).
         const tiers = Array.isArray(d.tiers)
           ? d.tiers.map((t) => {
               const fresh = DEFAULT_PRIZE_TIERS.find((x) => x.id === t?.id);
-              return fresh ? { ...t, guaranteedAmount: fresh.guaranteedAmount, fixedPrize: fresh.fixedPrize } : t;
+              if (!fresh) return t;
+              return {
+                ...t,
+                ...fresh,
+                ...(fresh.guaranteedAmount === undefined ? { guaranteedAmount: undefined } : null),
+                ...(fresh.fixedPrize === undefined ? { fixedPrize: undefined } : null),
+              } as LotteryPrizeTier;
             })
           : d.tiers;
         const tiersChanged = JSON.stringify(tiers) !== JSON.stringify(d.tiers);
