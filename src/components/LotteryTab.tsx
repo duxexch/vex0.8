@@ -404,7 +404,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
                 {isAr ? 'الجائزة الكبرى المتراكمة:' : 'Progressive Jackpot Pool:'}
               </span>
               <span className="text-2xl sm:text-4xl font-black text-amber-400 font-mono tracking-tight drop-shadow-sm">
-                {fmt(activeDraw ? activeDraw.jackpotAmount : 3200)}
+                {fmt(activeDraw ? activeDraw.jackpotAmount : 100)}
               </span>
               <span className="text-xs font-black uppercase text-amber-300/80 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
                 {displayCurrency}
@@ -920,7 +920,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
             <LotteryPrizeCards
               lang={lang}
               displayCurrency={displayCurrency}
-              currentPool={activeDraw ? activeDraw.jackpotAmount : 3200}
+              currentPool={activeDraw ? activeDraw.jackpotAmount : 100}
             />
           </div>
         </div>
@@ -1201,7 +1201,7 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
           <LotteryPrizeCards
             lang={lang}
             displayCurrency={displayCurrency}
-            currentPool={activeDraw ? activeDraw.jackpotAmount : 3200}
+            currentPool={activeDraw ? activeDraw.jackpotAmount : 100}
             onSelectPlay={() => setActiveSubTab('play')}
           />
 

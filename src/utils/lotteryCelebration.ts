@@ -89,7 +89,7 @@ export function triggerJackpotCelebration() {
  * Trigger tailored prize tier celebration
  */
 export function triggerPrizeWonCelebration(amount: number = 0, isJackpot: boolean = false) {
-  if (isJackpot || amount >= 1000) {
+  if (isJackpot || amount >= 100) {
     triggerJackpotCelebration();
   } else {
     triggerGoldenConfettiBurst();

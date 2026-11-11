@@ -48,8 +48,8 @@ export const LotteryAdminManager: React.FC<LotteryAdminManagerProps> = ({
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [newDrawTitleAr, setNewDrawTitleAr] = useState<string>('');
   const [newDrawTitleEn, setNewDrawTitleEn] = useState<string>('');
-  const [newDrawTicketPrice, setNewDrawTicketPrice] = useState<number>(1.0);
-  const [newDrawJackpot, setNewDrawJackpot] = useState<number>(2500.0);
+  const [newDrawTicketPrice, setNewDrawTicketPrice] = useState<number>(0.5);
+  const [newDrawJackpot, setNewDrawJackpot] = useState<number>(100.0);
   const [newDrawCloseDays, setNewDrawCloseDays] = useState<number>(7);
   const [isCreatingDraw, setIsCreatingDraw] = useState<boolean>(false);
 
@@ -263,7 +263,7 @@ export const LotteryAdminManager: React.FC<LotteryAdminManagerProps> = ({
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[11px] font-bold text-slate-400 block">{isAr ? 'إجمالي الجوائز الموزعة' : 'Total Payouts'}</span>
           <span className="text-base sm:text-lg font-black text-emerald-600 font-mono">
-            ${(stats?.totalPrizesPaid || 3250).toLocaleString()}
+            ${(stats?.totalPrizesPaid || 120).toLocaleString()}
           </span>
         </div>
 
@@ -496,26 +496,26 @@ export const LotteryAdminManager: React.FC<LotteryAdminManagerProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    {isAr ? 'سعر التذكرة ($):' : 'Ticket Price ($):'}
+                    {isAr ? 'سعر التذكرة (USD):' : 'Ticket Price (USD):'}
                   </label>
                   <input
                     type="number"
                     step="0.5"
                     value={newDrawTicketPrice}
-                    onChange={(e) => setNewDrawTicketPrice(parseFloat(e.target.value) || 1)}
+                    onChange={(e) => setNewDrawTicketPrice(parseFloat(e.target.value) || 0.5)}
                     className="w-full p-2 rounded-xl border border-slate-200"
                   />
                 </div>
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    {isAr ? 'الجائزة الكبرى المبدئية ($):' : 'Initial Jackpot ($):'}
+                    {isAr ? 'الجائزة الكبرى المبدئية (USD):' : 'Initial Jackpot (USD):'}
                   </label>
                   <input
                     type="number"
-                    step="500"
+                    step="25"
                     value={newDrawJackpot}
-                    onChange={(e) => setNewDrawJackpot(parseFloat(e.target.value) || 2500)}
+                    onChange={(e) => setNewDrawJackpot(parseFloat(e.target.value) || 100)}
                     className="w-full p-2 rounded-xl border border-slate-200"
                   />
                 </div>

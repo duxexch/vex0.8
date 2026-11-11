@@ -32,7 +32,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
 }) => {
   const isAr = lang === 'ar';
   const [activeDraw, setActiveDraw] = useState<LotteryDraw | null>(null);
-  const [jackpotAmount, setJackpotAmount] = useState<number>(3200);
+  const [jackpotAmount, setJackpotAmount] = useState<number>(100);
   const [dynamicItems, setDynamicItems] = useState<TickerItem[]>([]);
   const [showSuccessCheck, setShowSuccessCheck] = useState(false);
 
@@ -60,7 +60,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       badgeText: isAr ? 'أحدث الفائزين 👑' : 'LATEST WINNER 👑',
       badgeColor: 'text-yellow-300 border-yellow-500/40',
       mainText: isAr ? 'مستخدم (+2010****)' : 'Player (+2010****)',
-      highlightText: fmt(250),
+      highlightText: fmt(25),
       subText: isAr ? 'مطابقة 5 أرقام (المستوى الثاني)' : 'Match 5 Main Numbers',
     },
     {
@@ -104,9 +104,9 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       })
       .catch(() => {});
 
-    // Dynamic subtle jackpot increase
+    // Dynamic subtle jackpot increase (small scale: a few cents at a time)
     const jackpotInterval = setInterval(() => {
-      setJackpotAmount((prev) => prev + Math.floor(Math.random() * 3) + 1);
+      setJackpotAmount((prev) => Math.round((prev + Math.random() * 0.5) * 100) / 100);
     }, 4000);
 
     // Periodic simulation of new winners
@@ -121,7 +121,7 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
         badgeText: isAr ? 'فائز جديد! 🎊' : 'NEW WINNER! 🎊',
         badgeColor: 'text-emerald-300 border-emerald-500/40',
         mainText: isAr ? `مستخدم (+${Math.floor(Math.random() * 900) + 100}****)` : `Player (+${Math.floor(Math.random() * 900) + 100}****)`,
-        highlightText: fmt(Math.floor(Math.random() * 6) * 25 + 5),
+        highlightText: fmt(Math.floor(Math.random() * 6) * 2 + 1),
         subText: isAr ? 'فوز فوري في السحب' : 'Instant draw win',
         isNew: true,
       };

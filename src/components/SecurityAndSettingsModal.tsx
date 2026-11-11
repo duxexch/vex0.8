@@ -215,7 +215,12 @@ export const SecurityAndSettingsModal: React.FC<SecurityAndSettingsModalProps> =
                 {ts.displayCurrencyLabel}
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {Object.values(SUPPORTED_CURRENCIES).map((curr) => {
+                {Object.values(SUPPORTED_CURRENCIES)
+                  // The geo table covers ~150 world currencies — the manual picker
+                  // lists the majors plus whatever currency is currently applied
+                  // (including a geo-detected minor one), so the list stays usable.
+                  .filter((curr) => curr.major || curr.code === displayCurrency)
+                  .map((curr) => {
                   const isSelected = displayCurrency === curr.code;
                   return (
                     <button

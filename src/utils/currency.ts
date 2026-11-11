@@ -1,23 +1,13 @@
-export interface CurrencyInfo {
-  code: string;
-  symbol: string;
-  name: string;
-  rateToUSD: number; // 1 USD = X Currency
-}
+import { CURRENCY_META, type CurrencyInfo } from '../data/geoCurrency';
 
-export const SUPPORTED_CURRENCIES: Record<string, CurrencyInfo> = {
-  USD: { code: 'USD', symbol: '$', name: 'US Dollar', rateToUSD: 1.0 },
-  EUR: { code: 'EUR', symbol: '€', name: 'Euro', rateToUSD: 0.92 },
-  RUB: { code: 'RUB', symbol: '₽', name: 'Russian Ruble', rateToUSD: 95.0 },
-  EGP: { code: 'EGP', symbol: 'E£', name: 'Egyptian Pound', rateToUSD: 48.5 },
-  SAR: { code: 'SAR', symbol: 'SAR', name: 'Saudi Riyal', rateToUSD: 3.75 },
-  AED: { code: 'AED', symbol: 'AED', name: 'UAE Dirham', rateToUSD: 3.67 },
-  KWD: { code: 'KWD', symbol: 'KD', name: 'Kuwaiti Dinar', rateToUSD: 0.307 },
-  QAR: { code: 'QAR', symbol: 'QR', name: 'Qatari Riyal', rateToUSD: 3.64 },
-  BHD: { code: 'BHD', symbol: 'BD', name: 'Bahraini Dinar', rateToUSD: 0.376 },
-  OMR: { code: 'OMR', symbol: 'OMR', name: 'Omani Rial', rateToUSD: 0.385 },
-  IQD: { code: 'IQD', symbol: 'IQD', name: 'Iraqi Dinar', rateToUSD: 1310 },
-};
+export type { CurrencyInfo };
+
+// Every currency a visitor's country can map to (src/data/geoCurrency.ts —
+// the SAME table the server's /api/geo uses), so the geo-suggested currency
+// always has a symbol + fallback rate here, identically on every domain.
+export const SUPPORTED_CURRENCIES: Record<string, CurrencyInfo> = Object.fromEntries(
+  Object.entries(CURRENCY_META).map(([code, info]) => [code, { ...info }])
+);
 
 // ---------------------------------------------------------------------------
 // Live rates: the server refreshes USD rates every 3 hours
@@ -26,11 +16,16 @@ export const SUPPORTED_CURRENCIES: Record<string, CurrencyInfo> = {
 // ---------------------------------------------------------------------------
 const RATES_CACHE_KEY = 'vex_currency_rates';
 
+/** Rates from the last sync — covers EVERY code the server passes through. */
+const LIVE_RATES: Record<string, number> = {};
+
 function applyLiveRates(rates: Record<string, unknown>): void {
-  for (const code of Object.keys(SUPPORTED_CURRENCIES)) {
-    if (code === 'USD') continue;
-    const v = Number((rates as Record<string, unknown>)[code]);
-    if (isFinite(v) && v > 0) SUPPORTED_CURRENCIES[code].rateToUSD = v;
+  for (const [code, raw] of Object.entries(rates)) {
+    const v = Number(raw);
+    if (!isFinite(v) || v <= 0) continue;
+    const key = String(code).toUpperCase();
+    LIVE_RATES[key] = v;
+    if (SUPPORTED_CURRENCIES[key]) SUPPORTED_CURRENCIES[key].rateToUSD = v;
   }
 }
 
@@ -66,16 +61,30 @@ export async function syncCurrencyRates(): Promise<void> {
   }
 }
 
+/** Live rate if synced, else the built-in fallback. null = unknown currency. */
+export function getCurrencyRate(code?: string | null): number | null {
+  const key = String(code || '').trim().toUpperCase();
+  if (!key) return null;
+  const live = LIVE_RATES[key];
+  if (isFinite(live) && live > 0) return live;
+  const meta = SUPPORTED_CURRENCIES[key];
+  return meta && meta.rateToUSD > 0 ? meta.rateToUSD : null;
+}
+
 export function convertCurrency(amountInUSD: number, targetCurrency: string): number {
-  const curr = SUPPORTED_CURRENCIES[targetCurrency] || SUPPORTED_CURRENCIES['USD'];
-  return amountInUSD * curr.rateToUSD;
+  // Unknown currency → the platform default: Egyptian Pound.
+  const rate = getCurrencyRate(targetCurrency) ?? getCurrencyRate('EGP') ?? 48.5;
+  return amountInUSD * rate;
 }
 
 export function detectUserRegionalCurrency(serverCurrency?: string): string {
   // Server geo suggestion (from /api/geo) wins over tz/locale heuristics — manual user choice
   // is applied before this call and always passes through untouched by the caller.
-  if (serverCurrency && SUPPORTED_CURRENCIES[serverCurrency]) {
-    return serverCurrency;
+  // Accept ANY code we can price (curated table OR synced live rates) so every
+  // country's geo currency is honored, not just the settings-picker list.
+  if (serverCurrency) {
+    const code = serverCurrency.trim().toUpperCase();
+    if (getCurrencyRate(code)) return code;
   }
   try {
     const locale = (navigator.language || '').toLowerCase();
@@ -107,15 +116,29 @@ export function detectUserRegionalCurrency(serverCurrency?: string): string {
   } catch {
     // fallback
   }
-  return 'USD';
+  // Nothing detected → the platform default: Egyptian Pound.
+  return 'EGP';
 }
 
 export function formatCurrency(amountInUSD: number, targetCurrency: string): string {
-  const curr = SUPPORTED_CURRENCIES[targetCurrency] || SUPPORTED_CURRENCIES['USD'];
-  const converted = convertCurrency(amountInUSD, targetCurrency);
-  
-  if (targetCurrency === 'RUB') {
-    return `${Math.round(converted).toLocaleString()} ${curr.symbol}`;
+  const code = String(targetCurrency || 'EGP').trim().toUpperCase();
+  const rate = getCurrencyRate(code);
+  // Unknown currency (no table entry, no live rate yet) → platform default EGP.
+  const effCode = rate ? code : 'EGP';
+  const effRate = rate ?? getCurrencyRate('EGP') ?? 48.5;
+  const converted = amountInUSD * effRate;
+
+  const curr = SUPPORTED_CURRENCIES[effCode];
+  if (curr) {
+    if (effCode === 'RUB') {
+      return `${Math.round(converted).toLocaleString()} ${curr.symbol}`;
+    }
+    return `${curr.symbol}${converted.toFixed(2)}`;
   }
-  return `${curr.symbol}${converted.toFixed(2)}`;
+  // Currency beyond the curated table (priced by synced live rates only).
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: effCode }).format(converted);
+  } catch {
+    return `${effCode} ${converted.toFixed(2)}`;
+  }
 }

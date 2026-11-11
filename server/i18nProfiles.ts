@@ -208,13 +208,13 @@ export const PROFILES: Record<string, Record<string, ProfileText>> = {
     ar: {
       tagline: 'اليانصيب التكافلي والتحليلات الرياضية',
       description: 'BetoGame يجمع بين اليانصيب التكافلي المُثبت العدالة والتحليلات الرياضية المتقدمة.',
-      intro: 'BetoGame وجهتك لليانصيب التكافلي المُثبت العدالة بتشفير SHA-256، مع جوائز Jackpot تصل إلى 1,000$، وتحليلات رياضية متقدمة وتوقعات مباريات يومية.',
+      intro: 'BetoGame وجهتك لليانصيب التكافلي المُثبت العدالة بتشفير SHA-256، مع جوائز Jackpot تبدأ من 100، وتحليلات رياضية متقدمة وتوقعات مباريات يومية.',
       h1: 'BetoGame — اليانصيب التكافلي والتحليلات الرياضية',
     },
     en: {
       tagline: 'Provably Fair Lottery & Sports Analytics',
       description: 'BetoGame combines a provably fair lottery with advanced sports analytics.',
-      intro: 'BetoGame is your home for a provably fair SHA-256 lottery with jackpots up to $1,000, plus advanced sports analytics and daily match predictions.',
+      intro: 'BetoGame is your home for a provably fair SHA-256 lottery with jackpots starting at 100, plus advanced sports analytics and daily match predictions.',
       h1: 'BetoGame — Provably Fair Lottery & Sports Analytics',
     },
     es: {

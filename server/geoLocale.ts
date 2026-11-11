@@ -1,4 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
+// Shared country → currency table (single source of truth with the client):
+// Egypt → EGP (platform default), any other country → its own currency on
+// every domain, unknown → EGP.
+import { currencyForCountry } from '../src/data/geoCurrency';
 
 // ==============================================================================
 // 🌍 GEO-LOCALE MIDDLEWARE — Auto-detect locale from Accept-Language + GeoIP
@@ -21,22 +25,6 @@ export interface GeoLocaleInfo {
   appLang: AppLang;
   confidence: 'high' | 'medium' | 'low';
   source: 'accept-language' | 'geoip' | 'fallback';
-}
-
-// Country → display currency (used ONLY for the visitor's currency preference)
-const CURRENCY_BY_COUNTRY: Record<string, string> = {
-  EG: 'EGP', SA: 'SAR', AE: 'AED', KW: 'KWD', QA: 'QAR', BH: 'BHD',
-  OM: 'OMR', IQ: 'IQD', JO: 'JOD', LB: 'LBP', SY: 'SYP', YE: 'YER',
-  US: 'USD', RU: 'RUB', GB: 'GBP', TR: 'TRY', DE: 'EUR', FR: 'EUR',
-  ES: 'EUR', IT: 'EUR', NL: 'EUR', PT: 'EUR', GR: 'EUR', BE: 'EUR',
-  AT: 'EUR', IE: 'EUR', FI: 'EUR', SK: 'EUR', SI: 'EUR', LT: 'EUR',
-  LV: 'EUR', EE: 'EUR', LU: 'EUR', CY: 'EUR', MT: 'EUR', HR: 'EUR',
-  DZ: 'DZD', MA: 'MAD', TN: 'TND', LY: 'LYD', SD: 'SDG',
-};
-
-export function currencyForCountry(iso: string | undefined): string {
-  if (!iso) return 'USD';
-  return CURRENCY_BY_COUNTRY[String(iso).toUpperCase()] || 'USD';
 }
 
 // Gulf countries

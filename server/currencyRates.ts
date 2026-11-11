@@ -10,8 +10,10 @@ import path from 'path';
 const DATA_FILE = path.join(process.cwd(), 'data', 'currency-rates.json');
 const REFRESH_MS = 3 * 60 * 60 * 1000; // 3 hours
 
-// Must cover every code in src/utils/currency.ts (SUPPORTED_CURRENCIES).
-const CURRENCY_CODES = ['USD', 'EUR', 'RUB', 'EGP', 'SAR', 'AED', 'KWD', 'QAR', 'BHD', 'OMR', 'IQD'];
+// Codes that MUST be present for a provider response to be trusted. Every other
+// sane rate the provider returns is passed through, so ANY country's currency
+// (src/data/geoCurrency.ts) prices itself without touching this list.
+const CORE_CODES = ['USD', 'EGP', 'EUR', 'GBP', 'RUB', 'SAR'];
 
 export interface CurrencyRatesFile {
   updatedAt: string;
@@ -35,15 +37,29 @@ function readStore(): CurrencyRatesFile | null {
   return cached;
 }
 
-/** Every supported code must come back as a sane positive number, else reject. */
+/** Every core code must come back as a sane positive number, else reject. */
 function normalize(rates: Record<string, unknown>): Record<string, number> | null {
   if (!rates || typeof rates !== 'object') return null;
   const out: Record<string, number> = { USD: 1 };
-  for (const code of CURRENCY_CODES) {
+  const pick = (code: string): number | null => {
+    const direct = Number((rates as Record<string, unknown>)[code]);
+    if (isFinite(direct) && direct > 0) return direct;
+    const lower = Number((rates as Record<string, unknown>)[code.toLowerCase()]);
+    return isFinite(lower) && lower > 0 ? lower : null;
+  };
+  for (const code of CORE_CODES) {
     if (code === 'USD') continue;
-    const v = Number(rates[code]);
-    if (!isFinite(v) || v <= 0) return null;
+    const v = pick(code);
+    if (v === null) return null;
     out[code] = v;
+  }
+  // Pass through every other valid rate (lowercase keys from the jsdelivr
+  // source included) — geo currencies beyond the curated table then convert
+  // with live numbers instead of falling back.
+  for (const [key, raw] of Object.entries(rates)) {
+    const v = Number(raw);
+    const code = String(key).toUpperCase();
+    if (!out[code] && /^[A-Z]{3}$/.test(code) && isFinite(v) && v > 0) out[code] = v;
   }
   return out;
 }

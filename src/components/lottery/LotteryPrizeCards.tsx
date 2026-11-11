@@ -27,7 +27,7 @@ interface LotteryPrizeCardsProps {
 
 export const LotteryPrizeCards: React.FC<LotteryPrizeCardsProps> = ({
   lang,
-  currentPool = 3200.0,
+  currentPool = 100.0,
   displayCurrency = 'USD',
   onSelectPlay,
 }) => {

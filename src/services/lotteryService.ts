@@ -31,14 +31,20 @@ const STORAGE_KEYS = {
 
 // Bumped whenever the seed prize structure changes — one-time normalization of
 // cached draws so existing installs show the current (reduced) amounts too.
-const SEED_VERSION = 'v2';
+const SEED_VERSION = 'v3';
 
 // Old seed money values → current values (only these exact figures are rewritten,
 // so admin-adjusted or sales-driven jackpots are never clobbered).
+// v3 scale (small start): ticket $0.5, jackpot begins at $100, tiers $100/25/10/2/1.
 const LEGACY_SEED_AMOUNTS: Array<{ jackpot: number; jackpotTo: number; initial: number; initialTo: number; pool: number; poolTo: number; paidOut?: number; paidOutTo?: number }> = [
-  { jackpot: 18450, jackpotTo: 3200, initial: 15000, initialTo: 2500, pool: 22680, poolTo: 3450 },
-  { jackpot: 14200, jackpotTo: 2800, initial: 10000, initialTo: 2000, pool: 17400, poolTo: 4120, paidOut: 6850, paidOutTo: 1650 },
-  { jackpot: 12500, jackpotTo: 2400, initial: 10000, initialTo: 2000, pool: 15300, poolTo: 3200, paidOut: 14850, paidOutTo: 1900 },
+  // v1 seeds
+  { jackpot: 18450, jackpotTo: 100, initial: 15000, initialTo: 100, pool: 22680, poolTo: 100 },
+  { jackpot: 14200, jackpotTo: 85, initial: 10000, initialTo: 75, pool: 17400, poolTo: 120, paidOut: 6850, paidOutTo: 35 },
+  { jackpot: 12500, jackpotTo: 70, initial: 10000, initialTo: 75, pool: 15300, poolTo: 95, paidOut: 14850, paidOutTo: 40 },
+  // v2 seeds
+  { jackpot: 3200, jackpotTo: 100, initial: 2500, initialTo: 100, pool: 3450, poolTo: 100 },
+  { jackpot: 2800, jackpotTo: 85, initial: 2000, initialTo: 75, pool: 4120, poolTo: 120, paidOut: 1650, paidOutTo: 35 },
+  { jackpot: 2400, jackpotTo: 70, initial: 2000, initialTo: 75, pool: 3200, poolTo: 95, paidOut: 1900, paidOutTo: 40 },
 ];
 
 
@@ -51,10 +57,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 5,
     matchLucky: 2,
     sharePercent: 50,
-    guaranteedAmount: 1000,
+    guaranteedAmount: 100,
     odds: '1 : 139,838,160',
-    termsAr: 'تتطلب مطابقة جميع الأرقام الخمسة الرئيسية (من 1 إلى 50) بالإضافة إلى رقمي نجوم الحظ الذهبيين (من 1 إلى 12) بدقة تامة. في حال تعدد التذاكر الفائزة، يُقسّم مجمع الجائزة بالتساوي مع ضمان حد أدنى لا يقل عن $1,000.',
-    termsEn: 'Requires an exact match of all 5 main balls (1-50) plus both 2 lucky stars (1-12). If multiple tickets match, the jackpot pool is split equally, guaranteed at no less than $1,000.',
+    termsAr: 'تتطلب مطابقة جميع الأرقام الخمسة الرئيسية (من 1 إلى 50) بالإضافة إلى رقمي نجوم الحظ الذهبيين (من 1 إلى 12) بدقة تامة. في حال تعدد التذاكر الفائزة، يُقسّم مجمع الجائزة بالتساوي مع ضمان حد أدنى.',
+    termsEn: 'Requires an exact match of all 5 main balls (1-50) plus both 2 lucky stars (1-12). If multiple tickets match, the jackpot pool is split equally, guaranteed at a minimum.',
     payoutTermsAr: 'إيداع تلقائي فوري 100% في المحفظة النشطة بدون أي استقطاعات أو عمولات، ومتاحة للسحب النقدي الفوري عبر USDT أو فودافون كاش أو التحويل البنكي.',
     payoutTermsEn: '100% instant automatic credit to user active wallet with zero deductions. Immediately withdrawable via USDT, Vodafone Cash, or Bank Transfer.',
   },
@@ -65,10 +71,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 5,
     matchLucky: 1,
     sharePercent: 20,
-    guaranteedAmount: 250,
+    guaranteedAmount: 25,
     odds: '1 : 6,991,908',
-    termsAr: 'تتطلب مطابقة 5 أرقام رئيسية ورقم ذهبي واحد. يحصل الفائزون على 20% من إجمالي مجمع السحب، بحد أدنى مضمون $250.',
-    termsEn: 'Requires matching 5 main numbers and 1 lucky star. Awarded 20% of total pool with a guaranteed minimum of $250.',
+    termsAr: 'تتطلب مطابقة 5 أرقام رئيسية ورقم ذهبي واحد. يحصل الفائزون على 20% من إجمالي مجمع السحب، بحد أدنى مضمون.',
+    termsEn: 'Requires matching 5 main numbers and 1 lucky star. Awarded 20% of total pool with a guaranteed minimum.',
     payoutTermsAr: 'صرف مباشر وفوري في المحفظة خلال أقل من 10 ثوانٍ من انتهاء السحب التشفيري.',
     payoutTermsEn: 'Direct instant credit to wallet in under 10 seconds following cryptographic draw execution.',
   },
@@ -79,10 +85,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 4,
     matchLucky: 2,
     sharePercent: 15,
-    guaranteedAmount: 100,
+    guaranteedAmount: 10,
     odds: '1 : 621,503',
-    termsAr: 'تتطلب مطابقة 4 أرقام رئيسية ورقمي الحظ الذهبيين. يحصل الفائزون على 15% من المجمع بحد أدنى $100.',
-    termsEn: 'Requires matching 4 main numbers and both 2 lucky stars. Awarded 15% of pool, minimum $100.',
+    termsAr: 'تتطلب مطابقة 4 أرقام رئيسية ورقمي الحظ الذهبيين. يحصل الفائزون على 15% من المجمع بحد أدنى مضمون.',
+    termsEn: 'Requires matching 4 main numbers and both 2 lucky stars. Awarded 15% of pool, guaranteed minimum.',
     payoutTermsAr: 'إيداع لحظي في المحفظة مع إشعار فوري وتوليد إيصال رقمي رسمي معتمد.',
     payoutTermsEn: 'Instant deposit with push notification alert and verifiable digital payout receipt.',
   },
@@ -93,10 +99,10 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     matchMain: 3,
     matchLucky: 1,
     sharePercent: 10,
-    fixedPrize: 10,
+    fixedPrize: 2,
     odds: '1 : 3,107',
-    termsAr: 'تتطلب مطابقة 3 أرقام رئيسية ورقم ذهبي واحد على الأقل. جائزة نقدية ثابتة بقيمة $10.00 لكل تذكرة فائزة.',
-    termsEn: 'Requires matching 3 main numbers and at least 1 lucky star. Fixed cash prize of $10.00 per winning ticket.',
+    termsAr: 'تتطلب مطابقة 3 أرقام رئيسية ورقم ذهبي واحد على الأقل. جائزة نقدية ثابتة لكل تذكرة فائزة.',
+    termsEn: 'Requires matching 3 main numbers and at least 1 lucky star. Fixed cash prize per winning ticket.',
     payoutTermsAr: 'تضاف فوراً لرصيد المحفظة المتاح للاستخدام في طلبات التعويض أو شراء تذاكر جديدة أو السحب.',
     payoutTermsEn: 'Instantly credited to spendable wallet balance for withdrawals or new tickets.',
   },
@@ -109,8 +115,8 @@ export const DEFAULT_PRIZE_TIERS: LotteryPrizeTier[] = [
     sharePercent: 5,
     fixedPrize: 1,
     odds: '1 : 128',
-    termsAr: 'تتطلب مطابقة رقمين رئيسيين ورقم ذهبي واحد. تمنحك جائزة نقدية $1.00 أو تذكرة تكافل مجانية إضافية للمشاركة في السحب القادم.',
-    termsEn: 'Requires matching 2 main numbers and 1 lucky star. Awards $1.00 cash or free compassion lottery ticket.',
+    termsAr: 'تتطلب مطابقة رقمين رئيسيين ورقم ذهبي واحد. تمنحك جائزة نقدية أو تذكرة تكافل مجانية إضافية للمشاركة في السحب القادم.',
+    termsEn: 'Requires matching 2 main numbers and 1 lucky star. Awards cash or a free compassion lottery ticket.',
     payoutTermsAr: 'تسليم فوري للمحفظة وتحديث فوري لرصيد التذاكر المجانية.',
     payoutTermsEn: 'Immediate credit and updated free ticket balance.',
   },
@@ -146,13 +152,13 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     titleAr: 'سحب VEX الأسبوعي الذهبي الكبرى #88',
     titleEn: 'VEX Weekly Mega Gold Draw #88',
     status: 'open',
-    ticketPrice: 1.0,
+    ticketPrice: 0.5,
     currency: 'USD',
-    jackpotAmount: 3200.0,
-    initialJackpot: 2500.0,
-    totalPool: 3450.0,
-    ticketsSoldCount: 3450,
-    participantsCount: 890,
+    jackpotAmount: 100.0,
+    initialJackpot: 100.0,
+    totalPool: 100.0,
+    ticketsSoldCount: 200,
+    participantsCount: 60,
     openAt: new Date(Date.now() - 3 * 86400000).toISOString(),
     closeAt: new Date(Date.now() + 2 * 86400000).toISOString(),
     drawAt: new Date(Date.now() + 2 * 86400000 + 3600000).toISOString(),
@@ -172,13 +178,13 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     titleAr: 'سحب VEX الأسبوعي الكبرى #87',
     titleEn: 'VEX Weekly Mega Draw #87',
     status: 'completed',
-    ticketPrice: 1.0,
+    ticketPrice: 0.5,
     currency: 'USD',
-    jackpotAmount: 2800.0,
-    initialJackpot: 2000.0,
-    totalPool: 4120.0,
-    ticketsSoldCount: 4120,
-    participantsCount: 1105,
+    jackpotAmount: 85.0,
+    initialJackpot: 75.0,
+    totalPool: 120.0,
+    ticketsSoldCount: 240,
+    participantsCount: 70,
     openAt: new Date(Date.now() - 10 * 86400000).toISOString(),
     closeAt: new Date(Date.now() - 4 * 86400000).toISOString(),
     drawAt: new Date(Date.now() - 4 * 86400000).toISOString(),
@@ -199,7 +205,7 @@ const INITIAL_DRAWS: LotteryDraw[] = [
       tier4_match3: 42,
       tier5_match2: 198,
     },
-    totalPaidOut: 1650.0,
+    totalPaidOut: 35.0,
     isRollover: true,
   },
   {
@@ -208,13 +214,13 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     titleAr: 'سحب تضامن المنحوسين الاستثنائي #86',
     titleEn: 'Unlucky Solidarity Special Draw #86',
     status: 'completed',
-    ticketPrice: 1.0,
+    ticketPrice: 0.5,
     currency: 'USD',
-    jackpotAmount: 2400.0,
-    initialJackpot: 2000.0,
-    totalPool: 3200.0,
-    ticketsSoldCount: 3200,
-    participantsCount: 940,
+    jackpotAmount: 70.0,
+    initialJackpot: 75.0,
+    totalPool: 95.0,
+    ticketsSoldCount: 190,
+    participantsCount: 65,
     openAt: new Date(Date.now() - 17 * 86400000).toISOString(),
     closeAt: new Date(Date.now() - 11 * 86400000).toISOString(),
     drawAt: new Date(Date.now() - 11 * 86400000).toISOString(),
@@ -235,7 +241,7 @@ const INITIAL_DRAWS: LotteryDraw[] = [
       tier4_match3: 31,
       tier5_match2: 145,
     },
-    totalPaidOut: 1900.0,
+    totalPaidOut: 40.0,
     isRollover: false,
   },
 ];
@@ -320,6 +326,26 @@ class LotteryService {
               ? legacy.paidOutTo
               : d.totalPaidOut,
           tiers,
+        } as LotteryDraw;
+      });
+      // v3 safety cap: any figure still on the OLD big scale (sales-grown or
+      // admin-set) is brought down to the small starting scale — the board must
+      // show small numbers everywhere after this version. Tier figures were
+      // already refreshed to the current structure by the pass above.
+      this.draws = this.draws.map((d) => {
+        if (!d) return d;
+        const big = (v: any) => Number(v) > 500;
+        const needsCap =
+          big(d.jackpotAmount) || big(d.initialJackpot) || big(d.totalPool) || big(d.totalPaidOut) || Number(d.ticketPrice) > 0.5;
+        if (!needsCap) return d;
+        changed = true;
+        return {
+          ...d,
+          ticketPrice: Number(d.ticketPrice) > 0.5 ? 0.5 : d.ticketPrice,
+          jackpotAmount: big(d.jackpotAmount) ? 100 : d.jackpotAmount,
+          initialJackpot: big(d.initialJackpot) ? 100 : d.initialJackpot,
+          totalPool: big(d.totalPool) ? 100 : d.totalPool,
+          totalPaidOut: big(d.totalPaidOut) ? 40 : d.totalPaidOut,
         } as LotteryDraw;
       });
       if (changed) this.saveDraws();
@@ -634,13 +660,13 @@ class LotteryService {
           totalPayout += t.prizeWon;
         } else if (matchedMain >= 3) {
           t.matchedTier = 'tier4_match3';
-          t.prizeWon = 25.0;
+          t.prizeWon = 2.0;
           winnersCount.tier4_match3 += 1;
           totalWinners++;
           totalPayout += t.prizeWon;
         } else if (matchedMain >= 2 && matchedLucky >= 1) {
           t.matchedTier = 'tier5_match2';
-          t.prizeWon = 2.5;
+          t.prizeWon = 1.0;
           winnersCount.tier5_match2 += 1;
           totalWinners++;
           totalPayout += t.prizeWon;
@@ -722,11 +748,11 @@ class LotteryService {
       titleAr: params.titleAr || `سحب VEX الأسبوعي الكبرى #${nextNumber}`,
       titleEn: params.titleEn || `VEX Mega Draw #${nextNumber}`,
       status: 'open',
-      ticketPrice: params.ticketPrice || 1.0,
+      ticketPrice: params.ticketPrice || 0.5,
       currency: 'USD',
-      jackpotAmount: params.initialJackpot || 15000.0,
-      initialJackpot: params.initialJackpot || 15000.0,
-      totalPool: params.initialJackpot || 15000.0,
+      jackpotAmount: params.initialJackpot || 100.0,
+      initialJackpot: params.initialJackpot || 100.0,
+      totalPool: params.initialJackpot || 100.0,
       ticketsSoldCount: 0,
       participantsCount: 0,
       openAt: new Date().toISOString(),
@@ -782,9 +808,9 @@ class LotteryService {
 
     return {
       totalDrawsCompleted: completed.length,
-      totalPrizesPaid: totalPaid + 32500, // include legacy prize pool
+      totalPrizesPaid: totalPaid + 120, // include legacy prize pool
       totalTicketsSold: totalSold,
-      biggestJackpotWon: 28500.0,
+      biggestJackpotWon: 100.0,
       compassionTicketsAwarded: 1420,
       hotNumbers,
       coldNumbers,
@@ -848,7 +874,7 @@ class LotteryService {
           prizeNameAr: 'المستوى الرابع (مطابقة 3 أرقام رئيسية + 1 ذهبي)',
           prizeNameEn: 'Tier 4 (Match 3 Main + 1 Lucky Star)',
           tierId: 'tier4_match3',
-          amountWon: 25.0,
+          amountWon: 2.0,
           matchedMainCount: 3,
           matchedLuckyCount: 1,
           mainNumbers: [7, 14, 23, 31, 42],
@@ -868,7 +894,7 @@ class LotteryService {
           prizeNameAr: 'المستوى الخامس (مطابقة رقمين + 1 ذهبي)',
           prizeNameEn: 'Tier 5 (Match 2 Main + 1 Lucky Star)',
           tierId: 'tier5_match2',
-          amountWon: 2.5,
+          amountWon: 1.0,
           matchedMainCount: 2,
           matchedLuckyCount: 1,
           mainNumbers: [14, 28, 33, 38, 49],

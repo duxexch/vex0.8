@@ -159,7 +159,10 @@ export default function App() {
     let cancelled = false;
     const applyGeoDefaults = async () => {
       const langChosen = !!localStorage.getItem('vex_lang');
-      const currencyChosen = !!localStorage.getItem('vex_display_currency');
+      // Only a MANUAL currency pick blocks geo. `vex_display_currency` is also
+      // written automatically on first paint, so it alone would always look
+      // "chosen" and the visitor's country currency would never apply.
+      const currencyChosen = !!localStorage.getItem('vex_currency_manual');
       if (langChosen && currencyChosen) return;
       try {
         const res = await fetch('/api/geo');
@@ -1019,7 +1022,15 @@ export default function App() {
         canInstallPwa={Boolean(deferredInstallPrompt)}
         onInstallPwa={handleInstallPwa}
         displayCurrency={displayCurrency}
-        onDisplayCurrencyChange={setDisplayCurrency}
+        onDisplayCurrencyChange={(c: string) => {
+          // Manual pick → flag it so geo never overrides the user's choice.
+          try {
+            localStorage.setItem('vex_currency_manual', '1');
+          } catch {
+            /* storage unavailable */
+          }
+          setDisplayCurrency(c);
+        }}
       />
 
       {/* Security Analysis & Vulnerability Audit Modal */}

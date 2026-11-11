@@ -18,6 +18,7 @@ import { GUIDES, getGuide } from './server/i18nGuides';
 import { STATIC_PAGES, STATIC_PAGE_SLUGS, TRUST_NAV } from './server/staticPages';
 import type { Company, SportsNewsItem } from './src/types';
 import { geoLocaleMiddleware } from './server/geoLocale';
+import { CURRENCY_META } from './src/data/geoCurrency';
 import { createAuthRequiredMiddleware, setSessionStore, buildSessionCookie, SESSION_TTL_MS, getCurrentUserId, resolveSocketUserId, resolveSessionUserId } from './server/sessionGuard';
 import { buildBotPromoMessage } from './server/botPromo';
 import {
@@ -4080,6 +4081,30 @@ app.post('/api/wallets/company-api-transfer', (req, res) => {
 
 // Server-authoritative lottery ticket purchase: deduct from AVAILABLE + record the ticket.
 // Free (compassion) tickets pass price=0 → only recorded (no deduction).
+
+// Money shown to the VISITOR in their own currency: geoLocale gives Egypt → EGP
+// (the platform default) and any other country → its currency, identically on
+// every domain. USD-base amounts use the synced live rates, then the shared
+// fallback table (src/data/geoCurrency.ts) — unknown currencies price as EGP.
+function formatGeoMoney(req: any, usd: number): string {
+  const code = String(req?.geoLocale?.currency || 'EGP').trim().toUpperCase();
+  const live = Number(getCurrencyRates()?.rates?.[code]);
+  const meta = CURRENCY_META[code];
+  const rate = isFinite(live) && live > 0 ? live : meta && meta.rateToUSD > 0 ? meta.rateToUSD : null;
+  if (!rate) {
+    const egp = CURRENCY_META['EGP'];
+    return `${egp.symbol}${(usd * egp.rateToUSD).toFixed(2)}`;
+  }
+  const converted = usd * rate;
+  if (meta) {
+    if (code === 'RUB') return `${Math.round(converted).toLocaleString('en-US')} ${meta.symbol}`;
+    return `${meta.symbol}${converted.toFixed(2)}`;
+  }
+  // Currency beyond the curated table (live rate only) — show it by ISO code.
+  if (converted >= 10000) return `${code} ${Math.round(converted).toLocaleString('en-US')}`;
+  return `${code} ${converted.toFixed(2)}`;
+}
+
 app.post('/api/wallets/lottery-purchase', (req, res) => {
   try {
     const userId = getCurrentUserId(req);
@@ -4106,8 +4131,10 @@ app.post('/api/wallets/lottery-purchase', (req, res) => {
       const wallet = wallets.find((w: any) => w && w.company_id === companyId);
       const availableBal = wallet ? Number(wallet.available) || 0 : 0;
       if (price > availableBal) {
+        // Show the shortfall in the VISITOR's currency (geoLocale: Egypt → EGP,
+        // any other country → its own currency — same on every domain).
         return res.status(400).json({
-          error: `رصيدك المتاح ($${availableBal.toFixed(2)}) غير كافٍ لشراء التذكرة ($${price.toFixed(2)}).`,
+          error: `رصيدك المتاح (${formatGeoMoney(req, availableBal)}) غير كافٍ لشراء التذكرة (${formatGeoMoney(req, price)}).`,
         });
       }
       wallet.available = Math.round((availableBal - price) * 100) / 100;
@@ -4170,8 +4197,8 @@ app.post('/api/admin/lottery/settle-draw', (req, res) => {
       if (matchedMain === 5 && matchedLucky === 2) prize = jackpotAmount;
       else if (matchedMain === 5 && matchedLucky >= 1) prize = Math.round(totalPool * 0.2);
       else if (matchedMain === 4 && matchedLucky >= 1) prize = Math.round(totalPool * 0.1);
-      else if (matchedMain >= 3) prize = 25.0;
-      else if (matchedMain >= 2 && matchedLucky >= 1) prize = 2.5;
+      else if (matchedMain >= 3) prize = 2.0;
+      else if (matchedMain >= 2 && matchedLucky >= 1) prize = 1.0;
 
       t.prize_won = prize;
       t.is_claimed = true;
@@ -5585,7 +5612,7 @@ let serverLotteryState: ServerLotteryState = {
   titleAr: 'سحب VEX التكافلي الذهبي الأسبوعي #88',
   titleEn: 'VEX Weekly Solidarity Gold Draw #88',
   closeAt: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
-  jackpotAmount: 3200.0,
+  jackpotAmount: 100.0,
   oneHourReminderSent: false,
   thirtyMinReminderSent: false,
   tierAlertSubscriptions: {
@@ -5599,29 +5626,32 @@ let serverLotteryState: ServerLotteryState = {
 
 function dispatchLotteryOneHourNotification(drawState: ServerLotteryState, isManualTest = false) {
   const notifId = `NOTIF-LOTTERY-1HR-${drawState.activeDrawId}-${Date.now()}`;
+  // No currency symbol in push copy (user decision): the number is enough, and
+  // the in-app UI shows each visitor's own currency.
+  const jp = drawState.jackpotAmount.toLocaleString('en-US', { maximumFractionDigits: 2 });
   const newNotif = {
     id: notifId,
     title: `⏳ سحب اليانصيب الكبرى يبدأ بعد ساعة واحدة! (${drawState.activeDrawId})`,
-    message: `باقي 60 دقيقة فقط على إغلاق تذاكر سحب VEX الكبرى. الجائزة المتراكمة: $${drawState.jackpotAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}! بادر باختيار أرقامك الرابحة الآن.`,
+    message: `باقي 60 دقيقة فقط على إغلاق تذاكر سحب VEX الكبرى. الجائزة المتراكمة: ${jp}! بادر باختيار أرقامك الرابحة الآن.`,
     category: 'lottery',
     timestamp: new Date().toISOString(),
     read: false,
     translations: {
       ar: {
         title: `⏳ سحب اليانصيب الكبرى يبدأ بعد ساعة واحدة! (${drawState.activeDrawId})`,
-        message: `باقي 60 دقيقة فقط على إغلاق تذاكر سحب VEX الكبرى. الجائزة المتراكمة: $${drawState.jackpotAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}! بادر باختيار أرقامك الرابحة الآن.`,
+        message: `باقي 60 دقيقة فقط على إغلاق تذاكر سحب VEX الكبرى. الجائزة المتراكمة: ${jp}! بادر باختيار أرقامك الرابحة الآن.`,
       },
       en: {
         title: `⏳ 1 Hour Until Big Lottery Draw! (${drawState.activeDrawId})`,
-        message: `Only 60 minutes left before ticket sales close for ${drawState.titleEn}. Progressive Jackpot is $${drawState.jackpotAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}! Pick your lucky numbers now.`,
+        message: `Only 60 minutes left before ticket sales close for ${drawState.titleEn}. Progressive Jackpot: ${jp}! Pick your lucky numbers now.`,
       },
       ru: {
         title: `⏳ 1 час до розыгрыша лотереи! (${drawState.activeDrawId})`,
-        message: `Осталось всего 60 минут до закрытия продажи билетов. Джекпот: $${drawState.jackpotAmount.toLocaleString()}! Выберите счастливые номера.`,
+        message: `Осталось всего 60 минут до закрытия продажи билетов. Джекпот: ${jp}! Выберите счастливые номера.`,
       },
       es: {
         title: `⏳ ¡1 hora para el gran sorteo! (${drawState.activeDrawId})`,
-        message: `Solo quedan 60 minutos para el cierre de venta de boletos. ¡El bote acumulado es de $${drawState.jackpotAmount.toLocaleString()}!`,
+        message: `Solo quedan 60 minutos para el cierre de venta de boletos. ¡El bote acumulado es de ${jp}!`,
       },
     },
     data: {
@@ -5658,29 +5688,29 @@ function dispatchLotteryThirtyMinTierNotification(
   
   const tierNames: Record<string, { ar: string; en: string; highlight: string }> = {
     tier1_jackpot: {
-      ar: 'الجائزة الكبرى ($1,000+)',
-      en: 'Jackpot Tier ($1,000+)',
-      highlight: `$${drawState.jackpotAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      ar: 'الجائزة الكبرى (100+)',
+      en: 'Jackpot Tier (100+)',
+      highlight: `${drawState.jackpotAmount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
     },
     tier2_match5: {
       ar: 'المستوى الثاني (5 أرقام + 1 ذهبي)',
       en: 'Tier 2 (5 Numbers + 1 Star)',
-      highlight: '$250+',
+      highlight: '25+',
     },
     tier3_match4_2: {
       ar: 'المستوى الثالث (4 أرقام + 2 ذهبيين)',
       en: 'Tier 3 (4 Numbers + 2 Stars)',
-      highlight: '$100+',
+      highlight: '10+',
     },
     tier4_match3: {
       ar: 'مستوى التكافل الرابع (3 أرقام)',
       en: 'Solidarity Tier 4 (3 Numbers)',
-      highlight: '$10.00',
+      highlight: '2',
     },
     tier5_match2: {
       ar: 'مستوى التكافل الخامس (تذاكر مجانية / كاش)',
       en: 'Tier 5 (Free Tickets / Cash)',
-      highlight: '$1.00 / Free Ticket',
+      highlight: '1 / Free Ticket',
     },
   };
 
