@@ -682,6 +682,96 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [isEmailGeneratorOpen, setIsEmailGeneratorOpen] = useState(false);
   const [selectedRequestForEmail, setSelectedRequestForEmail] = useState<CompensationRequest | null>(null);
 
+  // Compensation tab → attach a company account number to a registered client
+  // (lets them participate in compensation requests; client is notified live).
+  const [attachUsers, setAttachUsers] = useState<any[]>([]);
+  const [attachCompanies, setAttachCompanies] = useState<Company[]>([]);
+  const [attachDataLoading, setAttachDataLoading] = useState(false);
+  const [attachSearch, setAttachSearch] = useState('');
+  const [attachSelectedUser, setAttachSelectedUser] = useState<any | null>(null);
+  const [attachCompanyId, setAttachCompanyId] = useState('');
+  const [attachAccountNumber, setAttachAccountNumber] = useState('');
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [attachFeedback, setAttachFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const loadAttachData = async () => {
+    setAttachDataLoading(true);
+    try {
+      const [users, companies] = await Promise.all([
+        vexApi.adminListUsers().catch(() => [] as any[]),
+        vexApi.getCompanies().catch(() => [] as Company[]),
+      ]);
+      setAttachUsers(users);
+      setAttachCompanies(companies.filter((c) => c && (c as any).is_active !== false));
+    } finally {
+      setAttachDataLoading(false);
+    }
+  };
+
+  const filteredAttachUsers = attachUsers
+    .filter((u) => {
+      const q = attachSearch.trim().toLowerCase();
+      if (!q) return false;
+      return (
+        String(u.phone_number || '').toLowerCase().includes(q) ||
+        String(u.user_id || '').toLowerCase().includes(q)
+      );
+    })
+    .slice(0, 25);
+
+  const handleAttachAccount = async () => {
+    if (!attachSelectedUser || !attachCompanyId || !attachAccountNumber.trim()) {
+      setAttachFeedback({
+        type: 'error',
+        message: t(
+          'اختر العميل والشركة وأدخل رقم الحساب أولاً.',
+          'Select a client, a company and enter the account number first.',
+          'Сначала выберите клиента, компанию и введите номер счёта.'
+        ),
+      });
+      return;
+    }
+    setAttachBusy(true);
+    setAttachFeedback(null);
+    try {
+      const { account } = await vexApi.attachUserAccount({
+        user_id: attachSelectedUser.user_id,
+        company_id: attachCompanyId,
+        account_number: attachAccountNumber.trim(),
+      });
+      setAttachFeedback({
+        type: 'success',
+        message: t(
+          `تم ربط الحساب ${account.account_number} بنجاح — تم إشعار العميل فوراً.`,
+          `Account ${account.account_number} attached — the client has been notified.`,
+          `Счёт ${account.account_number} привязан — клиент уведомлён.`
+        ),
+      });
+      setAttachAccountNumber('');
+      const fresh = await vexApi.adminListUsers().catch(() => [] as any[]);
+      if (fresh.length > 0) {
+        setAttachUsers(fresh);
+        const refreshed = fresh.find((u) => u.user_id === attachSelectedUser.user_id);
+        if (refreshed) setAttachSelectedUser(refreshed);
+      }
+    } catch (err: any) {
+      setAttachFeedback({
+        type: 'error',
+        message: err?.message || 'فشل ربط رقم الحساب بالعميل.',
+      });
+    } finally {
+      setAttachBusy(false);
+    }
+  };
+
+  // Load picker data the first time the compensation tab is opened.
+  useEffect(() => {
+    if (activeTab === 'compensation' && attachUsers.length === 0 && !attachDataLoading) {
+      loadAttachData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   // Stats calculation
   const totalRequests = requests.length;
   const unfreezeRequestsCount = requests.filter((r) => r.id.startsWith('DEP-UNF-') || r.bet_slip_id?.startsWith('DEPOSIT-')).length;
@@ -4639,6 +4729,183 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         ${totalApprovedAmount.toLocaleString()}
                       </div>
                     </div>
+                  </div>
+
+                  {/* ===================================================== */}
+                  {/* ATTACH COMPANY ACCOUNT TO A REGISTERED CLIENT         */}
+                  {/* (participation in compensations + instant notification) */}
+                  {/* ===================================================== */}
+                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                        <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                          {t(
+                            'ربط عميل مسجّل بحساب شركة لمشاركته في التعويضات',
+                            'Attach a registered client to a company account for compensations',
+                            'Привязка клиента к счёту компании для компенсаций'
+                          )}
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={loadAttachData}
+                        disabled={attachDataLoading}
+                        className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${attachDataLoading ? 'animate-spin' : ''}`} />
+                        <span>{t('تحديث القائمة', 'Refresh list', 'Обновить список')}</span>
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {t(
+                        'اختر عميلًا مسجّلًا + الشركة + رقم حسابه لدى الشركة، وسيصله إشعار فوري بأن الإدارة ربطت حسابه — ويمكنه بعد ذلك تقديم طلبات التعويضات بهذه الشركة.',
+                        'Pick a registered client + company + their account number; the client gets an instant notification and can then submit compensation requests for that company.',
+                        'Выберите клиента, компанию и номер счёта — клиент получит уведомление и сможет подавать заявки на компенсацию.'
+                      )}
+                    </p>
+
+                    <div className="grid sm:grid-cols-3 gap-3">
+                      {/* Client picker */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+                          {t('العميل المسجّل', 'Registered client', 'Зарегистрированный клиент')}
+                        </label>
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={attachSearch}
+                            onChange={(e) => {
+                              setAttachSearch(e.target.value);
+                              setAttachSelectedUser(null);
+                            }}
+                            placeholder={t('بحث برقم الموبايل أو المعرّف...', 'Search phone or user id...', 'Поиск по телефону или id...')}
+                            className="w-full pr-8 pl-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        {filteredAttachUsers.length > 0 && !attachSelectedUser && (
+                          <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/60">
+                            {filteredAttachUsers.map((u) => (
+                              <button
+                                key={u.user_id}
+                                type="button"
+                                onClick={() => {
+                                  setAttachSelectedUser(u);
+                                  setAttachSearch(u.phone_number || u.user_id);
+                                }}
+                                className="w-full text-right px-3 py-2 hover:bg-sky-50 dark:hover:bg-sky-950/30 transition-colors"
+                              >
+                                <span className="text-xs font-black text-slate-800 dark:text-slate-100 block">
+                                  {u.phone_number || u.user_id}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block">
+                                  {u.user_id} · {u.accounts?.length || 0} {t('حساب', 'accounts', 'счетов')}
+                                  {!u.is_phone_verified ? ` · ${t('موبايل غير موثّق', 'unverified phone', 'телефон не подтверждён')}` : ''}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {attachSearch && filteredAttachUsers.length === 0 && !attachDataLoading && (
+                          <div className="text-[10px] text-slate-400 px-1">
+                            {t('لا يوجد عملاء مطابقين — اضغط تحديث القائمة.', 'No matches — hit refresh.', 'Нет совпадений — обновите список.')}
+                          </div>
+                        )}
+                        {attachSelectedUser && (
+                          <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            {attachSelectedUser.phone_number || attachSelectedUser.user_id}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Company picker */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+                          {t('الشركة', 'Company', 'Компания')}
+                        </label>
+                        <select
+                          value={attachCompanyId}
+                          onChange={(e) => setAttachCompanyId(e.target.value)}
+                          className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                        >
+                          <option value="">
+                            {t('— اختر الشركة —', '— Select company —', '— Выберите компанию —')}
+                          </option>
+                          {attachCompanies.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Account number */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+                          {t('رقم حساب الشركة', 'Company account number', 'Номер счёта в компании')}
+                        </label>
+                        <input
+                          type="text"
+                          value={attachAccountNumber}
+                          onChange={(e) => setAttachAccountNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                          placeholder={t('5-18 حرفاً أو رقماً', '5-18 letters/digits', '5-18 букв/цифр')}
+                          maxLength={18}
+                          className="w-full px-3 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleAttachAccount}
+                        disabled={attachBusy || !attachSelectedUser || !attachCompanyId || !attachAccountNumber}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-40 text-white text-xs font-black shadow-md shadow-sky-600/20 flex items-center gap-2 transition-all active:scale-95"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>
+                          {attachBusy
+                            ? t('جارٍ الربط...', 'Attaching...', 'Привязка...')
+                            : t('ربط وإشعار العميل', 'Attach & notify client', 'Привязать и уведомить')}
+                        </span>
+                      </button>
+                      {attachFeedback && (
+                        <span
+                          className={`text-[11px] font-bold flex items-center gap-1 ${
+                            attachFeedback.type === 'success'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {attachFeedback.type === 'success' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5" />
+                          )}
+                          {attachFeedback.message}
+                        </span>
+                      )}
+                    </div>
+
+                    {attachSelectedUser?.accounts?.length > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {t('حساباته الحالية:', 'Existing accounts:', 'Его счета:')}
+                        </span>
+                        {attachSelectedUser.accounts.map((a: any) => (
+                          <span
+                            key={a.id || `${a.company_id}-${a.account_number}`}
+                            className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-300"
+                          >
+                            {a.company_name || a.company_id}: {a.account_number}
+                            {a.attached_by_admin ? ' ✓' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Action Feedback Banner */}

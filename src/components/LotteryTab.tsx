@@ -354,12 +354,13 @@ export const LotteryTab: React.FC<LotteryTabProps> = ({
 
   // Simulate Live Draw Animation
   const startLiveDrawSimulation = (draw: LotteryDraw) => {
+    const mainTargets = draw.winningMainNumbers || [];
+    const luckyTargets = draw.winningLuckyNumbers || [];
+    if (mainTargets.length === 0) return; // never replay fabricated numbers
+
     setIsSimulatingDraw(true);
     setDrawnMainNumbers([]);
     setDrawnLuckyNumbers([]);
-
-    const mainTargets = draw.winningMainNumbers || [7, 14, 23, 38, 45];
-    const luckyTargets = draw.winningLuckyNumbers || [3, 9];
 
     mainTargets.forEach((num, index) => {
       setTimeout(() => {

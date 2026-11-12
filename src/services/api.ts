@@ -3087,6 +3087,36 @@ class VexMobileApiService {
     if (changed) localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
   }
 
+  // Admin: registered-clients list (compensation tab → client picker).
+  public async adminListUsers(): Promise<any[]> {
+    const res = await fetch('/api/admin/users', { headers: this.adminHeaders() });
+    if (!res.ok) {
+      await VexMobileApiService.throwAdminError(res, 'فشل جلب قائمة العملاء المسجّلين.');
+    }
+    const data = await res.json().catch(() => ({}));
+    return Array.isArray(data?.users) ? data.users : [];
+  }
+
+  // Admin: attach a company account number to a client so they can participate
+  // in compensation requests (server stores it + notifies the client live).
+  public async attachUserAccount(params: {
+    user_id: string;
+    company_id: string;
+    account_number: string;
+  }): Promise<{ account: any; accounts: any[] }> {
+    const res = await fetch('/api/admin/users/attach-account', {
+      method: 'POST',
+      headers: this.adminHeaders(),
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      await VexMobileApiService.throwAdminError(res, 'فشل ربط رقم الحساب بالعميل.');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!data?.success) throw new Error(data?.error || 'فشل ربط رقم الحساب بالعميل.');
+    return { account: data.account, accounts: data.accounts || [] };
+  }
+
   // Company edits are SERVER-FIRST: the admin panel must write to the server's
   // companies.json because that store is what the SSR /company/:id landing pages and
   // every other device read (affiliate links, promo codes, logos). localStorage stays

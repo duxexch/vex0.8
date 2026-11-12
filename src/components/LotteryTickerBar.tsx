@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Trophy, Sparkles, Flame, Gift, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Trophy, Flame, Gift, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { lotteryService } from '../services/lotteryService';
 import { LotteryDraw } from '../types';
@@ -34,7 +34,6 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
   const [activeDraw, setActiveDraw] = useState<LotteryDraw | null>(null);
   const [jackpotAmount, setJackpotAmount] = useState<number>(100);
   const [dynamicItems, setDynamicItems] = useState<TickerItem[]>([]);
-  const [showSuccessCheck, setShowSuccessCheck] = useState(false);
 
   // Every figure on the ticker follows the customer's chosen currency
   // (memoized: baseItems below depends on it — a fresh fn each render would
@@ -52,16 +51,6 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       mainText: isAr ? 'مجمع السحب المباشر وصل إلى' : 'Current Mega Jackpot:',
       highlightText: fmt(jackpotAmount),
       subText: isAr ? 'فرصة الفوز بـ 5 أرقام + 2 نجوم' : 'Match 5 + 2 Lucky Stars',
-    },
-    {
-      id: '2',
-      type: 'winner',
-      icon: <Sparkles className="w-3.5 h-3.5 text-yellow-300" />,
-      badgeText: isAr ? 'أحدث الفائزين 👑' : 'LATEST WINNER 👑',
-      badgeColor: 'text-yellow-300 border-yellow-500/40',
-      mainText: isAr ? 'مستخدم (+2010****)' : 'Player (+2010****)',
-      highlightText: fmt(25),
-      subText: isAr ? 'مطابقة 5 أرقام (المستوى الثاني)' : 'Match 5 Main Numbers',
     },
     {
       id: '3',
@@ -104,48 +93,12 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
       })
       .catch(() => {});
 
-    // Dynamic subtle jackpot increase (small scale: a few cents at a time)
-    const jackpotInterval = setInterval(() => {
-      setJackpotAmount((prev) => Math.round((prev + Math.random() * 0.5) * 100) / 100);
-    }, 4000);
-
-    // Periodic simulation of new winners
-    const winnerInterval = setInterval(() => {
-      if (!isMounted) return;
-
-      const randomId = Math.random().toString(36).substring(7);
-      const newWinner: TickerItem = {
-        id: `new-winner-${randomId}`,
-        type: 'winner',
-        icon: <Trophy className="w-3.5 h-3.5 text-emerald-300" />,
-        badgeText: isAr ? 'فائز جديد! 🎊' : 'NEW WINNER! 🎊',
-        badgeColor: 'text-emerald-300 border-emerald-500/40',
-        mainText: isAr ? `مستخدم (+${Math.floor(Math.random() * 900) + 100}****)` : `Player (+${Math.floor(Math.random() * 900) + 100}****)`,
-        highlightText: fmt(Math.floor(Math.random() * 6) * 2 + 1),
-        subText: isAr ? 'فوز فوري في السحب' : 'Instant draw win',
-        isNew: true,
-      };
-
-      setDynamicItems(prev => {
-        const next = [newWinner, ...prev];
-        // Keep it reasonably sized
-        if (next.length > 10) return next.slice(0, 10);
-        return next;
-      });
-
-      // Trigger success animation
-      setShowSuccessCheck(true);
-      triggerHaptic('success');
-      setTimeout(() => setShowSuccessCheck(false), 3000);
-
-    }, 15000);
-
+    // No fake counters: the jackpot only changes when the real active draw
+    // changes, and no simulated winners are ever injected into the ticker.
     return () => {
       isMounted = false;
-      clearInterval(jackpotInterval);
-      clearInterval(winnerInterval);
     };
-  }, [isAr, fmt]);
+  }, []);
 
   const handleTickerClick = () => {
     triggerHaptic('light');
@@ -180,22 +133,10 @@ export const LotteryTickerBar: React.FC<LotteryTickerBarProps> = ({
               className="inline-flex items-center gap-2.5 px-4 whitespace-nowrap"
             >
               <motion.span
-                animate={
-                  item.isNew && showSuccessCheck
-                    ? {
-                        backgroundColor: ['rgba(255,255,255,0.06)', 'rgba(16,185,129,0.22)', 'rgba(255,255,255,0.06)'],
-                        scale: [1, 1.05, 1],
-                      }
-                    : {}
-                }
                 transition={{ duration: 2, repeat: 1 }}
                 className={`inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wide px-2 py-[3px] rounded-full border bg-white/[0.06] backdrop-blur-sm ${item.badgeColor}`}
               >
-                {item.isNew && showSuccessCheck ? (
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                ) : (
-                  item.icon
-                )}
+                {item.icon}
                 <span>{item.badgeText}</span>
               </motion.span>
 

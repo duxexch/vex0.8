@@ -33,7 +33,9 @@ const STORAGE_KEYS = {
 // cached draws so existing installs show the current (reduced) amounts too.
 // v4: re-run forced for installs whose draws were re-saved stale by a background
 // tab still running an older bundle after the v3 migration had already run.
-const SEED_VERSION = 'v4';
+// v5: fabricated seed counters (tickets sold / participants / winners / payouts
+//     on the demo seed draws) are zeroed — only real sales ever count.
+const SEED_VERSION = 'v5';
 
 // Old seed money values → current values (only these exact figures are rewritten,
 // so admin-adjusted or sales-driven jackpots are never clobbered).
@@ -159,8 +161,8 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     jackpotAmount: 100.0,
     initialJackpot: 100.0,
     totalPool: 100.0,
-    ticketsSoldCount: 200,
-    participantsCount: 60,
+    ticketsSoldCount: 0,
+    participantsCount: 0,
     openAt: new Date(Date.now() - 3 * 86400000).toISOString(),
     closeAt: new Date(Date.now() + 2 * 86400000).toISOString(),
     drawAt: new Date(Date.now() + 2 * 86400000 + 3600000).toISOString(),
@@ -185,8 +187,8 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     jackpotAmount: 85.0,
     initialJackpot: 75.0,
     totalPool: 120.0,
-    ticketsSoldCount: 240,
-    participantsCount: 70,
+    ticketsSoldCount: 0,
+    participantsCount: 0,
     openAt: new Date(Date.now() - 10 * 86400000).toISOString(),
     closeAt: new Date(Date.now() - 4 * 86400000).toISOString(),
     drawAt: new Date(Date.now() - 4 * 86400000).toISOString(),
@@ -201,13 +203,13 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     },
     tiers: DEFAULT_PRIZE_TIERS,
     winnersCount: {
-      tier1_jackpot: 0, // Rolled over
-      tier2_match5: 1,
-      tier3_match4_2: 3,
-      tier4_match3: 42,
-      tier5_match2: 198,
+      tier1_jackpot: 0,
+      tier2_match5: 0,
+      tier3_match4_2: 0,
+      tier4_match3: 0,
+      tier5_match2: 0,
     },
-    totalPaidOut: 35.0,
+    totalPaidOut: 0,
     isRollover: true,
   },
   {
@@ -221,8 +223,8 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     jackpotAmount: 70.0,
     initialJackpot: 75.0,
     totalPool: 95.0,
-    ticketsSoldCount: 190,
-    participantsCount: 65,
+    ticketsSoldCount: 0,
+    participantsCount: 0,
     openAt: new Date(Date.now() - 17 * 86400000).toISOString(),
     closeAt: new Date(Date.now() - 11 * 86400000).toISOString(),
     drawAt: new Date(Date.now() - 11 * 86400000).toISOString(),
@@ -237,13 +239,13 @@ const INITIAL_DRAWS: LotteryDraw[] = [
     },
     tiers: DEFAULT_PRIZE_TIERS,
     winnersCount: {
-      tier1_jackpot: 1,
-      tier2_match5: 2,
-      tier3_match4_2: 6,
-      tier4_match3: 31,
-      tier5_match2: 145,
+      tier1_jackpot: 0,
+      tier2_match5: 0,
+      tier3_match4_2: 0,
+      tier4_match3: 0,
+      tier5_match2: 0,
     },
-    totalPaidOut: 40.0,
+    totalPaidOut: 0,
     isRollover: false,
   },
 ];
@@ -260,6 +262,11 @@ class LotteryService {
     if (typeof window === 'undefined') return;
 
     try {
+      // Capture BEFORE migrateSeedAmounts refreshes the marker: a stale marker
+      // means this install still carries the fabricated seed counters.
+      const needsCounterCleanup =
+        localStorage.getItem(STORAGE_KEYS.SEED_VERSION) !== SEED_VERSION;
+
       const storedDraws = localStorage.getItem(STORAGE_KEYS.DRAWS);
       if (storedDraws) {
         this.draws = JSON.parse(storedDraws);
@@ -276,11 +283,60 @@ class LotteryService {
       } else {
         this.tickets = [];
       }
+
+      if (needsCounterCleanup && this.reconcileSeedCounters()) {
+        this.saveDraws();
+      }
     } catch (e) {
       console.warn('Error loading lottery data from localStorage:', e);
       this.draws = INITIAL_DRAWS;
       this.tickets = [];
     }
+  }
+
+  /**
+   * v5: the demo seed draws shipped with FABRICATED counters (200/240/190
+   * tickets, 60/70/65 participants, fake winner breakdowns and payouts).
+   * Recompute them from the REAL ticket ledger so every figure shown is true:
+   * a draw that sold nothing displays zero everywhere.
+   */
+  private reconcileSeedCounters(): boolean {
+    const seedIds = new Set(['DRAW-2026-086', 'DRAW-2026-087', 'DRAW-2026-088']);
+    let changed = false;
+    for (const d of this.draws) {
+      if (!d || !seedIds.has(d.id)) continue;
+      const owned = this.tickets.filter((t) => t && t.drawId === d.id);
+      const winnersCount: Record<string, number> = {
+        tier1_jackpot: 0,
+        tier2_match5: 0,
+        tier3_match4_2: 0,
+        tier4_match3: 0,
+        tier5_match2: 0,
+      };
+      let paidOut = 0;
+      for (const t of owned) {
+        if ((t.prizeWon || 0) > 0 && t.matchedTier && winnersCount[t.matchedTier] !== undefined) {
+          winnersCount[t.matchedTier] += 1;
+          paidOut += t.prizeWon || 0;
+        }
+      }
+      paidOut = Math.round(paidOut * 100) / 100;
+      const sold = owned.length;
+      const participants = new Set(owned.map((t) => t.userId).filter(Boolean)).size;
+      if (
+        d.ticketsSoldCount !== sold ||
+        d.participantsCount !== participants ||
+        d.totalPaidOut !== paidOut ||
+        JSON.stringify(d.winnersCount) !== JSON.stringify(winnersCount)
+      ) {
+        d.ticketsSoldCount = sold;
+        d.participantsCount = participants;
+        d.totalPaidOut = paidOut;
+        d.winnersCount = winnersCount;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   private saveDraws() {
@@ -728,7 +784,7 @@ class LotteryService {
           totalPayout += t.prizeWon;
         } else if (matchedMain === 4 && matchedLucky >= 1) {
           t.matchedTier = 'tier3_match4_2';
-          t.prizeWon = Math.round(draw.totalPool * 0.1);
+          t.prizeWon = Math.round(draw.totalPool * 0.15); // matches advertised 15%
           winnersCount.tier3_match4_2 += 1;
           totalWinners++;
           totalPayout += t.prizeWon;
@@ -857,35 +913,38 @@ class LotteryService {
     return newDraw;
   }
 
-  // Get statistics
+  // Get statistics — REAL figures only (no fabricated counters).
   public getStats(): LotteryStats {
     this.initData();
     const completed = this.draws.filter((d) => d.status === 'completed');
     const totalPaid = completed.reduce((acc, d) => acc + (d.totalPaidOut || 0), 0);
     const totalSold = this.draws.reduce((acc, d) => acc + d.ticketsSoldCount, 0);
 
-    // Common hot & cold numbers
-    const hotNumbers = [
-      { number: 7, frequency: 18 },
-      { number: 14, frequency: 15 },
-      { number: 23, frequency: 14 },
-      { number: 38, frequency: 12 },
-      { number: 45, frequency: 11 },
-    ];
-    const coldNumbers = [
-      { number: 13, frequency: 2 },
-      { number: 27, frequency: 3 },
-      { number: 32, frequency: 3 },
-      { number: 41, frequency: 4 },
-      { number: 50, frequency: 4 },
-    ];
+    // Hot/cold numbers computed from ACTUAL tickets sold (empty until data exists).
+    const frequency: Record<number, number> = {};
+    for (const t of this.tickets) {
+      for (const n of t.mainNumbers || []) frequency[n] = (frequency[n] || 0) + 1;
+    }
+    const ranked = Object.entries(frequency)
+      .map(([n, f]) => ({ number: Number(n), frequency: f }))
+      .sort((a, b) => b.frequency - a.frequency);
+    const hotNumbers = ranked.slice(0, 5);
+    const coldNumbers = ranked.slice(-5).reverse();
+
+    const compassionTicketsAwarded = this.tickets.filter(
+      (t) => t.paymentMethod === 'compassion_free_ticket'
+    ).length;
+    const biggestJackpotWon = this.tickets.reduce(
+      (max, t) => Math.max(max, t.matchedTier === 'tier1_jackpot' ? t.prizeWon || 0 : 0),
+      0
+    );
 
     return {
       totalDrawsCompleted: completed.length,
-      totalPrizesPaid: totalPaid + 120, // include legacy prize pool
+      totalPrizesPaid: totalPaid,
       totalTicketsSold: totalSold,
-      biggestJackpotWon: 100.0,
-      compassionTicketsAwarded: 1420,
+      biggestJackpotWon,
+      compassionTicketsAwarded,
       hotNumbers,
       coldNumbers,
     };
@@ -934,51 +993,9 @@ class LotteryService {
       }
     }
 
-    // If user has neither won tickets nor custom won, provide a realistic record from past solidarity draws
+    // No fabricated/demo win records — an empty history is the truth.
     if (convertedWonTickets.length === 0 && customWon.length === 0) {
-      const defaultHistory: LotteryUserWonPrize[] = [
-        {
-          id: `WIN-DEMO-85-001`,
-          ticketId: `TCK-2026-85-4891`,
-          drawId: 'DRAW-2026-085',
-          drawNumber: 85,
-          drawTitleAr: 'سحب VEX التكافلي الذهبي الأسبوعي #85',
-          drawTitleEn: 'VEX Weekly Solidarity Gold Draw #85',
-          date: '2026-08-28T19:32:00.000Z',
-          prizeNameAr: 'المستوى الرابع (مطابقة 3 أرقام رئيسية + 1 ذهبي)',
-          prizeNameEn: 'Tier 4 (Match 3 Main + 1 Lucky Star)',
-          tierId: 'tier4_match3',
-          amountWon: 2.0,
-          matchedMainCount: 3,
-          matchedLuckyCount: 1,
-          mainNumbers: [7, 14, 23, 31, 42],
-          luckyNumbers: [4, 9],
-          deliveryStatus: 'deposited_to_wallet',
-          transactionRef: 'VEX-TX-882914-USDT',
-          claimedAt: '2026-08-28T19:35:10.000Z',
-        },
-        {
-          id: `WIN-DEMO-87-002`,
-          ticketId: `TCK-2026-87-1092`,
-          drawId: 'DRAW-2026-087',
-          drawNumber: 87,
-          drawTitleAr: 'سحب VEX التكافلي الذهبي الأسبوعي #87',
-          drawTitleEn: 'VEX Weekly Solidarity Gold Draw #87',
-          date: '2026-09-08T20:15:00.000Z',
-          prizeNameAr: 'المستوى الخامس (مطابقة رقمين + 1 ذهبي)',
-          prizeNameEn: 'Tier 5 (Match 2 Main + 1 Lucky Star)',
-          tierId: 'tier5_match2',
-          amountWon: 1.0,
-          matchedMainCount: 2,
-          matchedLuckyCount: 1,
-          mainNumbers: [14, 28, 33, 38, 49],
-          luckyNumbers: [7, 11],
-          deliveryStatus: 'deposited_to_wallet',
-          transactionRef: 'VEX-TX-993182-WAL',
-          claimedAt: '2026-09-08T20:16:04.000Z',
-        },
-      ];
-      return defaultHistory;
+      return [];
     }
 
     const all = [...convertedWonTickets, ...customWon];

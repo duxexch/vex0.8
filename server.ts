@@ -2766,8 +2766,19 @@ app.post('/api/users/:userId/sync', (req, res) => {
     const saved: Record<string, number> = {};
     for (const key of SYNC_COLLECTION_KEYS) {
       if (Array.isArray(body[key])) {
-        storage.setUserSyncCollection(userId, key, body[key]);
-        saved[key] = body[key].length;
+        let items = body[key];
+        if (key === 'accounts') {
+          // A client push must NEVER wipe compensation accounts attached by the
+          // admin — re-include any stored admin-attached record missing here.
+          const stored = storage.getUserSyncCollection(userId, 'accounts') || [];
+          const incomingIds = new Set(items.map((a: any) => String(a?.id ?? '')));
+          const preserved = stored.filter(
+            (a: any) => a && a.attached_by_admin && !incomingIds.has(String(a.id))
+          );
+          if (preserved.length > 0) items = [...items, ...preserved];
+        }
+        storage.setUserSyncCollection(userId, key, items);
+        saved[key] = items.length;
       }
     }
     if (typeof body.pin_hash === 'string' && body.pin_hash.length >= 8 && body.pin_hash.length <= 256) {
@@ -4166,6 +4177,12 @@ app.post('/api/wallets/lottery-purchase', (req, res) => {
 // Admin settlement: the SERVER recomputes each ticket's tier from the winning numbers
 // (never trusts a client-provided prize) and credits winners' AVAILABLE balance.
 // Idempotent — tickets already settled (is_claimed) are skipped.
+//
+// HOUSE GUARANTEE (no participation risk): total prizes credited for a draw can
+// NEVER exceed 90% of the ticket revenue actually collected for that draw —
+// 10% of every ticket is locked as house margin first, and whatever prize
+// budget remains unused is kept too. The house cannot lose money even when
+// almost nobody buys tickets; prize promises are funded purely by sales.
 app.post('/api/admin/lottery/settle-draw', (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
@@ -4181,11 +4198,19 @@ app.post('/api/admin/lottery/settle-draw', (req, res) => {
 
     const tickets = storage.getLotteryTickets();
     const drawTickets = tickets.filter((t) => t && t.draw_id === drawId);
+    // Idempotency: only tickets never settled before are processed on this run.
+    const unclaimed = drawTickets.filter((t) => !t.is_claimed);
 
-    const settled: any[] = [];
-    let credited = 0;
-    for (const t of drawTickets) {
-      if (t.is_claimed) continue;
+    // Revenue = what was actually paid for this draw's tickets (server ledger).
+    const revenue =
+      Math.round(drawTickets.reduce((sum, t) => sum + (Number(t.price_paid) || 0), 0) * 100) / 100;
+    // Prize budget = 90% of revenue (10% guaranteed house margin).
+    const prizeBudget = Math.round(revenue * 0.9 * 100) / 100;
+
+    // Pass 1 — compute every winner's RAW prize from the advertised figures.
+    const rawPrizes: Array<{ ticket: any; prize: number }> = [];
+    let rawTotal = 0;
+    for (const t of unclaimed) {
       const matchedMain = (Array.isArray(t.main_numbers) ? t.main_numbers : []).filter((n: number) =>
         winningMain.includes(n)
       ).length;
@@ -4196,22 +4221,194 @@ app.post('/api/admin/lottery/settle-draw', (req, res) => {
       let prize = 0;
       if (matchedMain === 5 && matchedLucky === 2) prize = jackpotAmount;
       else if (matchedMain === 5 && matchedLucky >= 1) prize = Math.round(totalPool * 0.2);
-      else if (matchedMain === 4 && matchedLucky >= 1) prize = Math.round(totalPool * 0.1);
+      else if (matchedMain === 4 && matchedLucky >= 1) prize = Math.round(totalPool * 0.15); // matches advertised 15%
       else if (matchedMain >= 3) prize = 2.0;
       else if (matchedMain >= 2 && matchedLucky >= 1) prize = 1.0;
 
+      if (prize > 0) {
+        rawPrizes.push({ ticket: t, prize });
+        rawTotal += prize;
+      }
+    }
+
+    // Pass 2 — cap: if raw prizes exceed the budget, scale every prize down
+    // proportionally so the house NEVER pays beyond collected revenue × 90%.
+    const scale = rawTotal > 0 && rawTotal > prizeBudget ? prizeBudget / rawTotal : 1;
+    const scaled = rawPrizes.map((p) => ({
+      ...p,
+      prize: scale === 1 ? p.prize : Math.floor(p.prize * scale * 100) / 100,
+    }));
+
+    // Pass 3 — mark processed tickets settled and credit winners.
+    const settled: any[] = [];
+    let credited = 0;
+    let paidOut = 0;
+    for (const t of unclaimed) t.is_claimed = true;
+    for (const { ticket: t, prize } of scaled) {
       t.prize_won = prize;
-      t.is_claimed = true;
       if (prize > 0 && t.user_id) {
         storage.creditPrize(t.user_id, prize, t.company_id);
         credited++;
+        paidOut = Math.round((paidOut + prize) * 100) / 100;
         settled.push({ ticket_id: t.id, user_id: t.user_id, prize });
         io.emit('wallets_updated', { user_id: t.user_id });
       }
     }
+    for (const t of unclaimed) {
+      if (t.prize_won === undefined || t.prize_won === null) t.prize_won = 0;
+    }
     storage.saveLotteryTickets(tickets);
 
-    res.json({ success: true, settledCount: settled.length, credited, settled });
+    const houseProfit = Math.round((revenue - paidOut) * 100) / 100;
+    res.json({
+      success: true,
+      settledCount: settled.length,
+      credited,
+      settled,
+      finance: {
+        revenue,
+        prizeBudget,
+        rawPrizesTotal: Math.round(rawTotal * 100) / 100,
+        paidOut,
+        houseProfit,
+        capped: scale < 1,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin finance view: revenue / paid / house profit per draw (from the ticket ledger).
+app.get('/api/admin/lottery/finance', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const tickets = storage.getLotteryTickets();
+    const byDraw: Record<string, { revenue: number; paidOut: number; tickets: number }> = {};
+    for (const t of tickets) {
+      if (!t || !t.draw_id) continue;
+      const row = byDraw[t.draw_id] || (byDraw[t.draw_id] = { revenue: 0, paidOut: 0, tickets: 0 });
+      row.tickets += 1;
+      row.revenue = Math.round((row.revenue + (Number(t.price_paid) || 0)) * 100) / 100;
+      if (t.is_claimed) row.paidOut = Math.round((row.paidOut + (Number(t.prize_won) || 0)) * 100) / 100;
+    }
+    const draws = Object.entries(byDraw).map(([drawId, r]) => ({
+      drawId,
+      ...r,
+      houseProfit: Math.round((r.revenue - r.paidOut) * 100) / 100,
+    }));
+    const totals = draws.reduce(
+      (acc, d) => ({
+        revenue: Math.round((acc.revenue + d.revenue) * 100) / 100,
+        paidOut: Math.round((acc.paidOut + d.paidOut) * 100) / 100,
+        houseProfit: Math.round((acc.houseProfit + d.houseProfit) * 100) / 100,
+      }),
+      { revenue: 0, paidOut: 0, houseProfit: 0 }
+    );
+    res.json({ success: true, draws, totals });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: list registered users (client picker for the compensation tab).
+app.get('/api/admin/users', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const profiles = storage.getUserProfiles() || [];
+    const users = profiles
+      .filter((p: any) => p && p.user_id)
+      .map((p: any) => {
+        const accounts = storage.getUserSyncCollection(String(p.user_id), 'accounts') || [];
+        return {
+          user_id: p.user_id,
+          phone_number: p.phone_number || '',
+          is_phone_verified: !!p.is_phone_verified,
+          telegram_username: p.telegram_username || '',
+          created_at: p.created_at || '',
+          accounts: accounts.filter((a: any) => a && a.company_id),
+        };
+      })
+      .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)));
+    res.json({ success: true, users, total: users.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: attach a company account number to a registered client so they can
+// participate in compensation requests — then notify the client instantly
+// (owner-scoped in-app notification + live socket push).
+app.post('/api/admin/users/attach-account', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const body = req.body || {};
+    const userId = String(body.user_id || '').trim();
+    const companyId = String(body.company_id || '').trim();
+    const accountNumber = String(body.account_number || '').trim().toUpperCase();
+    if (!userId || !companyId || !accountNumber) {
+      return res.status(400).json({ error: 'بيانات غير مكتملة (عميل + شركة + رقم حساب).' });
+    }
+    if (!/^[A-Z0-9]{5,18}$/.test(accountNumber)) {
+      return res.status(400).json({ error: 'رقم الحساب يجب أن يكون من 5 إلى 18 حرفاً أو رقماً.' });
+    }
+    const profile = storage.getUserProfile(userId);
+    if (!profile || !profile.user_id) {
+      return res.status(404).json({ error: 'العميل غير مسجَّل في المنصة.' });
+    }
+    const company = (storage.getCompanies() || []).find((c: any) => c && c.id === companyId);
+    if (!company) return res.status(404).json({ error: 'الشركة غير موجودة.' });
+
+    // Anti-hijack: an account number can belong to only one user.
+    const owner = storage.findAccountOwner(companyId, accountNumber);
+    if (owner && owner !== userId) {
+      return res.status(409).json({ error: 'رقم الحساب مرتبط بعميل آخر بالفعل.' });
+    }
+
+    const accounts = storage.getUserSyncCollection(userId, 'accounts') || [];
+    const existingIdx = accounts.findIndex(
+      (a: any) =>
+        a &&
+        a.company_id === companyId &&
+        String(a.account_number || '').trim().toUpperCase() === accountNumber
+    );
+    const now = new Date().toISOString();
+    const record: any = {
+      id:
+        existingIdx >= 0
+          ? accounts[existingIdx].id
+          : `CA${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      user_id: userId,
+      company_id: companyId,
+      company_name: company.name || companyId,
+      account_number: accountNumber,
+      status: 'active',
+      sub_affiliate_verified: true,
+      attached_by_admin: true,
+      created_at: existingIdx >= 0 ? accounts[existingIdx].created_at || now : now,
+      updated_at: now,
+    };
+    if (existingIdx >= 0) accounts[existingIdx] = record;
+    else accounts.push(record);
+    storage.setUserSyncCollection(userId, 'accounts', accounts);
+
+    // Owner-scoped notification → only this client's socket room + bell feed.
+    const ownerKey = notifOwner(userId);
+    const notif: any = {
+      id: `NTF-ACC-${Date.now().toString(36)}`,
+      title: 'تم ربط حسابك بشركة التعويضات',
+      message: `أضافت لك الإدارة رقم حسابك في شركة ${record.company_name} (${accountNumber}). يمكنك الآن تقديم طلبات التعويضات بهذه الشركة.`,
+      category: 'account',
+      timestamp: now,
+      read: false,
+      data: { type: 'account_attached', company_id: companyId, company_name: record.company_name, account_number: accountNumber },
+      ...(ownerKey ? { owner_id: ownerKey } : { admin_only: true }),
+    };
+    storage.addNotification(notif);
+    emitNotification(notif);
+    io.emit('compensation_accounts_updated', { user_id: userId });
+
+    res.json({ success: true, account: record, accounts });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -256,21 +256,21 @@ export const LotteryAdminManager: React.FC<LotteryAdminManagerProps> = ({
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[11px] font-bold text-slate-400 block">{isAr ? 'التذاكر المباعة' : 'Tickets Sold'}</span>
           <span className="text-base sm:text-lg font-black text-indigo-600 font-mono">
-            {stats?.totalTicketsSold || allTickets.length}
+            {stats?.totalTicketsSold ?? allTickets.length}
           </span>
         </div>
 
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[11px] font-bold text-slate-400 block">{isAr ? 'إجمالي الجوائز الموزعة' : 'Total Payouts'}</span>
           <span className="text-base sm:text-lg font-black text-emerald-600 font-mono">
-            ${(stats?.totalPrizesPaid || 120).toLocaleString()}
+            ${(stats?.totalPrizesPaid ?? 0).toLocaleString()}
           </span>
         </div>
 
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[11px] font-bold text-slate-400 block">{isAr ? 'تذاكر تكافل معوضة' : 'Solidarity Tickets'}</span>
           <span className="text-base sm:text-lg font-black text-purple-600 font-mono">
-            {stats?.compassionTicketsAwarded || 1420}
+            {stats?.compassionTicketsAwarded ?? 0}
           </span>
         </div>
       </div>
