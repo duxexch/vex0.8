@@ -4353,8 +4353,12 @@ app.post('/api/admin/users/attach-account', (req, res) => {
     if (!/^[A-Z0-9]{5,18}$/.test(accountNumber)) {
       return res.status(400).json({ error: 'رقم الحساب يجب أن يكون من 5 إلى 18 حرفاً أو رقماً.' });
     }
-    const profile = storage.getUserProfile(userId);
-    if (!profile || !profile.user_id) {
+    // getUserProfile() lazily CREATES a stub for any id — check the real list
+    // so an unknown client is rejected instead of silently "registered".
+    const profile = (storage.getUserProfiles() || []).find(
+      (p: any) => p && p.user_id === userId
+    );
+    if (!profile) {
       return res.status(404).json({ error: 'العميل غير مسجَّل في المنصة.' });
     }
     const company = (storage.getCompanies() || []).find((c: any) => c && c.id === companyId);
