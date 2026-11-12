@@ -6014,6 +6014,28 @@ app.get('/api/lottery/status', (req, res) => {
   });
 });
 
+// REAL per-draw counters straight from the server ticket ledger — the client
+// overlays these on its cached draws so fabricated Firestore figures (stale
+// "3454 tickets sold" seeds) can never be shown again.
+app.get('/api/lottery/draw-counts', (_req, res) => {
+  try {
+    const tickets = storage.getLotteryTickets();
+    const counts: Record<string, { ticketsSold: number; participants: number }> = {};
+    const usersByDraw: Record<string, Set<string>> = {};
+    for (const t of tickets) {
+      if (!t || !t.draw_id) continue;
+      const row = counts[t.draw_id] || (counts[t.draw_id] = { ticketsSold: 0, participants: 0 });
+      row.ticketsSold += 1;
+      const set = usersByDraw[t.draw_id] || (usersByDraw[t.draw_id] = new Set());
+      if (t.user_id) set.add(String(t.user_id));
+      row.participants = set.size;
+    }
+    res.json({ success: true, counts });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/lottery/sync-draw', (req, res) => {
   const { drawId, titleAr, titleEn, closeAt, jackpotAmount } = req.body;
   const isNewDraw = drawId && drawId !== serverLotteryState.activeDrawId;

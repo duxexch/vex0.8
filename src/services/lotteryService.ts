@@ -471,6 +471,45 @@ class LotteryService {
     }
   }
 
+  /**
+   * Replace every cached draw's ticketsSoldCount/participantsCount with the
+   * SERVER ticket ledger's real figures (draws absent from the ledger show 0).
+   * Fabricated seed counters (e.g. "3454 sold / 890 participants" with zero
+   * actual tickets) are therefore never displayed. Best-effort: offline the
+   * cached figures simply stay as they are.
+   */
+  private async overlayServerCounts(): Promise<void> {
+    try {
+      const res = await fetch('/api/lottery/draw-counts');
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({} as any));
+      const counts = data?.counts;
+      if (!counts || typeof counts !== 'object') return;
+      for (const d of this.draws) {
+        if (!d?.id) continue;
+        const real = counts[d.id];
+        const ticketsSold = real ? Number(real.ticketsSold) || 0 : 0;
+        const participants = real ? Number(real.participants) || 0 : 0;
+        if (d.ticketsSoldCount !== ticketsSold || d.participantsCount !== participants) {
+          d.ticketsSoldCount = ticketsSold;
+          d.participantsCount = participants;
+          // Heal the Firestore source so every other client sees the truth too.
+          if (db && d.id) {
+            setDoc(
+              doc(db, 'lottery_draws', d.id),
+              { ticketsSoldCount: ticketsSold, participantsCount: participants },
+              { merge: true }
+            ).catch(() => {
+              // best-effort write-back
+            });
+          }
+        }
+      }
+    } catch {
+      // offline — keep cached counters
+    }
+  }
+
   // Get active and past draws
   public async getDraws(): Promise<LotteryDraw[]> {
     this.initData();
@@ -497,6 +536,10 @@ class LotteryService {
               return fixed;
             });
             this.draws = normalized;
+            // Overlay the SERVER ledger's real counters (tickets sold /
+            // participants) — Firestore docs may still carry fabricated seed
+            // figures that no purchase ever backed.
+            await this.overlayServerCounts();
             this.saveDraws();
             if (changedDocs.length > 0 && db) {
               changedDocs.forEach((d) => {
