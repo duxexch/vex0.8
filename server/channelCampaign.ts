@@ -48,9 +48,22 @@ export interface CompanyInfo {
   name: string;
   promo_code?: string;
   affiliate_link?: string;
+  affiliate_link_partner?: string;
   app_link?: string;
   bonus_text?: string;
   is_active?: boolean;
+}
+
+/**
+ * اختر رابط التسجيل المناسب لجمهور المنشور ("بحسب ما يحتاجه المنشور"):
+ * قنوات الوكلاء تحصل على رابط تسجيل البارتنر إن وجد، وباقي القنوات تحصل على
+ * رابط تسجيل اللاعب. يعيد '' عندما لا توجد شركة ليعمل الـ fallback الدوّار.
+ */
+export function registrationLinkFor(c: CompanyInfo | null | undefined, ch?: ChannelProfile | null): string {
+  if (!c) return '';
+  const partner = String(c.affiliate_link_partner || '').trim();
+  if (partner && ch?.category === 'agents') return partner;
+  return String(c.affiliate_link || '').trim();
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -280,7 +293,7 @@ function buildButtons(c: CompanyInfo | null, ch: ChannelProfile, seed: string): 
     // Row 1: full-width registration deep link — red marks it as the primary CTA.
     // The company name inside the label is what makes a dedicated channel's post
     // read as that brand's own promotion.
-    rows.push([{ text: `🏆 ${c.name} سجل واربح الآن 🎁`, url: c.affiliate_link || rotating, style: 'danger' }]);
+    rows.push([{ text: `🏆 ${c.name} سجل واربح الآن 🎁`, url: registrationLinkFor(c, ch) || rotating, style: 'danger' }]);
     // Row 2: one-tap promo-code copy (green) + app download (blue)
     const row2: InlineButton[] = [];
     if (c.promo_code) {
@@ -470,6 +483,7 @@ function enforceLinkAllowlist(text: string, c: CompanyInfo | null): string {
   }).filter(Boolean);
   const exactAllowed = new Set<string>();
   if (c?.affiliate_link) exactAllowed.add(c.affiliate_link);
+  if (c?.affiliate_link_partner) exactAllowed.add(c.affiliate_link_partner);
   if (c?.app_link) exactAllowed.add(c.app_link);
   return text.replace(/https?:\/\/[^\s<>"')]+/g, (u) => {
     const clean = u.replace(/[).,]+$/, '');
@@ -609,7 +623,9 @@ async function adaptPost(
     c
       ? `الشركة المستهدفة: ${c.name}${c.promo_code ? ` — بروموكود: ${c.promo_code}` : ''}${c.bonus_text ? ` — مكافأة: ${c.bonus_text}` : ''}`
       : `اكتب باسم منصة VEX (${rotateSiteLink(seed)}) بأسلوب قناة توقعات عامة.`,
-    c?.affiliate_link ? `رابط التسجيل (يجب إدراجه كما هو): ${c.affiliate_link}` : '',
+    c?.affiliate_link || c?.affiliate_link_partner
+      ? `رابط التسجيل (يجب إدراجه كما هو): ${registrationLinkFor(c, ch) || c.affiliate_link}`
+      : '',
     c?.app_link ? `رابط تحميل التطبيق (يجب إدراجه كما هو): ${c.app_link}` : '',
     coachNote ? `ملاحظة تحسين من مراجعات هذه القناة (طبّقها): ${coachNote}` : '',
     '',

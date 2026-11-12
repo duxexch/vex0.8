@@ -223,6 +223,7 @@ export function autoTranslateCompany(input: Partial<Company>): Company {
     is_active: input.is_active !== undefined ? input.is_active : true,
     promo_code: (input.promo_code || 'vexdeals').trim(),
     affiliate_link: input.affiliate_link || `https://${name.toLowerCase()}.com`,
+    ...(input.affiliate_link_partner ? { affiliate_link_partner: input.affiliate_link_partner } : {}),
     app_link: input.app_link || `https://${name.toLowerCase()}.com/app`,
     color: input.color || '#0d579b',
     show_in_comp: input.show_in_comp !== undefined ? input.show_in_comp : true,

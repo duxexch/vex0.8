@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { channelsStore, ChannelProfile } from './channelsStore';
-import { resolveCompany, rotateSiteLink, type CompanyInfo } from './channelCampaign';
+import { resolveCompany, rotateSiteLink, registrationLinkFor, type CompanyInfo } from './channelCampaign';
 import { sendTelegram } from './agentPipeline';
 import { getOfferForCompany, type CompanyOffer } from './offerScraper';
 
@@ -71,7 +71,10 @@ interface NicheCtx {
   ch: ChannelProfile;
   company: string;
   code: string;
+  /** رابط تسجيل اللاعب — منشورات اللاعبين والعروض. */
   link: string;
+  /** رابط تسجيل البارتنر — منشورات الوكلاء فقط (يعود إلى link عند غيابه). */
+  partnerLink: string;
   app: string;
   /** عرض الشركة الزاحف من offerScraper (أو العرض الثابت) — قد يكون null. */
   offer: CompanyOffer | null;
@@ -85,6 +88,7 @@ function buildCtx(ch: ChannelProfile): NicheCtx {
     company: c?.name?.trim() || 'VEX Deals',
     code: String(c?.promo_code || '').trim(),
     link,
+    partnerLink: String(registrationLinkFor(c, ch) || '').trim() || link,
     app: String(c?.app_link || '').trim(),
     offer: c ? getOfferForCompany(c.name) : null,
   };
@@ -111,7 +115,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '• رد سريع على أي استفسار',
     '',
     'شغّل رابطك من هنا:',
-    x.link,
+    x.partnerLink,
     codeLine(x),
   ].filter((l) => l !== '').join('\n'),
 
@@ -126,7 +130,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '• اسأل عن شروط العمولة الحالية في الرسائل',
     '',
     'رابطك:',
-    x.link,
+    x.partnerLink,
     codeLine(x),
   ].filter((l) => l !== '').join('\n'),
 
@@ -139,7 +143,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '• راسلنا لأي متابعة أو توضيح',
     '',
     'الخطوة الأولى:',
-    x.link,
+    x.partnerLink,
     codeLine(x),
   ].filter((l) => l !== '').join('\n'),
 
@@ -154,7 +158,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '• إجابة جاهزة على أشهر اعتراض',
     '',
     'خذ رابطك وابدأ:',
-    x.link,
+    x.partnerLink,
     codeLine(x),
   ].filter((l) => l !== '').join('\n'),
 
@@ -167,7 +171,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '• كرّر المنشور كل فترة بدل مرة واحدة فقط',
     '',
     'جرّب الآن:',
-    x.link,
+    x.partnerLink,
     codeLine(x),
   ].filter((l) => l !== '').join('\n'),
 
@@ -178,7 +182,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '',
     'معاك فرصة تسجيل في ' + x.company + '.',
     'التسجيل بالرابط ده:' ,
-    x.link,
+    x.partnerLink,
     codeLine(x),
     '',
     '• أرسلها لمن يهتم بالرياضة فقط',
@@ -197,7 +201,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '• لا تشارك بيانات حسابك مع أي طرف',
     '',
     'التواصل:',
-    x.link,
+    x.partnerLink,
   ].filter((l) => l !== '').join('\n'),
 
   (x) => [
@@ -209,7 +213,7 @@ const AGENT_TEMPLATES: TemplateFn[] = [
     '• راجع النتيجة بعد أسبوع كامل',
     '',
     'ابدأ من:',
-    x.link,
+    x.partnerLink,
     codeLine(x),
   ].filter((l) => l !== '').join('\n'),
 ];
@@ -333,7 +337,7 @@ const AGENT_TEMPLATES_EN: TemplateFn[] = [  (x) => [
     '• Fast answers to any question',
     '',
     'Start here:',
-    x.link,
+    x.partnerLink,
     x.code ? `Code: \`${x.code}\`` : '',
   ].filter((l) => l !== '').join('\n'),
   (x) => [
@@ -344,7 +348,7 @@ const AGENT_TEMPLATES_EN: TemplateFn[] = [  (x) => [
     '• Answer questions quickly — signup gets easier',
     '• Repost over time instead of once only',
     '',
-    x.link,
+    x.partnerLink,
     x.code ? `Code: \`${x.code}\`` : '',
   ].filter((l) => l !== '').join('\n'),
 ];
@@ -435,7 +439,7 @@ const OFFER_TEMPLATES: TemplateFn[] = [
     '• أرفق الكود بجانب الرابط دائمًا',
     '',
     'رابطك:',
-    x.link,
+    x.partnerLink,
     x.code ? `كود التسجيل: \`${x.code}\`` : '',
   ].filter((l) => l !== '').join('\n'),
 

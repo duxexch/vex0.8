@@ -84,7 +84,11 @@ export interface Company {
   icon?: string;
   logo_url?: string;
   address?: string;
+  /** رابط التسجيل الافتراضي (لاعب/Player) — يُستخدم في منشورات اللاعبين. */
   affiliate_link: string;
+  /** رابط تسجيل الوكيل/البارتنر (اختياري) — يُستخدم في منشورات الوكلاء فقط. */
+  affiliate_link_partner?: string;
+  /** رابط تحميل التطبيق/الـ APK. */
   app_link: string;
   bot_icon?: string;
   promo_code: string;

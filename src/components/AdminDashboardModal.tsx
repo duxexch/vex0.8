@@ -343,6 +343,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     name: '',
     promo_code: '',
     affiliate_link: '',
+    affiliate_link_partner: '',
     app_link: '',
     description: '',
     color: '#0d579b',
@@ -1292,6 +1293,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       show_in_comp: true,
       promo_code: newCompany.promo_code.trim(),
       affiliate_link: newCompany.affiliate_link?.trim() || `https://${newCompany.name.toLowerCase()}.com`,
+      ...(newCompany.affiliate_link_partner?.trim()
+        ? { affiliate_link_partner: newCompany.affiliate_link_partner.trim() }
+        : {}),
       app_link: newCompany.app_link?.trim() || `https://${newCompany.name.toLowerCase()}.com/mobile`,
       description: newCompany.description?.trim() || `شركة مراهنات رياضية شريكة`,
       color: newCompany.color || '#0d579b',
@@ -1348,6 +1352,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       name: '',
       promo_code: '',
       affiliate_link: '',
+      affiliate_link_partner: '',
       app_link: '',
       description: '',
       color: '#0d579b',
@@ -2366,6 +2371,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
                         <div>
                           <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            {t('رابط تسجيل الوكيل/البارتنر (اختياري):', 'Partner Registration Link (optional):', 'Партнёрская ссылка регистрации (необязательно):')}
+                          </label>
+                          <input
+                            type="url"
+                            value={newCompany.affiliate_link_partner || ''}
+                            onChange={(e) => setNewCompany({ ...newCompany, affiliate_link_partner: e.target.value })}
+                            placeholder="https://partner.example.com/register"
+                            className="w-full px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                             {t('رابط تحميل التطبيق والـ APK:', 'App/APK Download Link:', 'Ссылка на скачивание приложения/APK:')}
                           </label>
                           <input
@@ -2896,6 +2914,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                       onChange={(e) =>
                                         setEditingCompany({ ...activeComp, affiliate_link: e.target.value })
                                       }
+                                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-[11px]"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                      {t('رابط تسجيل الوكيل/البارتنر (اختياري):', 'Partner Registration Link (optional):', 'Партнёрская ссылка регистрации (необязательно):')}
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={activeComp.affiliate_link_partner || ''}
+                                      onChange={(e) =>
+                                        setEditingCompany({ ...activeComp, affiliate_link_partner: e.target.value })
+                                      }
+                                      dir="ltr"
+                                      placeholder="https://partner.example.com/register"
                                       className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-[11px]"
                                     />
                                   </div>
