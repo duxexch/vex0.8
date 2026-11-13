@@ -4,6 +4,7 @@ import { channelsStore, ChannelProfile } from './channelsStore';
 import { channelBrandCompany } from './channelCampaign';
 import { BOT_PROMO_DOMAINS } from './botPromo';
 import { storage } from './storage';
+import { alignPromoCodes, promoCodeFor, distinctPromoCodes } from './promoCodes';
 
 // =========================================================================
 // 🛡 بوابة الرقيب — POST SENTRY
@@ -296,8 +297,14 @@ function escapeRe(s: string): string {
  * «🔥 Betjam … 🌐 betjam.sbs» (the exact complaint we fixed here).
  * Body brand mentions (e.g. «🏆 MOSTBET —» on a card ABOUT MOSTBET) are
  * content, not channel branding, and are left untouched.
+ *
+ * The promo CODE follows the same rule (`named` = brands named in the post):
+ * a generic promo carrying «vexwallet» (1XBET) that lands in the BIZBET
+ * channel would advertise a code that doesn't work there — it is rewritten to
+ * the receiving brand's own code (or the single brand the post is about),
+ * and dropped when no real code can be attributed.
  */
-function adaptForTarget(text: string, from: ChannelProfile, to: ChannelProfile): string {
+export function adaptForTarget(text: string, from: ChannelProfile, to: ChannelProfile, named: string[] = []): string {
   let out = swapSignature(text, from, to);
 
   const fromTitle = String(from.title || '').trim();
@@ -321,6 +328,25 @@ function adaptForTarget(text: string, from: ChannelProfile, to: ChannelProfile):
         .replace(/\n{3,}/g, '\n\n')
         .trimEnd();
     }
+  }
+
+  // 🏷 Promo code must belong to the receiving brand (see docblock above).
+  try {
+    const companies = storage.getCompanies();
+    const toCo = channelBrandCompany(to);
+    const namedList = (named || []).map((s) => String(s || '').trim()).filter(Boolean);
+    // No signal at all (unnamed post → neutral channel): keep the code as-is.
+    if (namedList.length || toCo) {
+      const ownCode = toCo ? promoCodeFor(toCo, companies) : '';
+      const allowed = distinctPromoCodes(
+        [...namedList.map((n) => ({ promo_code: promoCodeFor(n, companies) })), { promo_code: ownCode }]
+      );
+      // Receiving brand's code first, else the single brand the post names.
+      const fallback = ownCode || (namedList.length === 1 ? promoCodeFor(namedList[0], companies) : '');
+      out = alignPromoCodes(out, { allowed, fallback, known: distinctPromoCodes(companies) });
+    }
+  } catch {
+    /* never block the reroute on code hygiene */
   }
   return out;
 }
@@ -419,7 +445,7 @@ export function sentryGate(chatId: string, text: string, opts?: { niche?: boolea
         `[Sentry] ⚠ mis-targeted but no alternative → ${ch.title}: ${issues.join(' | ')}`
       );
     }
-    const finalText = alt ? adaptForTarget(text, ch, alt) : text;
+    const finalText = alt ? adaptForTarget(text, ch, alt, verdict.companies) : text;
     return { chatId: alt ? alt.chat_id : chatId, text: finalText, corrected: Boolean(alt), issues, verdict };
   } catch (err: any) {
     console.warn('[Sentry] gate error (send continues):', err?.message);

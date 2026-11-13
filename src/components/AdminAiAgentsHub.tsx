@@ -1998,9 +1998,9 @@ export const AdminAiAgentsHub: React.FC<AdminAiAgentsHubProps> = ({ lang }) => {
                       { id: '1xbet', name: '1XBET', code: 'vexwallet', bonus: '130% بونص' },
                       { id: 'melbet', name: 'MELBET', code: 'ml_3154096', bonus: '100% ترحيبي' },
                       { id: 'betjam', name: 'BETJAM', code: 'VEDO2002', bonus: 'كاش باك ملكي' },
-                      { id: 'mostbet', name: 'MOSTBET', code: 'vedo2002', bonus: '125% بونص' },
+                      { id: 'mostbet', name: 'MOSTBET', code: 'VEDO2002', bonus: '125% بونص' },
                       { id: 'xpari', name: 'XPARI', code: 'vedo2002', bonus: 'كاش باك فوري' },
-                      { id: 'bizbet', name: 'BIZBET', code: 'bi_9258', bonus: 'سحوبات أسبوعية' },
+                      { id: 'bizbet', name: 'BIZBET', code: 'bi_9274', bonus: 'سحوبات أسبوعية' },
                     ].map((comp) => {
                       const isSelected = selectedCompanyId === comp.id || selectedCompanyId.toLowerCase().includes(comp.id);
                       return (

@@ -216,12 +216,12 @@ Responsible Gaming: 18+ only. Self-exclusion and support links available inside 
 }
 
 export const PRECOMPUTED_COMPANY_ASO: Record<string, CompanyAsoSuite> = {
-  CMP1XB001: generateCompanyAsoSuite('CMP1XB001', '1XBET', 'vexwallet', 'https://reffpa.com/L?tag=d_5955825m_2528c_&site=5955825&ad=2528'),
-  CMPMLB002: generateCompanyAsoSuite('CMPMLB002', 'MELBET', 'ml_3154096', 'https://refpa3665.com/L?tag=d_5074314m_70867c_&site=5074314&ad=70867'),
+  CMP1XB001: generateCompanyAsoSuite('CMP1XB001', '1XBET', 'vexwallet', 'https://refpa-78460.com/L?tag=d_5955825m_45361c_&site=5955825&ad=45361'),
+  CMPMLB002: generateCompanyAsoSuite('CMPMLB002', 'MELBET', 'ml_3154096', 'https://refpa3665.com/L?tag=d_5074314m_126661c_&site=5074314&ad=126661&r=app'),
   CMPBJ003: generateCompanyAsoSuite('CMPBJ003', 'BETJAM', 'VEDO2002', 'https://refpa5124.com/L?tag=d_5089740m_97988c_&site=5089740&ad=97988'),
-  CMPMB004: generateCompanyAsoSuite('CMPMB004', 'MOSTBET', 'vedo2002', 'https://vgfiiimb.com/68fU'),
+  CMPMB004: generateCompanyAsoSuite('CMPMB004', 'MOSTBET', 'VEDO2002', 'https://jwcwec.com/68fU'),
   CMPXP005: generateCompanyAsoSuite('CMPXP005', 'XPARI', 'vedo2002', 'https://xp-aff.com/L?tag=d_5912007m_71587c_apk1&site=5912007&ad=71587'),
-  CMPBB006: generateCompanyAsoSuite('CMPBB006', 'BIZBET', 'bi_9258', 'https://refpa83754.com/L?tag=d_5749248m_67005c_&site=5749248&ad=67005'),
+  CMPBB006: generateCompanyAsoSuite('CMPBB006', 'BIZBET', 'bi_9274', 'https://refpa83754.com/L?tag=d_5749248m_67005c_&site=5749248&ad=67005'),
   CMPLB007: generateCompanyAsoSuite('CMPLB007', 'LINEBET', 'VEDO2002', 'https://lb-aff.com/L?tag=d_5911847m_66803c_apk1&site=5911847&ad=66803'),
-  CMPGB008: generateCompanyAsoSuite('CMPGB008', 'GOOOBET', 'Vex', 'https://gooobetaffiliate.com/L?tag=d_4531176m_109867c_&site=4531176&ad=109867'),
+  CMPGB008: generateCompanyAsoSuite('CMPGB008', 'GOOOBET', 'Vex', 'http://refgo365.com/L?tag=d_4531176m_109867c_&site=4531176&ad=109867'),
 };

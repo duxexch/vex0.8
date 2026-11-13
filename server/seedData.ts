@@ -514,8 +514,8 @@ export const DEFAULT_APP_BRANDING = {
   companyCustomWebsites: {
     'CMP1XB001': {
       promoCode: 'vexwallet',
-      affiliateLink: 'https://reffpa.com/L?tag=d_5955825m_45361c_&site=5955825&ad=45361',
-      appDownloadLink: 'https://reffpa.com/L?tag=d_5955825m_2528c_&site=5955825&ad=2528',
+      affiliateLink: 'https://refpa-78460.com/L?tag=d_5955825m_1573c_&site=5955825&ad=1573',
+      appDownloadLink: 'https://refpa-78460.com/L?tag=d_5955825m_45361c_&site=5955825&ad=45361',
       sections: {
         overview: {
           titleAr: 'الوكالة الحصرية الرسمية لمنصة وان إكس بت (1XBET)',
@@ -539,8 +539,8 @@ export const DEFAULT_APP_BRANDING = {
     },
     'CMPMLB002': {
       promoCode: 'ml_3154096',
-      affiliateLink: 'https://melbetegypt.com/en?tag=d_5074314m_59685c_',
-      appDownloadLink: 'https://refpa3665.com/L?tag=d_5074314m_70867c_&site=5074314&ad=70867',
+      affiliateLink: 'https://refpa3665.com/L?tag=d_5074314m_66329c_&site=5074314&ad=66329',
+      appDownloadLink: 'https://refpa3665.com/L?tag=d_5074314m_126661c_&site=5074314&ad=126661&r=app',
       sections: {
         overview: {
           titleAr: 'الشراكة الرسمية لميلبيت (MELBET)',

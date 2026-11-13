@@ -123,12 +123,12 @@ export const COMPANY_THEMES: Record<string, BrandThemeConfig> = {
     heroBadgeAr: 'تطبيق النجوم المعتمد لـ MOSTBET',
     heroBadgeEn: 'MOSTBET Certified Star Rewards',
     exclusivePerksAr: [
-      'بونص ترحيبي قياسي يصل لـ 125% مع كود (vedo2002)',
+      'بونص ترحيبي قياسي يصل لـ 125% مع كود (VEDO2002)',
       'سحب فوري بدون تأخير لجميع المحافظ الإلكترونية والعملات الرقمية',
       'تأمين كامل على الرهانات الرياضية المجمعة (Acca Insurance)',
     ],
     exclusivePerksEn: [
-      'Record 125% Welcome Bonus with promo code (vedo2002)',
+      'Record 125% Welcome Bonus with promo code (VEDO2002)',
       'Instant payout processing to all local and crypto e-wallets',
       'Accumulator bet insurance and comprehensive loss coverage',
     ],
@@ -180,12 +180,12 @@ export const COMPANY_THEMES: Record<string, BrandThemeConfig> = {
     heroBadgeEn: 'BIZBET Verified Player Loyalty System',
     exclusivePerksAr: [
       'تشفير بنكي عالي الأمان لحماية حسابات اللاعبين',
-      'كود حصري (bi_9258) يتيح الدخول التلقائي في سحوبات أسبوعية',
+      'كود حصري (bi_9274) يتيح الدخول التلقائي في سحوبات أسبوعية',
       'دعم مباشر على مدار 24 ساعة وسرعة معالجة استثنائية',
     ],
     exclusivePerksEn: [
       'Bank-grade encryption guarding member balances and payouts',
-      'Exclusive promo (bi_9258) enabling automatic VIP prize entries',
+      'Exclusive promo (bi_9274) enabling automatic VIP prize entries',
       '24/7 dedicated support with instantaneous claim handling',
     ],
   },

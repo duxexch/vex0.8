@@ -417,11 +417,14 @@ async function resolveSourceImage(source: SourcePost | null | undefined): Promis
 
 // ------------------------------------------------------------- adaptation
 
-function stripSourceLinks(text: string): string {
-  return text
-    .replace(/https?:\/\/\S+/g, '')
-    .replace(/CODE\s*POMO\s*:?\s*\S*/gi, '')
-    .replace(/code\s*promo\s*:?\s*\S*/gi, '')
+function stripSourceLinks(text: string, realCode?: string): string {
+  const noUrls = text.replace(/https?:\/\/\S+/g, '');
+  // Whole-line promo cleanup FIRST (while the label is still intact): a line
+  // that talks about a promo code we don't own is dropped entirely — stripping
+  // only the label («PRMO CODE 🔶:») used to orphan the token («ARX2») where
+  // no later check could recognise it. Lines carrying the real code survive.
+  const noBogus = removeBogusPromoLines(noUrls, realCode);
+  return noBogus
     .replace(/YEXD\d*/g, '')
     .replace(/[ \t]+/gm, ' ')
     .replace(/\n[ \t]+\n/g, '\n\n')
@@ -462,8 +465,12 @@ function removeBogusPromoLines(text: string, realCode?: string): string {
     .split('\n')
     .filter((line) => {
       const norm = line.replace(/[\u0640\u064B-\u065F]/g, '');
+      // Every code label seen in the wild (AR/EN, correct + misspelled): «كود برومو»,
+      // «كود الهدية»، «الرمز الترويجي»، «البرومو كود»، "PRMO CODE" (typo), "CODE PROMO"…
       const mentionsPromo =
-        /الرمز الترويجي|كود\s*(الخصم|ترويجي|حصري|حصرى)|promo\s*code|promo\s*:|code\s*pomo/i.test(norm);
+        /الرمز\s*الترويجي|البرومو\s*كود|كود\s*(الخصم|ترويجي|برومو|الهدية|التسجيل|الخاص|حصري|حصرى)|(?:promo|pomo|prmo)\s*code|code\s*(?:promo|pomo|prmo)|promo\s*:/i.test(
+          norm
+        );
       if (!mentionsPromo) return true;
       return Boolean(realCode && norm.toUpperCase().includes(realCode.toUpperCase()));
     })
@@ -497,8 +504,8 @@ function enforceLinkAllowlist(text: string, c: CompanyInfo | null): string {
   });
 }
 
-function fallbackAdapt(source: string, c: CompanyInfo | null, seed = 's'): string {
-  let base = stripSourceLinks(source);
+export function fallbackAdapt(source: string, c: CompanyInfo | null, seed = 's'): string {
+  let base = stripSourceLinks(source, c?.promo_code);
   // rebrand: source posts promote their own bookmaker — swap foreign brand names
   const target = (c?.name || 'VEX').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const other of loadCompanies()) {
@@ -527,17 +534,17 @@ function fallbackAdapt(source: string, c: CompanyInfo | null, seed = 's'): strin
  * the rewrite entirely (fall back to the safe template) if it still promotes a
  * different betting company than the target one.
  */
-function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null, seed = 's'): string | null {
+export function sanitizeAdapted(text: string, source: SourcePost, c: CompanyInfo | null, seed = 's'): string | null {
   let out = text;
   // remove every URL that literally appears in the source post
   for (const u of source.text.match(/https?:\/\/[^\s<>"']+/g) || []) {
     out = out.split(u).join('');
   }
-  // remove the source channel's promo codes and any leftover code line
+  // remove the source channel's promo tag; the LABEL lines themselves are left
+  // intact for removeBogusPromoLines() below — stripping only «PRMO CODE 🔶:»
+  // here used to orphan the bare token («ARX2») where nothing could match it.
   out = out
     .replace(/YEXD\d*/gi, '')
-    .replace(/CODE\s*PROM[OA]\s*:?\s*\S*/gi, '')
-    .replace(/code\s*promo\s*:?\s*\S*/gi, '')
     .replace(/[ \t]+/gm, ' ')
     .replace(/\n[ \t]+\n/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n')

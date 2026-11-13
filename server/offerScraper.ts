@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Browser, Page } from 'playwright-core';
 import { launchBrowser, newPage } from './browser';
+import { alignPromoCodes, distinctPromoCodes } from './promoCodes';
 
 // =========================================================================
 // Company offer scraper — زحف مواقع الشركات (روابط الإفيليت) لاستخراج
@@ -128,6 +129,21 @@ function clean(text: string): string {
 }
 
 /**
+ * أي كود يظهر في نص العرض (منسوخ من صفحة الشركة أو من ملف قديم) يجب أن يكون
+ * كود هذه الشركة تحديدًا — غير ذلك يُستبدل بكودها الحقيقي أو يُحذف.
+ * Scanned pages and stale store files both carry OLD/foreign codes (bi_9258,
+ * QNT7…) that niche templates would otherwise publish verbatim.
+ */
+function ownCodeOnly(text: string, promo: string, companies: RawCompany[]): string {
+  if (!text) return text;
+  return alignPromoCodes(text, {
+    allowed: promo ? [promo] : [],
+    fallback: promo,
+    known: distinctPromoCodes(companies),
+  });
+}
+
+/**
  * يزور صفحة الشركة ويستخرج نصوصًا تشبه العروض:
  * عناوين (h1-h3) + عناصر بها كلمات مفتاحية + meta description.
  * يعيد حتى 5 نصوص مطابقة (الأول = العنوان، الأنسب = التفاصيل).
@@ -160,13 +176,15 @@ async function extractOfferFromPage(page: Page): Promise<{ headline: string; det
 // ------------------------------------------------------------------ scraping
 
 function staticFallback(c: RawCompany): CompanyOffer {
+  const promo = String(c.promo_code || '').trim();
+  const all = loadCompanies();
   return {
     companyId: c.id,
     name: c.name,
-    headline: clean(c.badge) || clean(c.bonus_text) || `عرض ${c.name}`,
-    details: clean(c.details),
-    bonus: clean(c.bonus_text) || clean(c.badge),
-    promoCode: String(c.promo_code || '').trim(),
+    headline: ownCodeOnly(clean(c.badge) || clean(c.bonus_text) || `عرض ${c.name}`, promo, all),
+    details: ownCodeOnly(clean(c.details), promo, all),
+    bonus: ownCodeOnly(clean(c.bonus_text) || clean(c.badge), promo, all),
+    promoCode: promo,
     affiliateLink: String(c.affiliate_link || '').trim(),
     source: 'static',
     url: String(c.affiliate_link || c.app_link || '').trim(),
@@ -185,13 +203,15 @@ async function scrapeOne(browser: Browser, c: RawCompany): Promise<CompanyOffer>
     await page.waitForTimeout(2500);
     const found = await extractOfferFromPage(page);
     if (found && found.headline.length >= 8) {
+      const promo = String(c.promo_code || '').trim();
+      const all = loadCompanies();
       return {
         companyId: c.id,
         name: c.name,
-        headline: found.headline,
-        details: found.details,
-        bonus: clean(c.bonus_text) || found.headline,
-        promoCode: String(c.promo_code || '').trim(),
+        headline: ownCodeOnly(found.headline, promo, all),
+        details: ownCodeOnly(found.details, promo, all),
+        bonus: ownCodeOnly(clean(c.bonus_text) || found.headline, promo, all),
+        promoCode: promo,
         affiliateLink: String(c.affiliate_link || '').trim(),
         source: 'scraped',
         url: page.url(),
