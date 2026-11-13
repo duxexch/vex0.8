@@ -1,7 +1,7 @@
 // Domain profiles translated for all 8 languages
 // brand + focus stay in server.ts (domain identity constants)
 
-export type ProfileText = { tagline: string; description: string; intro: string; h1: string };
+export type ProfileText = { tagline: string; description: string; intro: string; h1: string; partner?: string };
 
 export const PROFILES: Record<string, Record<string, ProfileText>> = {
   'vex.deals': {
@@ -60,48 +60,56 @@ export const PROFILES: Record<string, Record<string, ProfileText>> = {
       description: 'BetJam متخصص في استرداد خسائر المراهنات واسترجاع النسب النقدية من شركات المراهنات التي يغطّيها.',
       intro: 'BetJam يساعدك على استعادة جزء من خسائرك عبر طلبات استرداد نقدي مباشرة، مع متابعة لحظية لأرصدة حساباتك في شركات المراهنات وتحويلات إلى محفظتك.',
       h1: 'BetJam — استرداد خسائر المراهنات والنقد المسترد',
+      partner: 'هذه الصفحة الرسمية لبرنامج شراكة BetJam على نطاقنا المخصص betjam.sbs: سجّل كوكيل، احصل على روابطك الخاصة للاعبين، واربح عمولات على كل لاعب تجلبه مع حماية خسائر فورية.',
     },
     en: {
       tagline: 'Betting Loss Recovery Center',
       description: 'BetJam specializes in recovering betting losses and reclaiming cashback percentages from betting companies.',
       intro: 'BetJam helps you recover part of your losses through direct cashback claims, with live tracking of your balances across betting companies and transfers to your wallet.',
       h1: 'BetJam — Betting Loss Recovery & Cashback',
+      partner: 'The official BetJam partner program page on our dedicated betjam.sbs domain: register as an agent, get your own player links, and earn commissions on every player you refer with instant loss protection.',
     },
     es: {
       tagline: 'Centro de recuperación de pérdidas de apuestas',
       description: 'BetJam se especializa en recuperar pérdidas de apuestas y porcentajes de reembolso de casas de apuestas.',
       intro: 'BetJam te ayuda a recuperar parte de tus pérdidas con solicitudes de reembolso directas, seguimiento en vivo de tus saldos y transferencias a tu cartera.',
       h1: 'BetJam — recuperación de pérdidas y cashback de apuestas',
+      partner: 'La página oficial del programa de socios de BetJam en nuestro dominio dedicado betjam.sbs: regístrate como agente, obtén tus enlaces de jugadores y gana comisiones por cada jugador con protección de pérdidas instantánea.',
     },
     ru: {
       tagline: 'Центр возмещения проигрышей ставок',
       description: 'BetJam специализируется на возврате проигрышей ставок и кэшбэка от букмекеров.',
       intro: 'BetJam помогает вернуть часть проигрышей через прямые запросы на кэшбэк, с отслеживанием балансов в реальном времени и переводами на кошелёк.',
       h1: 'BetJam — возврат проигрышей и кэшбэк ставок',
+      partner: 'Официальная страница партнёрской программы BetJam на выделенном домене betjam.sbs: зарегистрируйтесь как агент, получите свои ссылки для игроков и получайте комиссии за каждого игрока с мгновенной защитой от потерь.',
     },
     fr: {
       tagline: 'Centre de récupération des pertes de paris',
       description: 'BetJam est spécialisé dans la récupération des pertes de paris et des pourcentages de cashback auprès de bookmakers.',
       intro: 'BetJam vous aide à récupérer une partie de vos pertes via des demandes de cashback directes, avec suivi en direct de vos soldes et transferts vers votre portefeuille.',
       h1: 'BetJam — récupération des pertes et cashback de paris',
+      partner: 'La page officielle du programme de partenaires BetJam sur notre domaine dédié betjam.sbs : inscrivez-vous comme agent, obtenez vos liens joueurs et touchez des commissions sur chaque joueur avec protection instantanée des pertes.',
     },
     de: {
       tagline: 'Zentrale zur Rückgewinnung von Wettverlusten',
       description: 'BetJam ist auf die Rückforderung von Wettverlusten und Cashback-Prozenten bei Anbietern spezialisiert.',
       intro: 'BetJam hilft Ihnen, einen Teil Ihrer Verluste über direkte Cashback-Anträge zurückzugewinnen – mit Live-Tracking Ihrer Guthaben und Überweisungen auf Ihr Wallet.',
       h1: 'BetJam — Wettverlust-Rückgewinnung und Cashback',
+      partner: 'Die offizielle BetJam-Partnerprogramm-Seite auf unserer eigenen Domain betjam.sbs: Registrieren Sie sich als Agent, erhalten Sie Ihre eigenen Spielerlinks und verdienen Sie Provisionen für jeden Spieler mit sofortigem Verlustschutz.',
     },
     tr: {
       tagline: 'Bahis Kayıp Geri Kazanım Merkezi',
       description: 'BetJam; bahis şirketlerinden kayıp ve nakit iade yüzdesi geri kazanımında uzmanlaşmıştır.',
       intro: 'BetJam; doğrudan nakit iade talepleriyle kayıplarınızın bir kısmını geri kazanmanıza yardımcı olur — bakiyelerinizi canlı takip eder ve cüzdanınıza transfer eder.',
       h1: 'BetJam — bahis kayıp geri kazanımı ve nakit iade',
+      partner: 'BetJam ortaklık programının resmi sayfası özel alan adımız betjam.sbs üzerinde: ajan olarak kaydolun, kendi oyuncu bağlantılarınızı alın ve anlık kayıp korumasıyla getirdiğiniz her oyuncu için komisyon kazanın.',
     },
     pt: {
       tagline: 'Central de recuperação de perdas em apostas',
       description: 'BetJam especializa-se em recuperar perdas de apostas e percentuais de cashback de casas de apostas.',
       intro: 'BetJam ajuda você a recuperar parte das perdas com solicitações diretas de cashback, acompanhamento ao vivo dos saldos e transferências para sua carteira.',
       h1: 'BetJam — recuperação de perdas e cashback de apostas',
+      partner: 'A página oficial do programa de parceiros da BetJam no nosso domínio dedicado betjam.sbs: registre-se como agente, receba seus próprios links de jogadores e ganhe comissões por cada jogador com proteção de perdas instantânea.',
     },
   },
   '1xbetservices.com': {
@@ -110,48 +118,56 @@ export const PROFILES: Record<string, Record<string, ProfileText>> = {
       description: 'دليل شامل لخدمات 1xBet: أكواد الخصم، الدعم الفني، تحميل التطبيق، وأكواد الإحالة.',
       intro: '1xBet Services هو دليلك الشامل لكل ما يتعلق بـ 1xBet: أحدث أكواد الخصم والبونص الترحيبي، حلول الدعم الفني، روابط تحميل التطبيق APK، وشرح نظام الإحالات والأرباح.',
       h1: '1xBet Services — الدليل الشامل لخدمات 1xBet',
+      partner: 'هذه الصفحة الرسمية لبرنامج شراكة ووكلاء 1xBet على نطاقنا المخصص 1xbetservices.com: سجّل كوكيل، احصل على روابطك الخاصة للاعبين والوكالات، واربح عمولات مع دعم تعويض الخسائر المدمج.',
     },
     en: {
       tagline: 'The Complete 1xBet Services & Support Guide',
       description: 'A complete guide to 1xBet services: promo codes, customer support, app download, and referral codes.',
       intro: '1xBet Services is your complete guide to everything about 1xBet: the latest promo codes and welcome bonuses, customer support solutions, APK download links, and a full explanation of the referral and earnings system.',
       h1: '1xBet Services — The Complete 1xBet Services Guide',
+      partner: 'The official 1xBet agency and partner program page on our dedicated 1xbetservices.com domain: register as an agent, get your own player and agent links, and earn commissions with built-in loss-compensation support.',
     },
     es: {
       tagline: 'Guía completa de servicios y soporte de 1xBet',
       description: 'Guía completa de los servicios de 1xBet: códigos promocionales, soporte, descarga de la app y códigos de referidos.',
       intro: '1xBet Services es tu guía completa de todo sobre 1xBet: los últimos códigos promocionales, soluciones de soporte, enlaces de descarga APK y una explicación completa del sistema de referidos y ganancias.',
       h1: '1xBet Services — guía completa de servicios de 1xBet',
+      partner: 'La página oficial del programa de socios y agentes de 1xBet en nuestro dominio dedicado 1xbetservices.com: regístrate como agente, obtén tus enlaces de jugadores y agentes y gana comisiones con soporte de compensación de pérdidas.',
     },
     ru: {
       tagline: 'Полное руководство по сервисам и поддержке 1xBet',
       description: 'Полное руководство по сервисам 1xBet: промокоды, поддержка, скачивание приложения и реферальные коды.',
       intro: '1xBet Services — ваше полное руководство по всему, что связано с 1xBet: актуальные промокоды и бонусы, решения поддержки, ссылки на APK и подробное описание реферальной системы и заработка.',
       h1: '1xBet Services — полное руководство по сервисам 1xBet',
+      partner: 'Официальная страница партнёрской программы и агентства 1xBet на выделенном домене 1xbetservices.com: зарегистрируйтесь как агент, получите свои ссылки для игроков и получайте комиссии с поддержкой компенсации потерь.',
     },
     fr: {
       tagline: 'Le guide complet des services et du support 1xBet',
       description: 'Guide complet des services 1xBet : codes promo, support, téléchargement de l’app et codes de parrainage.',
       intro: '1xBet Services est votre guide complet sur tout ce qui concerne 1xBet : derniers codes promo et bonus de bienvenue, solutions de support, liens de téléchargement APK et explication complète du système de parrainage et de gains.',
       h1: '1xBet Services — le guide complet des services 1xBet',
+      partner: 'La page officielle du programme de partenaires et d’agence 1xBet sur notre domaine dédié 1xbetservices.com : inscrivez-vous comme agent, obtenez vos liens joueurs et agents et touchez des commissions avec le soutien à l’indemnisation des pertes.',
     },
     de: {
       tagline: 'Der vollständige 1xBet-Service- und Supportleitfaden',
       description: 'Ein vollständiger Leitfaden zu 1xBet-Services: Aktionscodes, Support, App-Download und Empfehlungscodes.',
       intro: '1xBet Services ist Ihr vollständiger Leitfaden zu allem rund um 1xBet: die neuesten Aktionscodes und Willkommensboni, Support-Lösungen, APK-Download-Links und eine vollständige Erklärung des Empfehlungs- und Verdienstsystems.',
       h1: '1xBet Services — der vollständige 1xBet-Serviceleitfaden',
+      partner: 'Die offizielle 1xBet-Agentur- und Partnerprogramm-Seite auf unserer eigenen Domain 1xbetservices.com: Registrieren Sie sich als Agent, erhalten Sie Ihre eigenen Spieler- und Agentenlinks und verdienen Sie Provisionen mit integrierter Verlustersatz-Unterstützung.',
     },
     tr: {
       tagline: 'Kapsamlı 1xBet Hizmet ve Destek Rehberi',
       description: '1xBet hizmetleri için kapsamlı rehber: promosyon kodları, destek, uygulama indirme ve referans kodları.',
       intro: '1xBet Services; 1xBet ile ilgili her şey için kapsamlı rehberiniz: en son promosyon kodları ve hoş geldin bonusları, destek çözümleri, APK indirme bağlantıları ve referans/kazanç sisteminin tam açıklaması.',
       h1: '1xBet Services — kapsamlı 1xBet hizmet rehberi',
+      partner: '1xBet ajanlık ve ortaklık programının resmi sayfası özel alan adımız 1xbetservices.com üzerinde: ajan olarak kaydolun, kendi oyuncu ve ajan bağlantılarınızı alın ve yerleşik kayıp tazminatı desteğiyle komisyon kazanın.',
     },
     pt: {
       tagline: 'O guia completo de serviços e suporte da 1xBet',
       description: 'Guia completo dos serviços da 1xBet: códigos promocionais, suporte, download do app e códigos de indicação.',
       intro: '1xBet Services é o seu guia completo sobre tudo da 1xBet: últimos códigos promocionais e bônus de boas-vindas, soluções de suporte, links de download APK e explicação completa do sistema de indicações e ganhos.',
       h1: '1xBet Services — o guia completo de serviços da 1xBet',
+      partner: 'A página oficial do programa de parceiros e agências da 1xBet no nosso domínio dedicado 1xbetservices.com: registre-se como agente, receba seus próprios links de jogadores e agentes e ganhe comissões com suporte de compensação de perdas.',
     },
   },
   'vixo.uno': {

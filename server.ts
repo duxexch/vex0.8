@@ -6389,8 +6389,8 @@ async function setupServer() {
     // brand + focus are domain identity constants; tagline/description/intro/h1 come from i18nProfiles (8 languages)
     const DOMAIN_META: Record<string, { brand: string; focus: string }> = {
       'vex.deals': { brand: 'VEX Deals', focus: 'betting compensation, wallet tracking, loyalty rewards' },
-      'betjam.sbs': { brand: 'BetJam', focus: 'betting loss recovery, cashback, refund requests' },
-      '1xbetservices.com': { brand: '1xBet Services', focus: 'global 1xbet agency services, 1xbet support, 1xbet bonus, 1xbet promo code, loss compensation worldwide' },
+      'betjam.sbs': { brand: 'BetJam', focus: 'betting loss recovery, cashback, refund requests, betjam partner program, betjam affiliate registration' },
+      '1xbetservices.com': { brand: '1xBet Services', focus: 'global 1xbet agency services, 1xbet partner program, 1xbet affiliate registration, 1xbet support, 1xbet bonus, 1xbet promo code, loss compensation worldwide' },
       'vixo.uno': { brand: 'Vixo', focus: 'AI football predictions, match analysis, win probability' },
       'betongame.cloud': { brand: 'BetoGame', focus: 'provably fair lottery, jackpot, sports analytics' },
     };
@@ -6519,6 +6519,7 @@ async function setupServer() {
       const profile = getProfile(domain, 'en');
       const companies = storage.getCompanies();
       const companyList = companies.map(c => `- [${c.name}](${url}/company/${c.id}): ${c.details?.substring(0, 120)}`).join('\n');
+      const partnerList = companies.filter(c => String(c.affiliate_link_partner || '').trim()).map(c => `- [${c.name} Partner Program](${url}/partner/${c.id}): affiliate & agent registration, commissions, ready-made promo links`).join('\n');
       const cmpList = getComparisonPairs().map(p => `- [${p.a.name} vs ${p.b.name}](${url}/compare/${p.slug})`).join('\n');
       const leagueList = [...new Set(getFixtures().map(f => f.league))].map(n => `- ${url}/predictions/league/${slugify(n)} - ${n} predictions and predicted scores`).join('\n');
 
@@ -6566,7 +6567,7 @@ ${leagueList}
 
 ## Company Pages
 ${companyList}
-
+${partnerList ? `\n## Partner & Affiliate Pages\n${partnerList}\n` : ''}
 ## Comparisons
 - ${url}/compare - Index of all bookmaker comparison pages
 ${cmpList}
@@ -7024,7 +7025,8 @@ Sitemap: https://${domain}/sitemap.xml
 `;
       }
 
-      // Company detail pages
+      // Company detail pages — base entry carries hreflang alternates (self-canonical
+      // per language), then one entry per extra language variant.
       for (const c of companies) {
         const slug = c.id;
         urls += `  <url>
@@ -7032,12 +7034,46 @@ Sitemap: https://${domain}/sitemap.xml
     <lastmod>${now}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+`;
+        for (const l of langs) {
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/company/${slug}${langQ(l, domain)}"/>
+`;
+        }
+        urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/company/${slug}"/>
   </url>
 `;
         for (const l of langs) {
           if (l === baseLang(domain)) continue;
           urls += `  <url>
     <loc>https://${domain}/company/${slug}?lang=${l}</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+`;
+        }
+      }
+
+      // Partner / affiliate pages — only companies with a dedicated partner link
+      for (const c of companies.filter(x => String(x.affiliate_link_partner || '').trim())) {
+        const slug = c.id;
+        urls += `  <url>
+    <loc>https://${domain}/partner/${slug}</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+`;
+        for (const l of langs) {
+          urls += `    <xhtml:link rel="alternate" hreflang="${l}" href="https://${domain}/partner/${slug}${langQ(l, domain)}"/>
+`;
+        }
+        urls += `    <xhtml:link rel="alternate" hreflang="x-default" href="https://${domain}/partner/${slug}"/>
+  </url>
+`;
+        for (const l of langs) {
+          if (l === baseLang(domain)) continue;
+          urls += `  <url>
+    <loc>https://${domain}/partner/${slug}?lang=${l}</loc>
     <lastmod>${now}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -7580,6 +7616,13 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
       ${appLink ? `<a href="${escAttr(appLink)}" class="cta" rel="nofollow sponsored noopener" target="_blank">📲 ${lang === 'ar' ? `تحميل تطبيق ${name}` : `Download ${name} app`}</a>` : ''}
     </div>
 
+    ${company.affiliate_link_partner ? `
+    <div class="promo" style="border-style:solid;">
+      <p style="font-weight:bold;font-size:1.05rem;">🤝 ${T_('company.partner_box_title')}</p>
+      <p style="font-size:0.95rem;margin-top:6px;">${T_('company.partner_box_desc')}</p>
+      <a href="/partner/${company.id}${langQ(lang, domain)}" class="cta" style="margin-top:12px;">${T_('company.partner_box_cta')} →</a>
+    </div>` : ''}
+
     <h2>📋 ${T_('company.steps_title')}</h2>
     <ol class="steps">
       <li>${T_('company.step1')}</li>
@@ -7644,6 +7687,255 @@ ${socialMeta(domainUrl, escAttr(`${name} - ${profile.brand}`), escAttr(T_('compa
   function fallbackCopy(code) {
     var ta = document.createElement('textarea');
     ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  </script>
+</body>
+</html>`;
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('X-Robots-Tag', 'index, follow, max-snippet:-1');
+      res.send(html);
+    });
+
+    // ==================== SSR PARTNER PAGES (Affiliate SEO) ====================
+    // Companies with a dedicated partner/agent registration link get their own
+    // /partner/:id page. Content is partnership-focused (commissions, joining
+    // steps, partner FAQ) — deliberately DIFFERENT from the player page at
+    // /company/:id so the two never compete as duplicate content. Primary CTA
+    // = the partner link itself. Especially promoted on the dedicated domains
+    // (1xbetservices.com ↔ 1XBET, betjam.sbs ↔ BETJAM) via profile.partner.
+    app.get('/partner/:id', (req, res) => {
+      const domain = req.headers.host?.replace(/^www\./, '') || 'vex.deals';
+      const domainUrl = `https://${domain}`;
+      const lang = getLang(req);
+      const profile = getProfile(domain, lang);
+      const companies = storage.getCompanies();
+      const company = companies.find(c => c.id === req.params.id);
+      const partnerLink = String(company?.affiliate_link_partner || '').trim();
+      if (!company || !partnerLink) {
+        return send404(res, profile, lang === 'ar' ? 'برنامج الشراكة غير متاح لهذه الشركة.' : 'Partner program not available for this company.');
+      }
+
+      const name = company.name;
+      const promo = company.promo_code || '';
+      const accent = /^#[0-9a-fA-F]{6}$/.test(company.color || '') ? company.color : '#10b981';
+      const pagePath = `/partner/${company.id}`;
+      const T_ = (k: string, vars: Record<string, string> = {}) => tt(k, lang, { name, brand: profile.brand, promo, ...vars });
+      const jstr = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
+      const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const metaDesc = T_('partner.meta_desc').replace(/\s+/g, ' ').trim().slice(0, 300);
+      // Dedicated domains carry a partner-specific intro (i18nProfiles.partner);
+      // every other domain falls back to the generic partner intro.
+      const introLine = profile.partner || T_('partner.intro');
+      const otherPartnerPages = companies.filter(c => c.id !== company.id && String(c.affiliate_link_partner || '').trim());
+
+      const html = `<!doctype html>
+<html lang="${lang}" dir="${profile.dir}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${name} - ${T_('partner.subtitle')} | ${profile.brand}</title>
+  <meta name="description" content="${escAttr(metaDesc)}" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+  <link rel="canonical" href="${canonicalUrl(domainUrl, pagePath, lang)}" />
+${hreflangs(domainUrl, pagePath)}
+  <meta property="og:title" content="${name} - ${T_('partner.subtitle')} | ${profile.brand}" />
+  <meta property="og:description" content="${escAttr(metaDesc)}" />
+  <meta property="og:url" content="${domainUrl}${pagePath}${langQ(lang, domain)}" />
+  <meta property="og:type" content="article" />
+  <meta property="og:locale" content="${lang === 'ar' ? 'ar_AR' : lang + '_' + lang.toUpperCase()}" />
+${socialMeta(domainUrl, escAttr(`${name} - ${T_('partner.subtitle')}`), escAttr(T_('partner.og_desc')))}
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "${jstr(`${name} - ${T_('partner.subtitle')}`)}",
+    "description": "${jstr(metaDesc)}",
+    "url": "${domainUrl}${pagePath}",
+    "inLanguage": "${lang}",
+    "author": {"@type": "Organization", "name": "${jstr(profile.brand)}", "url": "${domainUrl}"},
+    "publisher": {"@type": "Organization", "name": "${jstr(profile.brand)}", "url": "${domainUrl}", "logo": {"@type": "ImageObject", "url": "${domainUrl}/icon-192.svg"}},
+    "dateModified": "${CONTENT_VERIFIED}"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {"@type": "ListItem", "position": 1, "name": "${jstr(tt('nav.home', lang))}", "item": "${domainUrl}/"},
+      {"@type": "ListItem", "position": 2, "name": "${jstr(tt('nav.companies', lang))}", "item": "${domainUrl}/companies"},
+      {"@type": "ListItem", "position": 3, "name": "${jstr(`${name} — ${T_('partner.subtitle')}`)}", "item": "${domainUrl}${pagePath}"}
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {"@type": "Question", "name": "${jstr(T_('partner.faq1q'))}", "acceptedAnswer": {"@type": "Answer", "text": "${jstr(T_('partner.faq1a'))}"}},
+      {"@type": "Question", "name": "${jstr(T_('partner.faq2q'))}", "acceptedAnswer": {"@type": "Answer", "text": "${jstr(T_('partner.faq2a'))}"}},
+      {"@type": "Question", "name": "${jstr(T_('partner.faq3q'))}", "acceptedAnswer": {"@type": "Answer", "text": "${jstr(T_('partner.faq3a'))}"}},
+      {"@type": "Question", "name": "${jstr(T_('partner.faq4q'))}", "acceptedAnswer": {"@type": "Answer", "text": "${jstr(T_('partner.faq4a'))}"}}
+    ]
+  }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Tajawal', 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.8; }
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 2.2rem; color: #10b981; margin-bottom: 10px; }
+    h2 { font-size: 1.5rem; color: #34d399; margin: 30px 0 15px; border-bottom: 2px solid #1e293b; padding-bottom: 8px; }
+    p { margin-bottom: 15px; color: #94a3b8; }
+    .badge { display: inline-block; background: #10b981; color: #0f172a; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.85rem; margin: 5px 5px 5px 0; }
+    .promo { background: #1e293b; border: 2px dashed #10b981; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0; }
+    .promo code { font-size: 2rem; color: #10b981; font-weight: bold; letter-spacing: 3px; }
+    .steps { background: #1e293b; padding: 20px; border-radius: 12px; margin: 15px 0; }
+    .steps li { margin: 10px 0; padding-left: 10px; }
+    .steps li::marker { color: #10b981; font-weight: bold; }
+    .faq { background: #1e293b; padding: 15px; border-radius: 10px; margin: 10px 0; }
+    .faq strong { color: #34d399; }
+    .cta { background: linear-gradient(135deg, #10b981, #059669); color: #fff; padding: 15px 30px; border-radius: 12px; text-decoration: none; display: inline-block; font-weight: bold; margin: 10px 5px 10px 0; }
+    .cta:hover { opacity: 0.9; }
+    .cta.secondary { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; }
+    .related { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 20px; }
+    .related a { background: #1e293b; padding: 12px; border-radius: 8px; color: #10b981; text-decoration: none; text-align: center; }
+    .related a:hover { background: #334155; }
+    .nav { background: #1e293b; padding: 10px 20px; display: flex; gap: 15px; flex-wrap: wrap; }
+    .nav a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+    .nav a:hover { color: #10b981; }
+    .langbar { background: #0b1220; padding: 8px 20px; display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.85rem; }
+    .langbar a { color: #94a3b8; text-decoration: none; }
+    .langbar a.active, .langbar a:hover { color: #10b981; }
+  footer { text-align: center; padding: 30px; color: #94a3b8; font-size: 0.85rem; border-top: 1px solid #1e293b; margin-top: 40px; }
+  </style>
+  <style>
+    /* Company brand theming — accent follows each company's official color */
+    :root { --c: ${accent}; --c-dark: ${accent}cc; --c-soft: ${accent}26; }
+    h1, h2 { color: var(--c) !important; }
+    h2 { border-bottom-color: var(--c-soft) !important; }
+    .badge { background: var(--c) !important; }
+    .promo { border: 2px dashed var(--c) !important; }
+    .promo code, .faq strong, .related a, .nav a:hover { color: var(--c) !important; }
+    .steps li::marker { color: var(--c) !important; }
+    .cta { background: linear-gradient(135deg, var(--c), var(--c-dark)) !important; }
+    .copybtn { background: var(--c); color: #fff; border: none; padding: 10px 26px; border-radius: 10px; font-weight: bold; font-size: 1rem; cursor: pointer; margin-top: 12px; font-family: inherit; }
+    .copybtn:hover { opacity: 0.88; }
+    .copied { color: var(--c); font-weight: bold; margin-inline-start: 10px; }
+  </style>
+  ${siteSchemaTag(domainUrl, profile)}</head>
+<body>
+  <nav class="nav">
+    <a href="/">🏠 ${tt('nav.home', lang)}</a>
+    <a href="/companies${langQ(lang, domain)}">🏢 ${tt('nav.companies', lang)}</a>
+    <a href="/#wallets">💳 ${tt('nav.wallets', lang)}</a>
+    <a href="/#ai-sports">⚽ ${tt('nav.predictions', lang)}</a>
+    <a href="/#lottery">🎰 ${tt('nav.lottery', lang)}</a>
+    <a href="/download/apk">📱 ${tt('nav.download', lang)}</a>
+  </nav>
+  <nav class="langbar">
+    ${LANGS.map(l => `<a href="${pagePath}${langQ(l, domain)}" hreflang="${l}" class="${l === lang ? 'active' : ''}">${l.toUpperCase()}</a>`).join('    ')}
+  </nav>
+  <div class="container">
+    <h1>${name} — ${T_('partner.subtitle')}</h1>
+    <div>
+      <span class="badge">🤝 ${T_('partner.badge_partner')}</span>
+      <span class="badge">💰 ${T_('partner.badge_commission')}</span>
+      <span class="badge">📣 ${T_('partner.badge_materials')}</span>
+      <span class="badge">🎧 ${T_('partner.badge_support')}</span>
+    </div>
+
+    <p style="margin-top:20px;font-size:1.05rem;color:var(--c);">${introLine}</p>
+
+    <h2>💰 ${T_('partner.commission_title')}</h2>
+    <p>${T_('partner.commission_desc')}</p>
+
+    <div class="promo">
+      <p>${T_('partner.linkbox_title')}</p>
+      <code id="partnerLink" style="font-size:1rem;letter-spacing:0;word-break:break-all;">${escAttr(partnerLink)}</code>
+      <br>
+      <button class="copybtn" type="button" onclick="copyPartnerLink(this)">📋 ${lang === 'ar' ? 'انسخ الرابط' : 'Copy link'}</button>
+      <span class="copied" id="copiedMsg" style="display:none;">✓ ${lang === 'ar' ? 'تم النسخ' : 'Copied'}</span>
+      <p style="margin-top:10px;font-size:0.9rem;">${T_('partner.linkbox_note')}</p>
+    </div>
+
+    <div style="text-align:center;margin:25px 0;">
+      <a href="${escAttr(partnerLink)}" class="cta" rel="nofollow sponsored noopener" target="_blank">🤝 ${T_('partner.cta_join')}</a>
+      <a href="/company/${company.id}${langQ(lang, domain)}" class="cta secondary">📱 ${T_('partner.to_player')}</a>
+    </div>
+
+    <h2>🎯 ${T_('partner.goals_title')}</h2>
+    <ul style="list-style:none;padding:0;">
+      <li style="padding:8px 0;">✅ ${T_('partner.goal1')}</li>
+      <li style="padding:8px 0;">💹 ${T_('partner.goal2')}</li>
+      <li style="padding:8px 0;">🎨 ${T_('partner.goal3')}</li>
+      <li style="padding:8px 0;">📊 ${T_('partner.goal4')}</li>
+      <li style="padding:8px 0;">🎧 ${T_('partner.goal5')}</li>
+    </ul>
+
+    <h2>📋 ${T_('partner.steps_title')}</h2>
+    <ol class="steps">
+      <li>${T_('partner.step1')}</li>
+      <li>${T_('partner.step2')}</li>
+      <li>${T_('partner.step3')}</li>
+      <li>${T_('partner.step4')}</li>
+      <li>${T_('partner.step5')}</li>
+    </ol>
+
+    <h2>⭐ ${T_('partner.why_title')}</h2>
+    <ul style="list-style:none;padding:0;">
+      <li style="padding:8px 0;">✅ ${T_('partner.why1')}</li>
+      <li style="padding:8px 0;">🔗 ${T_('partner.why2')}</li>
+      <li style="padding:8px 0;">🌍 ${T_('partner.why3')}</li>
+      <li style="padding:8px 0;">📦 ${T_('partner.why4')}</li>
+      <li style="padding:8px 0;">🔍 ${T_('partner.why5')}</li>
+    </ul>
+
+    <h2>❓ ${T_('partner.faq_title')}</h2>
+    <div class="faq"><strong>${tt('faq.q_prefix', lang)} ${T_('partner.faq1q')}</strong><p>${T_('partner.faq1a')}</p></div>
+    <div class="faq"><strong>${tt('faq.q_prefix', lang)} ${T_('partner.faq2q')}</strong><p>${T_('partner.faq2a')}</p></div>
+    <div class="faq"><strong>${tt('faq.q_prefix', lang)} ${T_('partner.faq3q')}</strong><p>${T_('partner.faq3a')}</p></div>
+    <div class="faq"><strong>${tt('faq.q_prefix', lang)} ${T_('partner.faq4q')}</strong><p>${T_('partner.faq4a')}</p></div>
+
+    <h2>🔗 ${T_('company.related_title')}</h2>
+    <div class="related">
+      <a href="/company/${company.id}${langQ(lang, domain)}">📱 ${T_('partner.to_player')}</a>
+      ${otherPartnerPages.map(c => `<a href="/partner/${c.id}${langQ(lang, domain)}">🤝 ${c.name} — ${T_('partner.subtitle')}</a>`).join('')}
+      <a href="/companies${langQ(lang, domain)}">🏢 ${tt('cta.companies', lang)}</a>
+    </div>
+
+    <div style="margin-top:30px;text-align:center;">
+      <a href="/companies${langQ(lang, domain)}" class="cta">🏢 ${tt('cta.companies', lang)}</a>
+      <a href="/guides${langQ(lang, domain)}" class="cta">📚 ${tt('hub.guides_h1', lang)}</a>
+      <a href="/predictions${langQ(lang, domain)}" class="cta">⚽ ${tt('cta.ai', lang)}</a>
+    </div>
+  </div>
+  <footer>
+    <p>© 2026 ${profile.brand} — ${profile.tagline} | <a href="${domainUrl}" style="color:#10b981;">${domain}</a></p>
+    <p>${T_('partner.footer_page')} ${CONTENT_VERIFIED}</p>
+    <p style="font-size:0.8rem;">${trustLinks(lang, domain)}</p>
+  </footer>
+  <script>
+  function copyPartnerLink(btn) {
+    var link = document.getElementById('partnerLink').textContent.trim();
+    var done = function () {
+      var m = document.getElementById('copiedMsg');
+      if (m) { m.style.display = 'inline'; setTimeout(function () { m.style.display = 'none'; }, 2500); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(done).catch(function () { fallbackCopy(link); done(); });
+    } else { fallbackCopy(link); done(); }
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
     document.body.appendChild(ta); ta.select();
     try { document.execCommand('copy'); } catch (e) {}
     document.body.removeChild(ta);
